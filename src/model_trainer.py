@@ -17,7 +17,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 import lightgbm as lgb
-import xgboost as xgb
+try:
+    import xgboost as xgb
+except ImportError:
+    xgb = None
 from imblearn.over_sampling import SMOTE
 
 logger = logging.getLogger(__name__)
@@ -290,6 +293,11 @@ class ModelTrainer:
         return model
 
     def _train_xgboost(self, X, y):
+        if xgb is None:
+            raise ImportError(
+                "xgboost is not installed. Install it in requirements.txt and rebuild the Docker image "
+                "if you want to use model_type='xgboost'."
+            )
         model = xgb.XGBClassifier(
             objective='multi:softmax', num_class=3, n_estimators=200,
             learning_rate=0.05, max_depth=7, random_state=self.seed, verbosity=0,

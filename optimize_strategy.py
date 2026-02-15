@@ -7,6 +7,7 @@ import sys
 import os
 import logging
 from datetime import datetime
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Add paths
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'config'))
@@ -52,7 +53,7 @@ def optimize_single_coin(symbol: str, enable_hyperopt: bool = True,
         data = data_manager.fetch_data(symbol, config.BINANCE_INTERVAL, config.BINANCE_START_TIME)
         if data is None:
             logger.error(f"Failed to fetch data for {symbol}")
-            return
+            return {'symbol': symbol, 'status': 'failed', 'reason': 'data_fetch_failed'}
         data = data_manager.prepare_data(data, symbol)
         logger.info(f"  Data: {len(data)} candles")
 
@@ -81,7 +82,7 @@ def optimize_single_coin(symbol: str, enable_hyperopt: bool = True,
 
         if len(X_train) == 0 or len(X_valid) == 0:
             logger.error("Invalid split for optimization: empty train or validation set")
-            return
+            return {'symbol': symbol, 'status': 'failed', 'reason': 'invalid_split'}
 
         valid_data = data.loc[X_valid.index]
 
@@ -113,13 +114,15 @@ def optimize_single_coin(symbol: str, enable_hyperopt: bool = True,
             logger.info(f"  Avg Sharpe: {wf_results['average_sharpe']:.4f}")
 
         logger.info(f"\nOptimization complete for {symbol}")
+        return {'symbol': symbol, 'status': 'ok'}
 
     except Exception as e:
         logger.error(f"Error optimizing {symbol}: {str(e)}", exc_info=True)
+        return {'symbol': symbol, 'status': 'failed', 'reason': str(e)}
 
 
 def optimize_multi_coin(symbols: list = None, enable_hyperopt: bool = True,
-                        enable_wf: bool = True, n_trials: int = 50):
+                        enable_wf: bool = True, n_trials: int = 50, workers: int = 1):
     """Run optimization for multiple cryptocurrencies."""
     if symbols is None:
         symbols = config.SYMBOLS
@@ -129,10 +132,33 @@ def optimize_multi_coin(symbols: list = None, enable_hyperopt: bool = True,
     logger.info(f"Symbols: {', '.join(symbols)}")
     logger.info(f"{'='*80}\n")
 
-    for symbol in symbols:
-        optimize_single_coin(symbol, enable_hyperopt, enable_wf, n_trials)
+    max_workers = max(1, min(int(workers), len(symbols)))
+    summaries = []
+
+    if max_workers == 1:
+        for symbol in symbols:
+            summaries.append(optimize_single_coin(symbol, enable_hyperopt, enable_wf, n_trials))
+    else:
+        logger.info(f"Running optimization in parallel ({max_workers} workers)")
+        futures = {}
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            for symbol in symbols:
+                futures[executor.submit(
+                    optimize_single_coin, symbol, enable_hyperopt, enable_wf, n_trials
+                )] = symbol
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    summaries.append(future.result())
+                except Exception as e:
+                    logger.error(f"Error optimizing {symbol}: {str(e)}", exc_info=True)
+                    summaries.append({'symbol': symbol, 'status': 'failed', 'reason': str(e)})
 
     logger.info(f"\nAll optimizations complete. Results: {config.RESULTS_DIR}")
+    ok = len([s for s in summaries if s and s.get('status') == 'ok'])
+    fail = len(symbols) - ok
+    logger.info(f"Optimization summary: success={ok}, failed={fail}")
+    return summaries
 
 
 if __name__ == "__main__":
@@ -144,6 +170,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-hyperopt', action='store_true')
     parser.add_argument('--no-wf', action='store_true')
     parser.add_argument('--trials', type=int, default=50)
+    parser.add_argument('--workers', type=int, default=1, help='Parallel workers across symbols')
 
     args = parser.parse_args()
 
@@ -154,4 +181,10 @@ if __name__ == "__main__":
     else:
         symbols = config.SYMBOLS
 
-    optimize_multi_coin(symbols, not args.no_hyperopt, not args.no_wf, args.trials)
+    optimize_multi_coin(
+        symbols,
+        not args.no_hyperopt,
+        not args.no_wf,
+        args.trials,
+        workers=max(1, args.workers),
+    )
