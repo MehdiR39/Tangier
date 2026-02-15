@@ -1,0 +1,15 @@
+services:
+  tangier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tangier-bot:latest
+    container_name: tangier-bot
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    working_dir: /app
+    tty: true
+    stdin_open: true
+    command: bash

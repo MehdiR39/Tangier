@@ -1,0 +1,19 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Generated artifacts
+logs/
+results/
+models/
+data/
+
+# Local IDE/cache
+.pytest_cache/
+.mypy_cache/
+
+.Rhistory
+Nalo-Patrimoine-Disposer-de-mon-epargne.pdf
