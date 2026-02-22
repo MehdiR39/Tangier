@@ -288,9 +288,14 @@ def run_full_comparison(symbols: list = None, symbol_workers: int = 1,
             visualizer.plot_model_comparison(symbol_results, symbol)
             visualizer.plot_equity_comparison(symbol_results, symbol)
 
-            # Plot detailed backtest for best model only
-            best = max(symbol_results, key=lambda r: r.total_return_pct)
-            visualizer.plot_backtest_summary(best)
+            # Plot detailed backtests. By default, save all candidate plots.
+            plot_all_candidates = bool(getattr(config, 'COMPARE_PLOT_ALL_CANDIDATES', True))
+            if plot_all_candidates:
+                for result in symbol_results:
+                    visualizer.plot_backtest_summary(result)
+            else:
+                best = max(symbol_results, key=lambda r: r.total_return_pct)
+                visualizer.plot_backtest_summary(best)
 
     # Generate portfolio summary
     if results_by_symbol and config.GENERATE_PLOTS:
@@ -315,8 +320,19 @@ def run_full_comparison(symbols: list = None, symbol_workers: int = 1,
         else:
             df = df_new
 
-        df.to_csv(csv_path, index=False)
-        logger.info(f"\nResults saved to: {csv_path}")
+        try:
+            df.to_csv(csv_path, index=False)
+            logger.info(f"\nResults saved to: {csv_path}")
+        except PermissionError:
+            fallback_csv = os.path.join(
+                config.RESULTS_DIR,
+                f"model_comparison_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            )
+            df.to_csv(fallback_csv, index=False)
+            logger.warning(
+                f"Could not write {csv_path} (file locked). "
+                f"Saved results to: {fallback_csv}"
+            )
 
         # Print evaluation period
         for symbol, results_list in results_by_symbol.items():
