@@ -29,7 +29,7 @@ for directory in [DATA_DIR, MODELS_DIR, RESULTS_DIR, LOGS_DIR]:
 SYMBOLS = ["AVAXUSDT"]
 
 # Binance API settings
-BINANCE_INTERVAL = "1d"  # Daily candles
+BINANCE_INTERVAL = "4h"  # Daily candles
 BINANCE_START_TIME = "4 years ago UTC"  # Historical data period (used only if dates below are None)
 
 # Fixed date ranges (set to None to use BINANCE_START_TIME instead)
@@ -334,7 +334,7 @@ SAVE_BACKTEST_RESULTS = True
 
 # Generate plots
 GENERATE_PLOTS = True
-COMPARE_PLOT_ALL_CANDIDATES = True  # In compare_models, save detailed backtest plot for each model
+COMPARE_PLOT_ALL_CANDIDATES = False  # In compare_models, save detailed backtest plot for best model only
 
 # Export results to CSV
 EXPORT_TO_CSV = True
