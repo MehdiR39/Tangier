@@ -132,7 +132,7 @@ def optimize_single_coin(symbol: str, enable_hyperopt: bool = True,
             )
             hp_optimizer.save_best_params(symbol)
 
-            logger.info(f"  Best Sharpe: {hp_results['best_score']:.4f}")
+            logger.info(f"  Best Objective Score: {hp_results['best_score']:.4f}")
             for param, value in hp_results['best_params'].items():
                 logger.info(f"    {param}: {value:.4f}")
 

@@ -48,9 +48,10 @@ class HyperparameterOptimizer:
 
         effective_trials = max(1, int(n_trials))
         effective_jobs = max(1, min(int(n_jobs), effective_trials))
+        objective_mode = str(getattr(self.config, 'OPTUNA_OBJECTIVE_MODE', 'robust_windows')).lower()
         logger.info(
             f"Starting optimization for {symbol} "
-            f"({effective_trials} trials, {effective_jobs} trial workers)..."
+            f"({effective_trials} trials, {effective_jobs} trial workers, mode={objective_mode})..."
         )
 
         sampler = TPESampler(seed=42)
@@ -67,7 +68,7 @@ class HyperparameterOptimizer:
         self.best_params = study.best_params
         self.best_score = study.best_value
 
-        logger.info(f"Best Sharpe: {self.best_score:.4f}")
+        logger.info(f"Best Objective Score: {self.best_score:.4f}")
         logger.info(f"Best Params: {self.best_params}")
 
         return {
@@ -132,6 +133,133 @@ class HyperparameterOptimizer:
                 filtered[idx] = 1
         return filtered
 
+    def _evaluate_single_validation(self, cfg, model_trainer, backtester, train_data,
+                                    valid_data, selected_features, symbol,
+                                    confidence_threshold, atr_threshold,
+                                    stop_loss, take_profit):
+        X_valid = self._build_X(valid_data, selected_features)
+        if len(X_valid) == 0:
+            return -np.inf
+
+        signals = model_trainer.predict_signals(
+            X_valid,
+            confidence_threshold=confidence_threshold
+        )
+        signals = self._apply_atr_filter(
+            cfg, valid_data, X_valid.index, signals, atr_threshold, train_data
+        )
+
+        bt_data = valid_data.loc[X_valid.index]
+        results = backtester.backtest(
+            bt_data, signals, symbol,
+            model_type="optuna_trial",
+            stop_loss=stop_loss, take_profit=take_profit
+        )
+
+        sharpe = results.sharpe_ratio if np.isfinite(results.sharpe_ratio) else -np.inf
+        if not np.isfinite(sharpe):
+            return -np.inf
+
+        # Light regularization to discourage near-zero trading activity.
+        trade_penalty = 0.0
+        if results.num_trades < 5:
+            trade_penalty = (5 - results.num_trades) * 0.05
+
+        return sharpe - trade_penalty
+
+    def _evaluate_robust_windows(self, cfg, model_trainer, backtester, train_data,
+                                 valid_data, selected_features, symbol,
+                                 confidence_threshold, atr_threshold,
+                                 stop_loss, take_profit):
+        """
+        Score one trial on multiple disjoint validation windows.
+        This reduces sensitivity to one lucky validation segment.
+        """
+        X_valid = self._build_X(valid_data, selected_features)
+        if len(X_valid) == 0:
+            return -np.inf
+
+        requested_windows = int(getattr(cfg, 'OPTUNA_VALID_WINDOWS', 5))
+        min_window_samples = int(getattr(cfg, 'OPTUNA_MIN_WINDOW_SAMPLES', 120))
+
+        max_windows_by_size = max(1, len(X_valid) // max(1, min_window_samples))
+        n_windows = max(1, min(requested_windows, max_windows_by_size))
+
+        # Use contiguous disjoint windows to sample different market segments.
+        split_positions = [pos for pos in np.array_split(np.arange(len(X_valid)), n_windows) if len(pos) > 0]
+        if not split_positions:
+            return -np.inf
+
+        fold_returns = []
+        fold_sharpes = []
+        fold_dds = []
+        fold_trades = []
+
+        for pos in split_positions:
+            x_idx = X_valid.index[pos]
+            x_fold = X_valid.loc[x_idx]
+            if len(x_fold) == 0:
+                continue
+
+            signals = model_trainer.predict_signals(
+                x_fold,
+                confidence_threshold=confidence_threshold
+            )
+            signals = self._apply_atr_filter(
+                cfg, valid_data, x_idx, signals, atr_threshold, train_data
+            )
+
+            bt_data = valid_data.loc[x_idx]
+            results = backtester.backtest(
+                bt_data, signals, symbol,
+                model_type="optuna_trial_window",
+                stop_loss=stop_loss, take_profit=take_profit
+            )
+
+            fold_returns.append(float(results.total_return_pct))
+            fold_sharpes.append(float(results.sharpe_ratio) if np.isfinite(results.sharpe_ratio) else 0.0)
+            fold_dds.append(float(results.max_drawdown))
+            fold_trades.append(float(results.num_trades))
+
+        if len(fold_returns) == 0:
+            return -np.inf
+
+        returns = np.array(fold_returns, dtype=float)
+        sharpes = np.array(fold_sharpes, dtype=float)
+        dds = np.array(fold_dds, dtype=float)
+        trades = np.array(fold_trades, dtype=float)
+
+        median_return = float(np.median(returns))
+        median_sharpe = float(np.median(sharpes))
+        return_std = float(np.std(returns))
+        worst_dd = float(np.max(dds))
+        active_ratio = float(np.mean(trades > 0))
+        total_trades = float(np.sum(trades))
+
+        # Weights are in native metric units (return and DD in percentage points).
+        w_sharpe = float(getattr(cfg, 'OPTUNA_WEIGHT_SHARPE', 1.0))
+        w_return = float(getattr(cfg, 'OPTUNA_WEIGHT_RETURN', 0.04))
+        w_dd = float(getattr(cfg, 'OPTUNA_WEIGHT_DRAWDOWN', 0.02))
+        w_stability = float(getattr(cfg, 'OPTUNA_WEIGHT_STABILITY', 0.03))
+        w_activity = float(getattr(cfg, 'OPTUNA_WEIGHT_ACTIVITY', 0.5))
+
+        score = (
+            w_sharpe * median_sharpe
+            + w_return * median_return
+            - w_dd * worst_dd
+            - w_stability * return_std
+            + w_activity * active_ratio
+        )
+
+        min_total_trades = float(getattr(cfg, 'OPTUNA_MIN_TOTAL_TRADES', max(6, len(split_positions) * 2)))
+        min_active_ratio = float(getattr(cfg, 'OPTUNA_MIN_ACTIVE_RATIO', 0.40))
+        if total_trades < min_total_trades:
+            score -= (min_total_trades - total_trades) * 0.05
+        if active_ratio < min_active_ratio:
+            score -= (min_active_ratio - active_ratio) * 1.0
+
+        return score
+
     def _objective(self, trial, train_data, valid_data, symbol):
         """Objective function for Optuna."""
         try:
@@ -164,39 +292,18 @@ class HyperparameterOptimizer:
                 return -np.inf
 
             trial_model_trainer.train(X_train, y_train, symbol)
-
-            X_valid = self._build_X(valid_data, selected_features)
-            if len(X_valid) == 0:
-                return -np.inf
-
-            signals = trial_model_trainer.predict_signals(
-                X_valid,
-                confidence_threshold=confidence_threshold
+            objective_mode = str(getattr(trial_cfg, 'OPTUNA_OBJECTIVE_MODE', 'robust_windows')).lower()
+            if objective_mode == 'single_split':
+                return self._evaluate_single_validation(
+                    trial_cfg, trial_model_trainer, trial_backtester, train_data, valid_data,
+                    selected_features, symbol, confidence_threshold, atr_threshold,
+                    stop_loss, take_profit
+                )
+            return self._evaluate_robust_windows(
+                trial_cfg, trial_model_trainer, trial_backtester, train_data, valid_data,
+                selected_features, symbol, confidence_threshold, atr_threshold,
+                stop_loss, take_profit
             )
-
-            signals = self._apply_atr_filter(
-                trial_cfg, valid_data, X_valid.index, signals, atr_threshold, train_data
-            )
-
-            bt_data = valid_data.loc[X_valid.index]
-
-            # Backtest with these parameters (using the correct API)
-            results = trial_backtester.backtest(
-                bt_data, signals, symbol,
-                model_type="optuna_trial",
-                stop_loss=stop_loss, take_profit=take_profit
-            )
-
-            sharpe = results.sharpe_ratio if np.isfinite(results.sharpe_ratio) else -np.inf
-            if not np.isfinite(sharpe):
-                return -np.inf
-
-            # Light regularization to discourage near-zero trading activity
-            trade_penalty = 0.0
-            if results.num_trades < 5:
-                trade_penalty = (5 - results.num_trades) * 0.05
-
-            return sharpe - trade_penalty
 
         except Exception as e:
             logger.warning(f"Trial failed: {str(e)}")

@@ -229,6 +229,32 @@ SENSITIVITY_PARAMS = {
 }
 
 # ============================================================================
+# OPTUNA OBJECTIVE SETTINGS
+# ============================================================================
+
+# Objective mode:
+# - "robust_windows": score trial on multiple validation windows (recommended)
+# - "single_split": legacy score on one validation block
+OPTUNA_OBJECTIVE_MODE = "robust_windows"
+
+# Robust objective windowing
+OPTUNA_VALID_WINDOWS = 5
+OPTUNA_MIN_WINDOW_SAMPLES = 120
+
+# Robust objective weights
+# Score = w_sharpe*median_sharpe + w_return*median_return
+#         - w_dd*worst_drawdown - w_stability*return_std + w_activity*active_ratio
+OPTUNA_WEIGHT_SHARPE = 1.0
+OPTUNA_WEIGHT_RETURN = 0.04
+OPTUNA_WEIGHT_DRAWDOWN = 0.02
+OPTUNA_WEIGHT_STABILITY = 0.03
+OPTUNA_WEIGHT_ACTIVITY = 0.5
+
+# Minimum activity constraints inside Optuna objective
+OPTUNA_MIN_TOTAL_TRADES = 10
+OPTUNA_MIN_ACTIVE_RATIO = 0.40
+
+# ============================================================================
 # OUTPUT SETTINGS
 # ============================================================================
 
