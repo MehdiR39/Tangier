@@ -65,8 +65,27 @@ class HyperparameterOptimizer:
             show_progress_bar=(effective_jobs == 1)
         )
 
-        self.best_params = study.best_params
-        self.best_score = study.best_value
+        feasible_trials = [
+            t for t in study.trials
+            if t.value is not None and np.isfinite(float(t.value))
+        ]
+
+        if not feasible_trials:
+            self.best_params = {}
+            self.best_score = -np.inf
+            logger.warning(
+                f"No feasible trial found for {symbol} "
+                f"(all trials rejected by objective constraints)"
+            )
+            return {
+                'best_params': self.best_params,
+                'best_score': self.best_score,
+                'trials': len(study.trials)
+            }
+
+        best_trial = max(feasible_trials, key=lambda t: float(t.value))
+        self.best_params = dict(best_trial.params)
+        self.best_score = float(best_trial.value)
 
         logger.info(f"Best Objective Score: {self.best_score:.4f}")
         logger.info(f"Best Params: {self.best_params}")
@@ -160,6 +179,10 @@ class HyperparameterOptimizer:
         if not np.isfinite(sharpe):
             return -np.inf
 
+        min_return_pct = float(getattr(cfg, 'OPTUNA_MIN_RETURN_PCT', -np.inf))
+        if float(results.total_return_pct) < min_return_pct:
+            return -np.inf
+
         # Light regularization to discourage near-zero trading activity.
         trade_penalty = 0.0
         if results.num_trades < 5:
@@ -247,6 +270,10 @@ class HyperparameterOptimizer:
         worst_dd = float(np.max(dds))
         active_ratio = float(np.mean(trades > 0))
         total_trades = float(np.sum(trades))
+
+        min_return_pct = float(getattr(cfg, 'OPTUNA_MIN_RETURN_PCT', -np.inf))
+        if median_return < min_return_pct:
+            return -np.inf
 
         # Weights are in native metric units (return and DD in percentage points).
         w_sharpe = float(getattr(cfg, 'OPTUNA_WEIGHT_SHARPE', 1.0))

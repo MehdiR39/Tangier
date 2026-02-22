@@ -280,6 +280,12 @@ OPTUNA_WEIGHT_ACTIVITY = 0.5
 OPTUNA_MIN_TOTAL_TRADES = 10
 OPTUNA_MIN_ACTIVE_RATIO = 0.40
 
+# Hard viability constraint (in percentage points).
+# A trial is rejected if return is below this threshold:
+# - single_split: total validation return
+# - robust_windows: median return across validation windows
+OPTUNA_MIN_RETURN_PCT = 0.0
+
 # Tune model-level hyperparameters inside Optuna objective.
 OPTUNA_TUNE_MODEL_PARAMS = True
 
