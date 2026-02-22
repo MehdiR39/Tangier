@@ -66,7 +66,7 @@ def _train_and_backtest_model(
     return result, signal_stats
 
 
-def compare_models_for_symbol(symbol: str, model_workers: int = 1) -> list:
+def compare_models_for_symbol(symbol: str, model_workers: int = 1, model_types: list = None) -> list:
     """
     Train and test all 5 model types on one symbol.
     Uses the SAME train/test split for fair comparison.
@@ -77,8 +77,16 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1) -> list:
     Returns:
         List of BacktestResults (one per model)
     """
+    if model_types is None:
+        model_types = MODEL_TYPES
+    model_types = [m.strip().lower() for m in model_types if m and str(m).strip()]
+    if not model_types:
+        logger.error("No models selected for comparison")
+        return []
+
     logger.info(f"\n{'='*80}")
     logger.info(f"COMPARING MODELS FOR: {symbol}")
+    logger.info(f"Models: {', '.join(model_types)}")
     logger.info(f"{'='*80}\n")
 
     # Initialize shared components
@@ -128,9 +136,9 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1) -> list:
     # 5. Train and test each model independently
     results_list = []
 
-    max_model_workers = max(1, min(int(model_workers), len(MODEL_TYPES)))
+    max_model_workers = max(1, min(int(model_workers), len(model_types)))
     if max_model_workers == 1:
-        for model_type in MODEL_TYPES:
+        for model_type in model_types:
             logger.info(f"\n--- Training {model_type.upper()} ---")
             try:
                 result, signal_stats = _train_and_backtest_model(
@@ -149,7 +157,7 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1) -> list:
         logger.info(f"Running model comparison in parallel ({max_model_workers} workers)")
         futures = {}
         with ThreadPoolExecutor(max_workers=max_model_workers) as executor:
-            for model_type in MODEL_TYPES:
+            for model_type in model_types:
                 futures[executor.submit(
                     _train_and_backtest_model,
                     symbol, model_type, X_train, y_train, X_test, test_data
@@ -173,13 +181,16 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1) -> list:
     return results_list
 
 
-def run_full_comparison(symbols: list = None, symbol_workers: int = 1, model_workers: int = 1):
+def run_full_comparison(symbols: list = None, symbol_workers: int = 1,
+                        model_workers: int = 1, model_types: list = None):
     """
     Run model comparison across all symbols.
     Generates CSV with all results and comparison visualizations.
     """
     if symbols is None:
         symbols = config.SYMBOLS
+    if model_types is None:
+        model_types = MODEL_TYPES
 
     visualizer = Visualizer(config)
     all_results = []
@@ -189,7 +200,9 @@ def run_full_comparison(symbols: list = None, symbol_workers: int = 1, model_wor
     if max_symbol_workers == 1:
         for symbol in symbols:
             try:
-                symbol_results = compare_models_for_symbol(symbol, model_workers=model_workers)
+                symbol_results = compare_models_for_symbol(
+                    symbol, model_workers=model_workers, model_types=model_types
+                )
                 results_by_symbol[symbol] = symbol_results
                 all_results.extend(symbol_results)
             except Exception as e:
@@ -200,7 +213,9 @@ def run_full_comparison(symbols: list = None, symbol_workers: int = 1, model_wor
         futures = {}
         with ThreadPoolExecutor(max_workers=max_symbol_workers) as executor:
             for symbol in symbols:
-                futures[executor.submit(compare_models_for_symbol, symbol, model_workers)] = symbol
+                futures[executor.submit(
+                    compare_models_for_symbol, symbol, model_workers, model_types
+                )] = symbol
 
             for future in as_completed(futures):
                 symbol = futures[future]
@@ -288,18 +303,27 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Compare ML models for crypto trading")
     parser.add_argument('--symbols', type=str, default=None, help='Comma-separated symbols')
+    parser.add_argument('--models', type=str, default=None,
+                        help='Comma-separated model list (lgbm,xgboost,random_forest,logistic_regression,neural_network)')
     parser.add_argument('--symbol-workers', type=int, default=1, help='Parallel workers across symbols')
     parser.add_argument('--model-workers', type=int, default=1, help='Parallel workers across model types')
 
     args = parser.parse_args()
 
     symbols = args.symbols.split(',') if args.symbols else config.SYMBOLS
+    selected_models = [m.strip().lower() for m in args.models.split(',')] if args.models else MODEL_TYPES
+    invalid_models = [m for m in selected_models if m not in MODEL_TYPES]
+    if invalid_models:
+        raise ValueError(
+            f"Invalid models: {invalid_models}. Supported: {', '.join(MODEL_TYPES)}"
+        )
 
     config.print_config()
     results = run_full_comparison(
         symbols,
         symbol_workers=max(1, args.symbol_workers),
         model_workers=max(1, args.model_workers),
+        model_types=selected_models,
     )
 
     logger.info(f"\nLog file: {log_filename}")
