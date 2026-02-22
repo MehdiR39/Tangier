@@ -121,6 +121,25 @@ class HyperparameterOptimizer:
                 data[name] = value
         return SimpleNamespace(**data)
 
+    @staticmethod
+    def _apply_return_constraint(cfg, realized_return_pct: float, score: float) -> float:
+        """
+        Apply return viability logic to objective score.
+        - Hard reject only for very poor return (hard floor).
+        - Soft penalty when return is below the target threshold.
+        """
+        target_return = float(getattr(cfg, 'OPTUNA_MIN_RETURN_PCT', -np.inf))
+        hard_floor = float(getattr(cfg, 'OPTUNA_MIN_RETURN_HARD_FLOOR_PCT', -np.inf))
+        penalty_weight = float(getattr(cfg, 'OPTUNA_RETURN_SHORTFALL_PENALTY', 0.15))
+
+        if realized_return_pct < hard_floor:
+            return -np.inf
+
+        if np.isfinite(target_return) and realized_return_pct < target_return:
+            score -= (target_return - realized_return_pct) * penalty_weight
+
+        return score
+
     def _apply_atr_filter(self, cfg, valid_frame: pd.DataFrame, x_index: pd.Index,
                           signals: np.ndarray, atr_threshold: float,
                           train_frame: pd.DataFrame) -> np.ndarray:
@@ -179,10 +198,6 @@ class HyperparameterOptimizer:
         if not np.isfinite(sharpe):
             return -np.inf
 
-        min_return_pct = float(getattr(cfg, 'OPTUNA_MIN_RETURN_PCT', -np.inf))
-        if float(results.total_return_pct) < min_return_pct:
-            return -np.inf
-
         # Light regularization to discourage near-zero trading activity.
         trade_penalty = 0.0
         if results.num_trades < 5:
@@ -196,7 +211,11 @@ class HyperparameterOptimizer:
             + w_outperf * float(results.outperformance_pct)
             - trade_penalty
         )
-        return single_score
+        return self._apply_return_constraint(
+            cfg,
+            float(results.total_return_pct),
+            single_score
+        )
 
     def _evaluate_robust_windows(self, cfg, model_trainer, backtester, train_data,
                                  valid_data, selected_features, symbol,
@@ -271,10 +290,6 @@ class HyperparameterOptimizer:
         active_ratio = float(np.mean(trades > 0))
         total_trades = float(np.sum(trades))
 
-        min_return_pct = float(getattr(cfg, 'OPTUNA_MIN_RETURN_PCT', -np.inf))
-        if median_return < min_return_pct:
-            return -np.inf
-
         # Weights are in native metric units (return and DD in percentage points).
         w_sharpe = float(getattr(cfg, 'OPTUNA_WEIGHT_SHARPE', 1.0))
         w_return = float(getattr(cfg, 'OPTUNA_WEIGHT_RETURN', 0.04))
@@ -299,7 +314,11 @@ class HyperparameterOptimizer:
         if active_ratio < min_active_ratio:
             score -= (min_active_ratio - active_ratio) * 1.0
 
-        return score
+        return self._apply_return_constraint(
+            cfg,
+            median_return,
+            score
+        )
 
     def _objective(self, trial, train_data, valid_data, symbol):
         """Objective function for Optuna."""
@@ -398,7 +417,19 @@ class HyperparameterOptimizer:
                 'symbol': symbol,
                 'timestamp': datetime.now().isoformat(),
                 'best_params': self.best_params,
-                'best_score': float(self.best_score)
+                'best_score': float(self.best_score),
+                'objective_controls': {
+                    'mode': str(getattr(self.config, 'OPTUNA_OBJECTIVE_MODE', 'robust_windows')),
+                    'min_return_target_pct': float(getattr(self.config, 'OPTUNA_MIN_RETURN_PCT', -np.inf)),
+                    'min_return_hard_floor_pct': float(getattr(self.config, 'OPTUNA_MIN_RETURN_HARD_FLOOR_PCT', -np.inf)),
+                    'return_shortfall_penalty': float(getattr(self.config, 'OPTUNA_RETURN_SHORTFALL_PENALTY', 0.15)),
+                    'weight_sharpe': float(getattr(self.config, 'OPTUNA_WEIGHT_SHARPE', 1.0)),
+                    'weight_return': float(getattr(self.config, 'OPTUNA_WEIGHT_RETURN', 0.04)),
+                    'weight_outperformance': float(getattr(self.config, 'OPTUNA_WEIGHT_OUTPERFORMANCE', 0.03)),
+                    'weight_drawdown': float(getattr(self.config, 'OPTUNA_WEIGHT_DRAWDOWN', 0.02)),
+                    'weight_stability': float(getattr(self.config, 'OPTUNA_WEIGHT_STABILITY', 0.03)),
+                    'weight_activity': float(getattr(self.config, 'OPTUNA_WEIGHT_ACTIVITY', 0.5))
+                }
             }, f, indent=2)
         logger.info(f"Best parameters saved to {path}")
 

@@ -280,11 +280,13 @@ OPTUNA_WEIGHT_ACTIVITY = 0.5
 OPTUNA_MIN_TOTAL_TRADES = 10
 OPTUNA_MIN_ACTIVE_RATIO = 0.40
 
-# Hard viability constraint (in percentage points).
-# A trial is rejected if return is below this threshold:
-# - single_split: total validation return
-# - robust_windows: median return across validation windows
+# Return viability controls (percentage points):
+# - OPTUNA_MIN_RETURN_PCT is the target return level for optimization.
+# - Trials below this target are penalized (not automatically rejected).
+# - OPTUNA_MIN_RETURN_HARD_FLOOR_PCT is a hard reject floor for very poor trials.
 OPTUNA_MIN_RETURN_PCT = 0.0
+OPTUNA_MIN_RETURN_HARD_FLOOR_PCT = -12.0
+OPTUNA_RETURN_SHORTFALL_PENALTY = 0.15
 
 # Tune model-level hyperparameters inside Optuna objective.
 OPTUNA_TUNE_MODEL_PARAMS = True
