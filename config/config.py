@@ -334,7 +334,7 @@ SAVE_BACKTEST_RESULTS = True
 
 # Generate plots
 GENERATE_PLOTS = True
-COMPARE_PLOT_ALL_CANDIDATES = False  # In compare_models, save detailed backtest plot for best model only
+COMPARE_PLOT_ALL_CANDIDATES = True  # In compare_models, save detailed backtest plot for each model
 
 # Export results to CSV
 EXPORT_TO_CSV = True
