@@ -9,8 +9,10 @@ import numpy as np
 import logging
 import json
 import os
+import copy
 from typing import Dict, Tuple
 from datetime import datetime
+from types import SimpleNamespace
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ class HyperparameterOptimizer:
         logger.info("HyperparameterOptimizer initialized")
 
     def optimize(self, train_data: pd.DataFrame, valid_data: pd.DataFrame,
-                 symbol: str, n_trials: int = 50) -> Dict:
+                 symbol: str, n_trials: int = 50, n_jobs: int = 1) -> Dict:
         """Run hyperparameter optimization."""
         if train_data is None or valid_data is None or len(train_data) == 0 or len(valid_data) == 0:
             logger.error(f"Optimization skipped for {symbol}: empty train/valid data")
@@ -44,30 +46,23 @@ class HyperparameterOptimizer:
             logger.error("optuna not installed. Run: pip install optuna")
             return {'best_params': {}, 'best_score': 0, 'trials': 0}
 
-        logger.info(f"Starting optimization for {symbol} ({n_trials} trials)...")
+        effective_trials = max(1, int(n_trials))
+        effective_jobs = max(1, min(int(n_jobs), effective_trials))
+        logger.info(
+            f"Starting optimization for {symbol} "
+            f"({effective_trials} trials, {effective_jobs} trial workers)..."
+        )
 
         sampler = TPESampler(seed=42)
         pruner = MedianPruner()
         study = optuna.create_study(direction='maximize', sampler=sampler, pruner=pruner)
 
-        # Keep a copy of baseline config values and restore after optimization
-        baseline_cfg = {
-            'BUY_THRESHOLD': getattr(self.config, 'BUY_THRESHOLD', 0.90),
-            'SELL_THRESHOLD': getattr(self.config, 'SELL_THRESHOLD', 0.10),
-            'CONFIDENCE_THRESHOLD': getattr(self.config, 'CONFIDENCE_THRESHOLD', 0.50),
-            'ATR_THRESHOLD': getattr(self.config, 'ATR_THRESHOLD', 1.0),
-            'USE_ATR_FILTER': getattr(self.config, 'USE_ATR_FILTER', False),
-            'STOP_LOSS': getattr(self.config, 'STOP_LOSS', 0.05),
-            'TAKE_PROFIT': getattr(self.config, 'TAKE_PROFIT', 0.10),
-        }
-
         study.optimize(
             lambda trial: self._objective(trial, train_data, valid_data, symbol),
-            n_trials=n_trials, show_progress_bar=True
+            n_trials=effective_trials,
+            n_jobs=effective_jobs,
+            show_progress_bar=(effective_jobs == 1)
         )
-
-        for key, value in baseline_cfg.items():
-            setattr(self.config, key, value)
 
         self.best_params = study.best_params
         self.best_score = study.best_value
@@ -91,13 +86,28 @@ class HyperparameterOptimizer:
         X = X.replace([np.inf, -np.inf], np.nan).dropna()
         return X
 
-    def _apply_atr_filter(self, valid_frame: pd.DataFrame, x_index: pd.Index,
+    @staticmethod
+    def _clone_config_namespace(config_obj):
+        data = {}
+        for name in dir(config_obj):
+            if name.startswith('_'):
+                continue
+            value = getattr(config_obj, name)
+            if callable(value):
+                continue
+            try:
+                data[name] = copy.deepcopy(value)
+            except Exception:
+                data[name] = value
+        return SimpleNamespace(**data)
+
+    def _apply_atr_filter(self, cfg, valid_frame: pd.DataFrame, x_index: pd.Index,
                           signals: np.ndarray, atr_threshold: float,
                           train_frame: pd.DataFrame) -> np.ndarray:
         if len(signals) == 0:
             return signals
 
-        if not getattr(self.config, 'USE_ATR_FILTER', False):
+        if not getattr(cfg, 'USE_ATR_FILTER', False):
             return signals
 
         if 'ATR' not in valid_frame.columns or 'Close' not in valid_frame.columns:
@@ -135,33 +145,43 @@ class HyperparameterOptimizer:
             if sell_threshold >= buy_threshold:
                 return -np.inf
 
-            self.config.BUY_THRESHOLD = buy_threshold
-            self.config.SELL_THRESHOLD = sell_threshold
-            self.config.CONFIDENCE_THRESHOLD = confidence_threshold
-            self.config.ATR_THRESHOLD = atr_threshold
+            # Trial-local config/model/backtester to allow safe parallel Optuna workers.
+            trial_cfg = self._clone_config_namespace(self.config)
+            trial_cfg.BUY_THRESHOLD = buy_threshold
+            trial_cfg.SELL_THRESHOLD = sell_threshold
+            trial_cfg.CONFIDENCE_THRESHOLD = confidence_threshold
+            trial_cfg.ATR_THRESHOLD = atr_threshold
+            trial_cfg.STOP_LOSS = stop_loss
+            trial_cfg.TAKE_PROFIT = take_profit
+            trial_cfg.USE_ATR_FILTER = getattr(self.config, 'USE_ATR_FILTER', False)
+
+            trial_model_trainer = self.model_trainer.__class__(trial_cfg)
+            trial_backtester = self.backtester.__class__(trial_cfg)
 
             # Recreate training targets/features with current thresholds, then retrain
-            X_train, y_train, selected_features = self.model_trainer.prepare_data(train_data, symbol)
+            X_train, y_train, selected_features = trial_model_trainer.prepare_data(train_data, symbol)
             if len(X_train) == 0:
                 return -np.inf
 
-            self.model_trainer.train(X_train, y_train, symbol)
+            trial_model_trainer.train(X_train, y_train, symbol)
 
             X_valid = self._build_X(valid_data, selected_features)
             if len(X_valid) == 0:
                 return -np.inf
 
-            signals = self.model_trainer.predict_signals(
+            signals = trial_model_trainer.predict_signals(
                 X_valid,
                 confidence_threshold=confidence_threshold
             )
 
-            signals = self._apply_atr_filter(valid_data, X_valid.index, signals, atr_threshold, train_data)
+            signals = self._apply_atr_filter(
+                trial_cfg, valid_data, X_valid.index, signals, atr_threshold, train_data
+            )
 
             bt_data = valid_data.loc[X_valid.index]
 
             # Backtest with these parameters (using the correct API)
-            results = self.backtester.backtest(
+            results = trial_backtester.backtest(
                 bt_data, signals, symbol,
                 model_type="optuna_trial",
                 stop_loss=stop_loss, take_profit=take_profit
@@ -210,6 +230,38 @@ class WalkForwardValidator:
         self.results = []
         logger.info("WalkForwardValidator initialized")
 
+    def _apply_atr_filter(self, valid_frame: pd.DataFrame, x_index: pd.Index,
+                          signals: np.ndarray, atr_threshold: float,
+                          train_frame: pd.DataFrame) -> np.ndarray:
+        """Apply the same ATR gating used during hyperparameter optimization."""
+        if len(signals) == 0:
+            return signals
+
+        if not getattr(self.config, 'USE_ATR_FILTER', False):
+            return signals
+
+        if 'ATR' not in valid_frame.columns or 'Close' not in valid_frame.columns:
+            return signals
+
+        aligned = valid_frame.loc[x_index]
+        atr_pct = aligned['ATR'] / (aligned['Close'].abs() + 1e-10)
+
+        if 'ATR' in train_frame.columns and 'Close' in train_frame.columns:
+            train_atr_pct = (train_frame['ATR'] / (train_frame['Close'].abs() + 1e-10)).replace([np.inf, -np.inf], np.nan).dropna()
+            base_level = float(train_atr_pct.median()) if len(train_atr_pct) > 0 else float(atr_pct.median())
+        else:
+            base_level = float(atr_pct.median())
+
+        if not np.isfinite(base_level) or base_level <= 0:
+            return signals
+
+        volatility_gate = atr_pct >= (base_level * atr_threshold)
+        filtered = signals.copy()
+        for idx in range(len(filtered)):
+            if filtered[idx] != 1 and not bool(volatility_gate.iloc[idx]):
+                filtered[idx] = 1
+        return filtered
+
     def validate(self, data: pd.DataFrame, feature_engineer, symbol: str,
                  train_size: int = 2000, test_size: int = 500,
                  step_size: int = 250) -> Dict:
@@ -252,7 +304,6 @@ class WalkForwardValidator:
                 self.model_trainer.train(X_train, y_train, symbol)
 
                 # Prepare test data (use same features)
-                exclude_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Returns', 'Log_Returns', 'Target']
                 X_test = test_data_window[[c for c in features if c in test_data_window.columns]]
                 X_test = X_test.dropna()
 
@@ -260,11 +311,29 @@ class WalkForwardValidator:
                     continue
 
                 # Generate signals
-                signals = self.model_trainer.predict_signals(X_test)
+                confidence_threshold = float(getattr(self.config, 'CONFIDENCE_THRESHOLD', 0.50))
+                atr_threshold = float(getattr(self.config, 'ATR_THRESHOLD', 1.0))
+                stop_loss = float(getattr(self.config, 'STOP_LOSS', 0.05))
+                take_profit = float(getattr(self.config, 'TAKE_PROFIT', 0.10))
+
+                signals = self.model_trainer.predict_signals(
+                    X_test,
+                    confidence_threshold=confidence_threshold
+                )
+                signals = self._apply_atr_filter(
+                    test_data_window, X_test.index, signals, atr_threshold, train_data
+                )
 
                 # Backtest
                 bt_data = test_data_window.loc[X_test.index]
-                bt_results = self.backtester.backtest(bt_data, signals, symbol, model_type="walk_forward")
+                bt_results = self.backtester.backtest(
+                    bt_data,
+                    signals,
+                    symbol,
+                    model_type="walk_forward",
+                    stop_loss=stop_loss,
+                    take_profit=take_profit
+                )
 
                 results.append({
                     'window': window_num,

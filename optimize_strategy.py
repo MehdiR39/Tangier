@@ -34,8 +34,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _apply_best_params_to_runtime(cfg, params: dict) -> dict:
+    """Apply Optuna best params to runtime config used by walk-forward."""
+    if not params:
+        return {}
+
+    key_map = {
+        'stop_loss': 'STOP_LOSS',
+        'take_profit': 'TAKE_PROFIT',
+        'confidence_threshold': 'CONFIDENCE_THRESHOLD',
+        'buy_threshold': 'BUY_THRESHOLD',
+        'sell_threshold': 'SELL_THRESHOLD',
+        'atr_threshold': 'ATR_THRESHOLD',
+    }
+
+    applied = {}
+    for src_key, dst_key in key_map.items():
+        if src_key in params and params[src_key] is not None:
+            value = float(params[src_key])
+            setattr(cfg, dst_key, value)
+            applied[dst_key] = value
+
+    return applied
+
+
 def optimize_single_coin(symbol: str, enable_hyperopt: bool = True,
-                         enable_wf: bool = True, n_trials: int = 50):
+                         enable_wf: bool = True, n_trials: int = 50,
+                         trial_workers: int = 1):
     """Run optimization for a single cryptocurrency."""
     logger.info(f"\n{'='*80}")
     logger.info(f"OPTIMIZATION: {symbol}")
@@ -92,15 +117,32 @@ def optimize_single_coin(symbol: str, enable_hyperopt: bool = True,
 
         # 5. Hyperparameter Optimization
         if enable_hyperopt:
-            logger.info(f"\nStep 5: Hyperparameter optimization ({n_trials} trials)...")
+            logger.info(
+                f"\nStep 5: Hyperparameter optimization "
+                f"({n_trials} trials, {max(1, int(trial_workers))} trial workers)..."
+            )
             hp_optimizer = HyperparameterOptimizer(config, backtester, model_trainer)
             train_data = data.loc[X_train.index]
-            hp_results = hp_optimizer.optimize(train_data, valid_data, symbol, n_trials=n_trials)
+            hp_results = hp_optimizer.optimize(
+                train_data,
+                valid_data,
+                symbol,
+                n_trials=n_trials,
+                n_jobs=max(1, int(trial_workers))
+            )
             hp_optimizer.save_best_params(symbol)
 
             logger.info(f"  Best Sharpe: {hp_results['best_score']:.4f}")
             for param, value in hp_results['best_params'].items():
                 logger.info(f"    {param}: {value:.4f}")
+
+            applied_params = _apply_best_params_to_runtime(config, hp_results.get('best_params', {}))
+            if applied_params:
+                logger.info("  Applied optimized params to runtime config for walk-forward:")
+                for key, value in applied_params.items():
+                    logger.info(f"    {key}: {value:.4f}")
+            else:
+                logger.warning("  No optimized params applied to runtime config")
 
         # 6. Walk-Forward Validation
         if enable_wf:
@@ -132,19 +174,35 @@ def optimize_multi_coin(symbols: list = None, enable_hyperopt: bool = True,
     logger.info(f"Symbols: {', '.join(symbols)}")
     logger.info(f"{'='*80}\n")
 
-    max_workers = max(1, min(int(workers), len(symbols)))
+    total_workers = max(1, int(workers))
+    symbol_workers = max(1, min(total_workers, len(symbols)))
+    trial_workers = max(1, total_workers // symbol_workers) if enable_hyperopt else 1
+
+    logger.info(
+        f"Worker allocation: total={total_workers}, "
+        f"symbol_workers={symbol_workers}, trial_workers_per_symbol={trial_workers}"
+    )
     summaries = []
 
-    if max_workers == 1:
+    if symbol_workers == 1:
         for symbol in symbols:
-            summaries.append(optimize_single_coin(symbol, enable_hyperopt, enable_wf, n_trials))
+            summaries.append(
+                optimize_single_coin(
+                    symbol, enable_hyperopt, enable_wf, n_trials, trial_workers=trial_workers
+                )
+            )
     else:
-        logger.info(f"Running optimization in parallel ({max_workers} workers)")
+        logger.info(f"Running optimization in parallel ({symbol_workers} symbol workers)")
         futures = {}
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        with ProcessPoolExecutor(max_workers=symbol_workers) as executor:
             for symbol in symbols:
                 futures[executor.submit(
-                    optimize_single_coin, symbol, enable_hyperopt, enable_wf, n_trials
+                    optimize_single_coin,
+                    symbol,
+                    enable_hyperopt,
+                    enable_wf,
+                    n_trials,
+                    trial_workers
                 )] = symbol
             for future in as_completed(futures):
                 symbol = futures[future]

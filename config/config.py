@@ -33,9 +33,9 @@ BINANCE_INTERVAL = "2h"  # 4-hour candles
 BINANCE_START_TIME = "4 years ago UTC"  # Historical data period (used only if dates below are None)
 
 # Fixed date ranges (set to None to use BINANCE_START_TIME instead)
-DATA_START_DATE = "2023-01-01"   # Start of all data
+DATA_START_DATE = "2022-01-01"   # Start of all data
 DATA_END_DATE = "2026-02-12"     # End of all data
-TEST_START_DATE = "2025-01-01"   # Start of test period (everything before = training)
+TEST_START_DATE = "2024-01-01"   # Start of test period (everything before = training)
 # Test ends at DATA_END_DATE automatically
 
 # Data validation settings
@@ -134,8 +134,8 @@ VALIDATION_SIZE = 0.1
 
 # Target creation for training
 TARGET_WINDOW = 150  # Rolling window for target creation
-BUY_THRESHOLD = 0.90  # Percentile threshold for buy signals
-SELL_THRESHOLD = 0.10  # Percentile threshold for sell signals
+BUY_THRESHOLD = 0.70  # Percentile threshold for buy signals
+SELL_THRESHOLD = 0.08  # Percentile threshold for sell signals
 
 # Signal filtering
 USE_ATR_FILTER = True
@@ -158,7 +158,7 @@ SLIPPAGE = 0.0005  # 0.05% average slippage
 
 # Risk management
 STOP_LOSS = 0.05  # 5% stop loss
-TAKE_PROFIT = 0.1  # 10% take profit
+TAKE_PROFIT = 0.15  # 10% take profit
 
 # Position sizing
 POSITION_SIZE = 1.0  # Full capital per trade (can be adjusted for risk management)
