@@ -105,6 +105,65 @@ class DataManager:
         self.validator = DataValidator()
         self.data_cache = {}
         logger.info("DataManager initialized")
+
+    @staticmethod
+    def _normalize_binance_interval(interval: str) -> str:
+        """
+        Normalize user-provided interval to Binance format.
+        Examples:
+        - 1D -> 1d
+        - 4H -> 4h
+        - 1W -> 1w
+        - 1mo / 1month -> 1M
+        """
+        if interval is None:
+            raise ValueError("Interval cannot be None")
+
+        valid_intervals = {
+            "1m", "3m", "5m", "15m", "30m",
+            "1h", "2h", "4h", "6h", "8h", "12h",
+            "1d", "3d", "1w", "1M"
+        }
+
+        raw = str(interval).strip()
+        if raw in valid_intervals:
+            return raw
+
+        import re
+        match = re.fullmatch(r"(\d+)\s*([a-zA-Z]+)", raw)
+        if not match:
+            raise ValueError(
+                f"Invalid interval '{interval}'. Allowed: {', '.join(sorted(valid_intervals))}"
+            )
+
+        number, unit = match.group(1), match.group(2)
+        if unit == "M":
+            candidate = f"{number}M"
+        else:
+            unit_lower = unit.lower()
+            if unit_lower in {"m", "min", "mins", "minute", "minutes"}:
+                candidate = f"{number}m"
+            elif unit_lower in {"h", "hr", "hrs", "hour", "hours"}:
+                candidate = f"{number}h"
+            elif unit_lower in {"d", "day", "days"}:
+                candidate = f"{number}d"
+            elif unit_lower in {"w", "wk", "week", "weeks"}:
+                candidate = f"{number}w"
+            elif unit_lower in {"mo", "mon", "month", "months"}:
+                candidate = f"{number}M"
+            else:
+                raise ValueError(
+                    f"Invalid interval unit '{unit}' in '{interval}'. "
+                    f"Allowed: m/h/d/w/M (e.g. 4h, 1d, 1w, 1M)"
+                )
+
+        if candidate not in valid_intervals:
+            raise ValueError(
+                f"Invalid interval '{interval}' -> '{candidate}'. "
+                f"Allowed: {', '.join(sorted(valid_intervals))}"
+            )
+
+        return candidate
     
     def fetch_data(self, symbol: str, interval: str = None, start_time: str = None) -> Optional[pd.DataFrame]:
         """
@@ -121,6 +180,10 @@ class DataManager:
         """
         if interval is None:
             interval = self.config.BINANCE_INTERVAL
+        interval_raw = interval
+        interval = self._normalize_binance_interval(interval)
+        if str(interval_raw).strip() != interval:
+            logger.info(f"Normalized interval for {symbol}: '{interval_raw}' -> '{interval}'")
         if start_time is None:
             start_time = self.config.BINANCE_START_TIME
         
