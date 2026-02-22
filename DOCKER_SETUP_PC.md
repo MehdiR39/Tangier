@@ -34,7 +34,9 @@ docker build -t tangier-bot:latest .
 ### Compare models
 
 ```bash
-./scripts/run_compare.sh "AVAXUSDT,LINKUSDT,BTCUSDT,ETHUSDT,SOLUSDT"
+./scripts/run_compare.sh "AVAXUSDT,LINKUSDT,BTCUSDT,ETHUSDT,SOLUSDT" 12
+# Optional model filter:
+# ./scripts/run_compare.sh "ETHUSDT" 12 "lgbm,xgboost"
 ```
 
 ### Main backtest

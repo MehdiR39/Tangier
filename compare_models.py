@@ -44,6 +44,34 @@ logger = logging.getLogger(__name__)
 MODEL_TYPES = ['lgbm', 'xgboost', 'random_forest', 'logistic_regression', 'neural_network']
 
 
+def _auto_allocate_workers(total_workers: int, n_symbols: int, n_models: int):
+    """
+    Auto-dispatch total workers across symbol-level and model-level parallelism.
+    Chooses (symbol_workers, model_workers) maximizing utilization <= total_workers.
+    """
+    total_workers = max(1, int(total_workers))
+    n_symbols = max(1, int(n_symbols))
+    n_models = max(1, int(n_models))
+
+    max_symbol_workers = min(n_symbols, total_workers)
+    best_symbol_workers = 1
+    best_model_workers = 1
+    best_utilization = 1
+
+    for symbol_workers in range(1, max_symbol_workers + 1):
+        model_workers = min(n_models, max(1, total_workers // symbol_workers))
+        utilization = symbol_workers * model_workers
+
+        if utilization > best_utilization or (
+            utilization == best_utilization and symbol_workers > best_symbol_workers
+        ):
+            best_symbol_workers = symbol_workers
+            best_model_workers = model_workers
+            best_utilization = utilization
+
+    return best_symbol_workers, best_model_workers
+
+
 def _train_and_backtest_model(
     symbol: str,
     model_type: str,
@@ -192,6 +220,12 @@ def run_full_comparison(symbols: list = None, symbol_workers: int = 1,
     if model_types is None:
         model_types = MODEL_TYPES
 
+    logger.info(
+        f"Worker allocation: symbol_workers={max(1, int(symbol_workers))}, "
+        f"model_workers={max(1, int(model_workers))}, "
+        f"max_parallel={max(1, int(symbol_workers)) * max(1, int(model_workers))}"
+    )
+
     visualizer = Visualizer(config)
     all_results = []
     results_by_symbol = {}
@@ -305,8 +339,12 @@ if __name__ == "__main__":
     parser.add_argument('--symbols', type=str, default=None, help='Comma-separated symbols')
     parser.add_argument('--models', type=str, default=None,
                         help='Comma-separated model list (lgbm,xgboost,random_forest,logistic_regression,neural_network)')
-    parser.add_argument('--symbol-workers', type=int, default=1, help='Parallel workers across symbols')
-    parser.add_argument('--model-workers', type=int, default=1, help='Parallel workers across model types')
+    parser.add_argument('--workers', type=int, default=1,
+                        help='Total workers to auto-dispatch across symbols and models')
+    parser.add_argument('--symbol-workers', type=int, default=None,
+                        help='Optional manual override for symbol-level workers')
+    parser.add_argument('--model-workers', type=int, default=None,
+                        help='Optional manual override for model-level workers')
 
     args = parser.parse_args()
 
@@ -318,11 +356,19 @@ if __name__ == "__main__":
             f"Invalid models: {invalid_models}. Supported: {', '.join(MODEL_TYPES)}"
         )
 
+    if args.symbol_workers is not None or args.model_workers is not None:
+        symbol_workers = max(1, int(args.symbol_workers) if args.symbol_workers is not None else 1)
+        model_workers = max(1, int(args.model_workers) if args.model_workers is not None else 1)
+    else:
+        symbol_workers, model_workers = _auto_allocate_workers(
+            args.workers, len(symbols), len(selected_models)
+        )
+
     config.print_config()
     results = run_full_comparison(
         symbols,
-        symbol_workers=max(1, args.symbol_workers),
-        model_workers=max(1, args.model_workers),
+        symbol_workers=symbol_workers,
+        model_workers=model_workers,
         model_types=selected_models,
     )
 

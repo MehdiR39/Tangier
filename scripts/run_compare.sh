@@ -2,9 +2,8 @@
 set -euo pipefail
 
 SYMBOLS="${1:-AVAXUSDT,LINKUSDT,BTCUSDT,ETHUSDT,SOLUSDT}"
-SYMBOL_WORKERS="${2:-1}"
-MODEL_WORKERS="${3:-1}"
-MODELS="${4:-}"
+WORKERS="${2:-1}"
+MODELS="${3:-}"
 
 if [[ ! -f .env ]]; then
   echo "Missing .env file in project root"
@@ -19,8 +18,7 @@ CMD=(
   tangier-bot:latest
   python compare_models.py
   --symbols "$SYMBOLS"
-  --symbol-workers "$SYMBOL_WORKERS"
-  --model-workers "$MODEL_WORKERS"
+  --workers "$WORKERS"
 )
 
 if [[ -n "$MODELS" ]]; then
