@@ -149,6 +149,7 @@ class FeatureEngineer:
         data = self._add_volatility_indicators(data)
         data = self._add_trend_indicators(data)
         data = self._add_volume_indicators(data)
+        data = self._add_regime_features(data)
 
         if self.config.LAG_INDICATORS:
             data = self._lag_all_indicators(data)
@@ -225,6 +226,47 @@ class FeatureEngineer:
         data['OBV_EMA'] = _ema(data['OBV'], 20)
         data['VROC'] = _roc(data['Volume'], 12)
         data['MFI'] = _mfi(data['High'], data['Low'], data['Close'], data['Volume'], 14)
+        return data
+
+    def _add_regime_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add compact market-regime features to improve signal context.
+        All features are transformed from rolling past windows and later lagged.
+        """
+        # Trend regime and trend intensity.
+        data['Trend_Regime'] = (data['SMA_20'] > data['SMA_50']).astype(int)
+        data['Trend_Strength'] = (data['SMA_20'] - data['SMA_50']).abs() / (data['Close'] + 1e-10)
+
+        # Mean-reversion context around medium-term average.
+        close_mean_20 = data['Close'].rolling(window=20).mean()
+        close_std_20 = data['Close'].rolling(window=20).std()
+        data['Close_Z20'] = (data['Close'] - close_mean_20) / (close_std_20 + 1e-10)
+
+        # Breakout context.
+        roll_high_20 = data['High'].rolling(window=20).max()
+        roll_low_20 = data['Low'].rolling(window=20).min()
+        data['Breakout_20'] = (data['Close'] - roll_high_20.shift(1)) / (roll_high_20.shift(1) + 1e-10)
+        data['Breakdown_20'] = (data['Close'] - roll_low_20.shift(1)) / (roll_low_20.shift(1) + 1e-10)
+
+        # Volatility regime (z-score of ATR percentage).
+        atr_pct_mean = data['ATR_Pct'].rolling(window=100).mean()
+        atr_pct_std = data['ATR_Pct'].rolling(window=100).std()
+        data['ATR_Pct_Z100'] = (data['ATR_Pct'] - atr_pct_mean) / (atr_pct_std + 1e-10)
+
+        # Return shape and persistence.
+        data['Ret_Skew_48'] = data['Log_Returns'].rolling(window=48).skew()
+        data['Ret_Kurt_48'] = data['Log_Returns'].rolling(window=48).kurt()
+        data['Ret_AutoCorr_24'] = data['Returns'].rolling(window=24).corr(data['Returns'].shift(1))
+
+        # Local drawdown pressure.
+        rolling_peak_100 = data['Close'].rolling(window=100).max()
+        data['Drawdown_100'] = (data['Close'] - rolling_peak_100) / (rolling_peak_100 + 1e-10)
+
+        # Volume trend pressure.
+        vol_ema_fast = _ema(data['Volume'], 5)
+        vol_ema_slow = _ema(data['Volume'], 20)
+        data['Volume_Trend'] = (vol_ema_fast - vol_ema_slow) / (vol_ema_slow + 1e-10)
+
         return data
 
     def _lag_all_indicators(self, data: pd.DataFrame, lag: int = 1) -> pd.DataFrame:

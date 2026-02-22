@@ -115,6 +115,21 @@ LGBM_PARAMS = {
     "verbose": -1,
 }
 
+# XGBoost parameters
+XGB_PARAMS = {
+    "objective": "multi:softprob",
+    "num_class": 3,
+    "n_estimators": 300,
+    "learning_rate": 0.05,
+    "max_depth": 7,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 1.0,
+    "reg_lambda": 1.0,
+    "verbosity": 0,
+    "eval_metric": "mlogloss",
+}
+
 # Feature selection
 FEATURE_SELECTION_METHOD = "rfe"  # Options: "rfe", "importance", "correlation"
 N_FEATURES_TO_SELECT = 20
@@ -136,6 +151,14 @@ VALIDATION_SIZE = 0.1
 TARGET_WINDOW = 150  # Rolling window for target creation
 BUY_THRESHOLD = 0.70  # Percentile threshold for buy signals
 SELL_THRESHOLD = 0.08  # Percentile threshold for sell signals
+TARGET_METHOD = "triple_barrier"  # Options: "percentile", "triple_barrier"
+TARGET_HORIZON_BARS = 12  # Label horizon (2h bars => 24h)
+TARGET_NEUTRAL_BAND = 0.0015  # Neutral zone if no barrier is hit
+
+# Triple-barrier target settings
+TARGET_TP_ATR_MULT = 2.0
+TARGET_SL_ATR_MULT = 1.2
+TARGET_MIN_ATR_PCT = 0.002
 
 # Signal filtering
 USE_ATR_FILTER = True
@@ -144,6 +167,7 @@ ATR_THRESHOLD = 1.0  # Multiples of ATR for signal filtering
 # Signal confidence scoring
 USE_SIGNAL_CONFIDENCE = True
 CONFIDENCE_THRESHOLD = 0.50  # Minimum confidence to take a trade
+SIGNAL_MARGIN_THRESHOLD = 0.08  # Min (top_prob - second_prob) for Buy/Sell
 
 # ============================================================================
 # BACKTESTING SETTINGS
@@ -253,6 +277,9 @@ OPTUNA_WEIGHT_ACTIVITY = 0.5
 # Minimum activity constraints inside Optuna objective
 OPTUNA_MIN_TOTAL_TRADES = 10
 OPTUNA_MIN_ACTIVE_RATIO = 0.40
+
+# Tune model-level hyperparameters inside Optuna objective.
+OPTUNA_TUNE_MODEL_PARAMS = True
 
 # ============================================================================
 # OUTPUT SETTINGS

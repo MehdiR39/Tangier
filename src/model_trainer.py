@@ -51,37 +51,127 @@ class TargetCreator:
         Create multi-class targets (0=Sell, 1=Hold, 2=Buy) based on FUTURE returns.
         Uses forward-looking returns to properly label what the model should predict.
         """
+        method = str(getattr(self.config, 'TARGET_METHOD', 'percentile')).lower()
+        if method == 'triple_barrier':
+            labeled = self._create_targets_triple_barrier(data, symbol)
+        else:
+            labeled = self._create_targets_percentile(data, symbol)
+
+        # Log class distribution
+        class_dist = labeled['Target'].value_counts().sort_index()
+        logger.info(
+            f"{symbol} - Target distribution: "
+            f"Sell={class_dist.get(0, 0)}, Hold={class_dist.get(1, 0)}, Buy={class_dist.get(2, 0)}"
+        )
+
+        return labeled
+
+    def _create_targets_percentile(self, data: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """Legacy percentile-based target (kept for A/B comparison)."""
         data = data.copy()
+        horizon = max(1, int(getattr(self.config, 'TARGET_HORIZON_BARS', 5)))
 
-        # Calculate future returns (next N periods)
-        # This is what we want to PREDICT - will the price go up or down?
-        future_return = data['Close'].pct_change(periods=5).shift(-5)
+        # Calculate future return over a configurable horizon.
+        future_return = data['Close'].pct_change(periods=horizon).shift(-horizon)
 
-        # Use rolling percentile to create adaptive thresholds
+        # Use rolling percentile to create adaptive thresholds.
+        min_periods = max(50, horizon * 2)
         rolling_percentile = future_return.rolling(
-            window=self.config.TARGET_WINDOW, min_periods=50
+            window=self.config.TARGET_WINDOW, min_periods=min_periods
         ).apply(lambda x: pd.Series(x).rank(pct=True).iloc[-1] if len(x) > 1 else np.nan, raw=False)
 
-        # Create target labels
-        data['Target'] = 1  # Default to Hold
+        # Create target labels.
+        data['Target'] = 1
 
-        # Buy signals: high future returns + uptrend confirmation
         buy_condition = (rolling_percentile >= self.config.BUY_THRESHOLD)
         data.loc[buy_condition, 'Target'] = 2
 
-        # Sell signals: low future returns + downtrend confirmation
         sell_condition = (rolling_percentile <= self.config.SELL_THRESHOLD)
         data.loc[sell_condition, 'Target'] = 0
 
-        # Remove rows where we can't compute future returns (last 5 rows)
-        data = data.dropna(subset=['Target'])
-        # Remove the last 5 rows that have look-ahead bias in target
-        data = data.iloc[:-5]
+        # Remove rows that rely on unavailable future bars.
+        if len(data) > horizon:
+            data = data.iloc[:-horizon]
+        else:
+            data = data.iloc[0:0]
 
-        # Log class distribution
-        class_dist = data['Target'].value_counts().sort_index()
-        logger.info(f"{symbol} - Target distribution: Sell={class_dist.get(0, 0)}, Hold={class_dist.get(1, 0)}, Buy={class_dist.get(2, 0)}")
+        return data
 
+    def _create_targets_triple_barrier(self, data: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """
+        Triple-barrier labeling:
+        - Upper barrier (Buy) and lower barrier (Sell) scaled by volatility.
+        - Time barrier at TARGET_HORIZON_BARS.
+        - If neither barrier is hit, fallback to terminal return with neutral band.
+        """
+        data = data.copy()
+        n = len(data)
+        horizon = max(1, int(getattr(self.config, 'TARGET_HORIZON_BARS', 12)))
+        tp_mult = float(getattr(self.config, 'TARGET_TP_ATR_MULT', 2.0))
+        sl_mult = float(getattr(self.config, 'TARGET_SL_ATR_MULT', 1.2))
+        neutral_band = float(getattr(self.config, 'TARGET_NEUTRAL_BAND', 0.0015))
+        min_atr_pct = float(getattr(self.config, 'TARGET_MIN_ATR_PCT', 0.002))
+
+        if n <= horizon:
+            data['Target'] = 1
+            return data.iloc[0:0]
+
+        close = data['Close'].to_numpy(dtype=float)
+        high = data['High'].to_numpy(dtype=float)
+        low = data['Low'].to_numpy(dtype=float)
+
+        if 'ATR' in data.columns:
+            atr_pct = (data['ATR'].to_numpy(dtype=float) / (np.abs(close) + 1e-10))
+        else:
+            # Fallback if ATR is missing.
+            atr_pct = data['Log_Returns'].rolling(window=20).std().to_numpy(dtype=float)
+
+        finite_vol = atr_pct[np.isfinite(atr_pct) & (atr_pct > 0)]
+        default_vol = float(np.median(finite_vol)) if len(finite_vol) > 0 else min_atr_pct
+        labels = np.ones(n, dtype=int)
+
+        for i in range(n - horizon):
+            entry = close[i]
+            if not np.isfinite(entry) or entry <= 0:
+                labels[i] = 1
+                continue
+
+            vol = atr_pct[i] if np.isfinite(atr_pct[i]) and atr_pct[i] > 0 else default_vol
+            vol = max(vol, min_atr_pct)
+            up_barrier = tp_mult * vol
+            dn_barrier = sl_mult * vol
+            label = 1
+
+            end = min(n - 1, i + horizon)
+            for j in range(i + 1, end + 1):
+                up_ret = (high[j] - entry) / entry
+                dn_ret = (low[j] - entry) / entry
+                up_hit = up_ret >= up_barrier
+                dn_hit = dn_ret <= -dn_barrier
+
+                if up_hit and not dn_hit:
+                    label = 2
+                    break
+                if dn_hit and not up_hit:
+                    label = 0
+                    break
+                if up_hit and dn_hit:
+                    # Ambiguous same-bar touch: resolve with close direction.
+                    close_ret = (close[j] - entry) / entry
+                    label = 2 if close_ret >= 0 else 0
+                    break
+
+            if label == 1:
+                terminal_ret = (close[end] - entry) / entry
+                if terminal_ret > neutral_band:
+                    label = 2
+                elif terminal_ret < -neutral_band:
+                    label = 0
+
+            labels[i] = label
+
+        data['Target'] = labels
+        data = data.iloc[:-horizon]
         return data
 
 
@@ -281,15 +371,28 @@ class ModelTrainer:
         return self.model
 
     def _train_lgbm(self, X, y):
-        model = lgb.LGBMClassifier(
-            objective='multiclass', num_class=3, n_estimators=200,
-            learning_rate=0.05, num_leaves=31, max_depth=7,
-            min_data_in_leaf=20, feature_fraction=0.8,
-            bagging_fraction=0.8, bagging_freq=5,
-            lambda_l1=1.0, lambda_l2=1.0, verbose=-1, random_state=self.seed
-        )
-        model.fit(X, y, eval_set=[(X, y)],
-                  callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)])
+        defaults = {
+            'objective': 'multiclass',
+            'num_class': 3,
+            'n_estimators': 200,
+            'learning_rate': 0.05,
+            'num_leaves': 31,
+            'max_depth': 7,
+            'min_data_in_leaf': 20,
+            'feature_fraction': 0.8,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 5,
+            'lambda_l1': 1.0,
+            'lambda_l2': 1.0,
+            'verbose': -1,
+            'random_state': self.seed,
+        }
+        cfg_params = getattr(self.config, 'LGBM_PARAMS', {}) or {}
+        params = {**defaults, **cfg_params}
+        params['random_state'] = self.seed
+
+        model = lgb.LGBMClassifier(**params)
+        model.fit(X, y)
         return model
 
     def _train_xgboost(self, X, y):
@@ -298,11 +401,27 @@ class ModelTrainer:
                 "xgboost is not installed. Install it in requirements.txt and rebuild the Docker image "
                 "if you want to use model_type='xgboost'."
             )
-        model = xgb.XGBClassifier(
-            objective='multi:softmax', num_class=3, n_estimators=200,
-            learning_rate=0.05, max_depth=7, random_state=self.seed, verbosity=0,
-            eval_metric='mlogloss'
-        )
+        defaults = {
+            'objective': 'multi:softprob',
+            'num_class': 3,
+            'n_estimators': 300,
+            'learning_rate': 0.05,
+            'max_depth': 7,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'reg_alpha': 1.0,
+            'reg_lambda': 1.0,
+            'verbosity': 0,
+            'eval_metric': 'mlogloss',
+            'random_state': self.seed,
+        }
+        cfg_params = getattr(self.config, 'XGB_PARAMS', {}) or {}
+        params = {**defaults, **cfg_params}
+        params['random_state'] = self.seed
+        params['objective'] = 'multi:softprob'
+        params['num_class'] = 3
+
+        model = xgb.XGBClassifier(**params)
         model.fit(X, y)
         return model
 
@@ -346,6 +465,7 @@ class ModelTrainer:
         """
         if confidence_threshold is None:
             confidence_threshold = self.config.CONFIDENCE_THRESHOLD
+        margin_threshold = float(getattr(self.config, 'SIGNAL_MARGIN_THRESHOLD', 0.0))
 
         probabilities = self.predict(X)
         if len(probabilities) == 0:
@@ -353,16 +473,19 @@ class ModelTrainer:
         signals = np.argmax(probabilities, axis=1)
 
         # Apply confidence threshold: only keep Buy/Sell if confident enough
-        # For 3-class problem, random chance is ~0.33, so threshold should be modest
+        # Also require enough probability margin to avoid low-conviction flips.
         for i in range(len(signals)):
             pred_class = signals[i]
             pred_prob = probabilities[i, pred_class]
-            if pred_class != 1 and pred_prob < confidence_threshold:
-                signals[i] = 1  # Revert to Hold if not confident in Buy/Sell
+            if pred_class != 1:
+                second_prob = np.partition(probabilities[i], -2)[-2] if probabilities.shape[1] > 1 else 0.0
+                margin = pred_prob - second_prob
+                if pred_prob < confidence_threshold or margin < margin_threshold:
+                    signals[i] = 1  # Revert to Hold if not confident in Buy/Sell
 
         logger.info(f"Signal distribution: Buy={np.sum(signals==2)}, "
                     f"Hold={np.sum(signals==1)}, Sell={np.sum(signals==0)} "
-                    f"(threshold={confidence_threshold:.2f})")
+                    f"(threshold={confidence_threshold:.2f}, margin={margin_threshold:.2f})")
 
         return signals
 

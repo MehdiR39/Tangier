@@ -283,6 +283,44 @@ class HyperparameterOptimizer:
             trial_cfg.TAKE_PROFIT = take_profit
             trial_cfg.USE_ATR_FILTER = getattr(self.config, 'USE_ATR_FILTER', False)
 
+            # Optional model-level hyperparameter tuning.
+            tune_model_params = bool(getattr(trial_cfg, 'OPTUNA_TUNE_MODEL_PARAMS', True))
+            model_type = str(getattr(trial_cfg, 'MODEL_TYPE', 'lgbm')).lower()
+            if tune_model_params and model_type == 'lgbm':
+                lgbm_params = copy.deepcopy(getattr(trial_cfg, 'LGBM_PARAMS', {}) or {})
+                lgbm_params.update({
+                    'n_estimators': trial.suggest_int('lgbm_n_estimators', 150, 700, step=50),
+                    'learning_rate': trial.suggest_float('lgbm_learning_rate', 0.01, 0.15, log=True),
+                    'num_leaves': trial.suggest_int('lgbm_num_leaves', 16, 128, step=8),
+                    'max_depth': trial.suggest_int('lgbm_max_depth', 3, 12),
+                    'min_data_in_leaf': trial.suggest_int('lgbm_min_data_in_leaf', 10, 80, step=5),
+                    'feature_fraction': trial.suggest_float('lgbm_feature_fraction', 0.60, 1.00, step=0.05),
+                    'bagging_fraction': trial.suggest_float('lgbm_bagging_fraction', 0.60, 1.00, step=0.05),
+                    'bagging_freq': trial.suggest_int('lgbm_bagging_freq', 1, 10),
+                    'lambda_l1': trial.suggest_float('lgbm_lambda_l1', 1e-3, 10.0, log=True),
+                    'lambda_l2': trial.suggest_float('lgbm_lambda_l2', 1e-3, 10.0, log=True),
+                })
+                lgbm_params['objective'] = 'multiclass'
+                lgbm_params['num_class'] = 3
+                trial_cfg.LGBM_PARAMS = lgbm_params
+            elif tune_model_params and model_type == 'xgboost':
+                xgb_params = copy.deepcopy(getattr(trial_cfg, 'XGB_PARAMS', {}) or {})
+                xgb_params.update({
+                    'n_estimators': trial.suggest_int('xgb_n_estimators', 150, 700, step=50),
+                    'learning_rate': trial.suggest_float('xgb_learning_rate', 0.01, 0.15, log=True),
+                    'max_depth': trial.suggest_int('xgb_max_depth', 3, 12),
+                    'subsample': trial.suggest_float('xgb_subsample', 0.60, 1.00, step=0.05),
+                    'colsample_bytree': trial.suggest_float('xgb_colsample_bytree', 0.60, 1.00, step=0.05),
+                    'min_child_weight': trial.suggest_float('xgb_min_child_weight', 1.0, 15.0),
+                    'gamma': trial.suggest_float('xgb_gamma', 0.0, 2.0),
+                    'reg_alpha': trial.suggest_float('xgb_reg_alpha', 1e-3, 10.0, log=True),
+                    'reg_lambda': trial.suggest_float('xgb_reg_lambda', 1e-3, 10.0, log=True),
+                })
+                xgb_params['objective'] = 'multi:softprob'
+                xgb_params['num_class'] = 3
+                xgb_params['eval_metric'] = 'mlogloss'
+                trial_cfg.XGB_PARAMS = xgb_params
+
             trial_model_trainer = self.model_trainer.__class__(trial_cfg)
             trial_backtester = self.backtester.__class__(trial_cfg)
 

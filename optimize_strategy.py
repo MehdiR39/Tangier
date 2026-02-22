@@ -55,6 +55,31 @@ def _apply_best_params_to_runtime(cfg, params: dict) -> dict:
             setattr(cfg, dst_key, value)
             applied[dst_key] = value
 
+    # Apply tuned model parameters if present.
+    lgbm_updates = {}
+    xgb_updates = {}
+    for key, raw_value in params.items():
+        if key.startswith('lgbm_'):
+            param_name = key[len('lgbm_'):]
+            lgbm_updates[param_name] = float(raw_value) if isinstance(raw_value, (int, float)) else raw_value
+        elif key.startswith('xgb_'):
+            param_name = key[len('xgb_'):]
+            xgb_updates[param_name] = float(raw_value) if isinstance(raw_value, (int, float)) else raw_value
+
+    if lgbm_updates:
+        current = dict(getattr(cfg, 'LGBM_PARAMS', {}) or {})
+        current.update(lgbm_updates)
+        setattr(cfg, 'LGBM_PARAMS', current)
+        for k, v in lgbm_updates.items():
+            applied[f"LGBM_PARAMS.{k}"] = v
+
+    if xgb_updates:
+        current = dict(getattr(cfg, 'XGB_PARAMS', {}) or {})
+        current.update(xgb_updates)
+        setattr(cfg, 'XGB_PARAMS', current)
+        for k, v in xgb_updates.items():
+            applied[f"XGB_PARAMS.{k}"] = v
+
     return applied
 
 
