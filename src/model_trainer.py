@@ -1,7 +1,7 @@
 """
 Model Training Module
-Supports multiple ML models: LightGBM, XGBoost, Random Forest, Logistic Regression, Neural Network
-Includes proper train/test split, feature selection, and class imbalance handling
+Supports multiple ML models for multi-class signal prediction.
+Includes proper train/test split, feature selection, and class imbalance handling.
 """
 
 import pandas as pd
@@ -14,16 +14,61 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import RFE
 from sklearn.model_selection import cross_val_score, TimeSeriesSplit
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 import lightgbm as lgb
 try:
     import xgboost as xgb
 except ImportError:
     xgb = None
+try:
+    import catboost as cb
+except ImportError:
+    cb = None
 from imblearn.over_sampling import SMOTE
 
 logger = logging.getLogger(__name__)
+
+
+SUPPORTED_MODEL_TYPES = [
+    'lgbm',
+    'xgboost',
+    'catboost',
+    'hist_gradient_boosting',
+    'extra_trees',
+    'random_forest',
+    'logistic_regression',
+    'neural_network',
+]
+
+MODEL_TYPE_ALIASES = {
+    'lightgbm': 'lgbm',
+    'lgb': 'lgbm',
+    'xgb': 'xgboost',
+    'cat': 'catboost',
+    'hgb': 'hist_gradient_boosting',
+    'hist_gbm': 'hist_gradient_boosting',
+    'histgb': 'hist_gradient_boosting',
+    'extratrees': 'extra_trees',
+    'et': 'extra_trees',
+    'rf': 'random_forest',
+    'randomforest': 'random_forest',
+    'logreg': 'logistic_regression',
+    'lr': 'logistic_regression',
+    'mlp': 'neural_network',
+    'nn': 'neural_network',
+    'neural': 'neural_network',
+}
+
+
+def normalize_model_type(model_type: str) -> str:
+    """Normalize model aliases to canonical internal names."""
+    if model_type is None:
+        return 'lgbm'
+    raw = str(model_type).strip().lower()
+    if not raw:
+        return 'lgbm'
+    return MODEL_TYPE_ALIASES.get(raw, raw)
 
 
 def set_global_seed(seed: int = 42):
@@ -234,7 +279,8 @@ class FeatureSelector:
 class ModelTrainer:
     """
     Trains ML models with feature selection and class imbalance handling.
-    Supports: lgbm, xgboost, random_forest, logistic_regression, neural_network
+    Supports: lgbm, xgboost, catboost, hist_gradient_boosting, extra_trees,
+              random_forest, logistic_regression, neural_network
     """
 
     def __init__(self, config):
@@ -244,7 +290,7 @@ class ModelTrainer:
         self.scaler = StandardScaler()
         self.feature_selector = FeatureSelector(config)
         self.target_creator = TargetCreator(config)
-        self.model_type = getattr(config, 'MODEL_TYPE', 'lgbm')
+        self.model_type = normalize_model_type(getattr(config, 'MODEL_TYPE', 'lgbm'))
         # Set global seed for reproducibility
         set_global_seed(self.seed)
         logger.info(f"ModelTrainer initialized (model_type={self.model_type}, seed={self.seed})")
@@ -325,7 +371,9 @@ class ModelTrainer:
             Trained model
         """
         if model_type is not None:
-            self.model_type = model_type
+            self.model_type = normalize_model_type(model_type)
+        else:
+            self.model_type = normalize_model_type(self.model_type)
 
         # Reset seed before each training for reproducibility
         set_global_seed(self.seed)
@@ -348,6 +396,12 @@ class ModelTrainer:
             self.model = self._train_lgbm(X_scaled, y_balanced)
         elif self.model_type == 'xgboost':
             self.model = self._train_xgboost(X_scaled, y_balanced)
+        elif self.model_type == 'catboost':
+            self.model = self._train_catboost(X_scaled, y_balanced)
+        elif self.model_type == 'hist_gradient_boosting':
+            self.model = self._train_hist_gradient_boosting(X_scaled, y_balanced)
+        elif self.model_type == 'extra_trees':
+            self.model = self._train_extra_trees(X_scaled, y_balanced)
         elif self.model_type == 'random_forest':
             self.model = self._train_random_forest(X_scaled, y_balanced)
         elif self.model_type == 'logistic_regression':
@@ -422,6 +476,69 @@ class ModelTrainer:
         params['num_class'] = 3
 
         model = xgb.XGBClassifier(**params)
+        model.fit(X, y)
+        return model
+
+    def _train_catboost(self, X, y):
+        if cb is None:
+            raise ImportError(
+                "catboost is not installed. Install it in requirements.txt and rebuild the Docker image "
+                "if you want to use model_type='catboost'."
+            )
+        defaults = {
+            'loss_function': 'MultiClass',
+            'iterations': 400,
+            'learning_rate': 0.05,
+            'depth': 8,
+            'l2_leaf_reg': 3.0,
+            'random_seed': self.seed,
+            'verbose': False,
+            'allow_writing_files': False,
+            'thread_count': -1,
+        }
+        cfg_params = getattr(self.config, 'CATBOOST_PARAMS', {}) or {}
+        params = {**defaults, **cfg_params}
+        params['random_seed'] = self.seed
+
+        model = cb.CatBoostClassifier(**params)
+        model.fit(X, y)
+        return model
+
+    def _train_hist_gradient_boosting(self, X, y):
+        defaults = {
+            'loss': 'log_loss',
+            'learning_rate': 0.05,
+            'max_iter': 300,
+            'max_depth': 8,
+            'max_leaf_nodes': 63,
+            'min_samples_leaf': 20,
+            'l2_regularization': 0.5,
+            'random_state': self.seed,
+        }
+        cfg_params = getattr(self.config, 'HGB_PARAMS', {}) or {}
+        params = {**defaults, **cfg_params}
+        params['random_state'] = self.seed
+
+        model = HistGradientBoostingClassifier(**params)
+        model.fit(X, y)
+        return model
+
+    def _train_extra_trees(self, X, y):
+        defaults = {
+            'n_estimators': 500,
+            'max_depth': None,
+            'min_samples_split': 5,
+            'min_samples_leaf': 2,
+            'max_features': 'sqrt',
+            'class_weight': 'balanced_subsample',
+            'random_state': self.seed,
+            'n_jobs': -1,
+        }
+        cfg_params = getattr(self.config, 'EXTRA_TREES_PARAMS', {}) or {}
+        params = {**defaults, **cfg_params}
+        params['random_state'] = self.seed
+
+        model = ExtraTreesClassifier(**params)
         model.fit(X, y)
         return model
 

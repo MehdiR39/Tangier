@@ -29,7 +29,7 @@ for directory in [DATA_DIR, MODELS_DIR, RESULTS_DIR, LOGS_DIR]:
 SYMBOLS = ["AVAXUSDT"]
 
 # Binance API settings
-BINANCE_INTERVAL = "2h"  # 4-hour candles
+BINANCE_INTERVAL = "4h"  # 4-hour candles
 BINANCE_START_TIME = "4 years ago UTC"  # Historical data period (used only if dates below are None)
 
 # Fixed date ranges (set to None to use BINANCE_START_TIME instead)
@@ -96,7 +96,7 @@ RANDOM_SEED = 42  # Global seed for reproducible results
 # ============================================================================
 
 # Model type
-MODEL_TYPE = "lgbm"  # Options: "lgbm", "xgboost", "ensemble"
+MODEL_TYPE = "lgbm"  # Options: lgbm, xgboost, catboost, hist_gradient_boosting, extra_trees, random_forest, logistic_regression, neural_network
 
 # LightGBM parameters
 LGBM_PARAMS = {
@@ -128,6 +128,37 @@ XGB_PARAMS = {
     "reg_lambda": 1.0,
     "verbosity": 0,
     "eval_metric": "mlogloss",
+}
+
+# CatBoost parameters
+CATBOOST_PARAMS = {
+    "loss_function": "MultiClass",
+    "iterations": 400,
+    "learning_rate": 0.05,
+    "depth": 8,
+    "l2_leaf_reg": 3.0,
+    "verbose": False,
+    "allow_writing_files": False,
+}
+
+# Histogram Gradient Boosting parameters
+HGB_PARAMS = {
+    "loss": "log_loss",
+    "learning_rate": 0.05,
+    "max_iter": 300,
+    "max_depth": 8,
+    "max_leaf_nodes": 63,
+    "min_samples_leaf": 20,
+    "l2_regularization": 0.5,
+}
+
+# Extra Trees parameters
+EXTRA_TREES_PARAMS = {
+    "n_estimators": 500,
+    "max_features": "sqrt",
+    "min_samples_split": 5,
+    "min_samples_leaf": 2,
+    "class_weight": "balanced_subsample",
 }
 
 # Feature selection

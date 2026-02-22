@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 import config as config
 from data_manager import DataManager
 from feature_engineer import FeatureEngineer
-from model_trainer import ModelTrainer
+from model_trainer import ModelTrainer, SUPPORTED_MODEL_TYPES
 from backtester import RobustBacktester, BacktestResults
 from visualizer import Visualizer
 
@@ -199,7 +199,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Crypto Trading Strategy")
     parser.add_argument('--symbol', type=str, default=None, help='Single symbol to test')
     parser.add_argument('--symbols', type=str, default=None, help='Comma-separated symbols')
-    parser.add_argument('--model', type=str, default=None, help='Model type (lgbm, xgboost, random_forest, logistic_regression, neural_network)')
+    parser.add_argument(
+        '--model',
+        type=str,
+        default=None,
+        help=f"Model type ({', '.join(SUPPORTED_MODEL_TYPES)})"
+    )
 
     args = parser.parse_args()
 

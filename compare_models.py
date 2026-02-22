@@ -1,6 +1,6 @@
 """
 Multi-Model Comparison Script
-Tests 5 different ML models on each symbol with proper train/test split.
+Tests multiple ML models on each symbol with proper train/test split.
 Each model is independently trained, producing genuinely different results.
 Exports all results to CSV and generates comparison visualizations.
 """
@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 import config as config
 from data_manager import DataManager
 from feature_engineer import FeatureEngineer
-from model_trainer import ModelTrainer
+from model_trainer import ModelTrainer, SUPPORTED_MODEL_TYPES, normalize_model_type
 from backtester import RobustBacktester, BacktestResults
 from visualizer import Visualizer
 
@@ -40,8 +40,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Models to compare
-MODEL_TYPES = ['lgbm', 'xgboost', 'random_forest', 'logistic_regression', 'neural_network']
+# Models to compare by default.
+MODEL_TYPES = SUPPORTED_MODEL_TYPES.copy()
 
 
 def _auto_allocate_workers(total_workers: int, n_symbols: int, n_models: int):
@@ -70,6 +70,19 @@ def _auto_allocate_workers(total_workers: int, n_symbols: int, n_models: int):
             best_utilization = utilization
 
     return best_symbol_workers, best_model_workers
+
+
+def _normalize_model_list(raw_models: list) -> list:
+    """Normalize aliases, validate against supported models, and deduplicate."""
+    normalized = [normalize_model_type(m) for m in raw_models if m and str(m).strip()]
+    invalid = [m for m in normalized if m not in MODEL_TYPES]
+    if invalid:
+        raise ValueError(
+            f"Invalid models: {invalid}. Supported: {', '.join(MODEL_TYPES)}"
+        )
+    # Keep user order while removing duplicates.
+    deduped = list(dict.fromkeys(normalized))
+    return deduped
 
 
 def _train_and_backtest_model(
@@ -107,7 +120,7 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1, model_types: 
     """
     if model_types is None:
         model_types = MODEL_TYPES
-    model_types = [m.strip().lower() for m in model_types if m and str(m).strip()]
+    model_types = _normalize_model_list(model_types)
     if not model_types:
         logger.error("No models selected for comparison")
         return []
@@ -179,7 +192,10 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1, model_types: 
                     f"Sharpe={result.sharpe_ratio:.2f}, WinRate={result.win_rate:.1f}%"
                 )
             except Exception as e:
-                logger.error(f"  Error with {model_type}: {str(e)}", exc_info=True)
+                if isinstance(e, ImportError):
+                    logger.warning(f"  Skipping {model_type}: {str(e)}")
+                else:
+                    logger.error(f"  Error with {model_type}: {str(e)}", exc_info=True)
                 continue
     else:
         logger.info(f"Running model comparison in parallel ({max_model_workers} workers)")
@@ -203,7 +219,10 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1, model_types: 
                         f"Sharpe={result.sharpe_ratio:.2f}, WinRate={result.win_rate:.1f}%"
                     )
                 except Exception as e:
-                    logger.error(f"  Error with {model_type}: {str(e)}", exc_info=True)
+                    if isinstance(e, ImportError):
+                        logger.warning(f"  Skipping {model_type}: {str(e)}")
+                    else:
+                        logger.error(f"  Error with {model_type}: {str(e)}", exc_info=True)
                     continue
 
     return results_list
@@ -219,6 +238,7 @@ def run_full_comparison(symbols: list = None, symbol_workers: int = 1,
         symbols = config.SYMBOLS
     if model_types is None:
         model_types = MODEL_TYPES
+    model_types = _normalize_model_list(model_types)
 
     logger.info(
         f"Worker allocation: symbol_workers={max(1, int(symbol_workers))}, "
@@ -338,7 +358,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare ML models for crypto trading")
     parser.add_argument('--symbols', type=str, default=None, help='Comma-separated symbols')
     parser.add_argument('--models', type=str, default=None,
-                        help='Comma-separated model list (lgbm,xgboost,random_forest,logistic_regression,neural_network)')
+                        help='Comma-separated model list (lgbm,xgboost,catboost,hist_gradient_boosting,extra_trees,random_forest,logistic_regression,neural_network)')
     parser.add_argument('--workers', type=int, default=1,
                         help='Total workers to auto-dispatch across symbols and models')
     parser.add_argument('--symbol-workers', type=int, default=None,
@@ -349,12 +369,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     symbols = args.symbols.split(',') if args.symbols else config.SYMBOLS
-    selected_models = [m.strip().lower() for m in args.models.split(',')] if args.models else MODEL_TYPES
-    invalid_models = [m for m in selected_models if m not in MODEL_TYPES]
-    if invalid_models:
-        raise ValueError(
-            f"Invalid models: {invalid_models}. Supported: {', '.join(MODEL_TYPES)}"
-        )
+    selected_models = _normalize_model_list(
+        args.models.split(',') if args.models else MODEL_TYPES
+    )
 
     if args.symbol_workers is not None or args.model_workers is not None:
         symbol_workers = max(1, int(args.symbol_workers) if args.symbol_workers is not None else 1)
