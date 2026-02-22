@@ -165,7 +165,15 @@ class HyperparameterOptimizer:
         if results.num_trades < 5:
             trade_penalty = (5 - results.num_trades) * 0.05
 
-        return sharpe - trade_penalty
+        w_return = float(getattr(cfg, 'OPTUNA_WEIGHT_RETURN', 0.04))
+        w_outperf = float(getattr(cfg, 'OPTUNA_WEIGHT_OUTPERFORMANCE', 0.03))
+        single_score = (
+            sharpe
+            + w_return * float(results.total_return_pct)
+            + w_outperf * float(results.outperformance_pct)
+            - trade_penalty
+        )
+        return single_score
 
     def _evaluate_robust_windows(self, cfg, model_trainer, backtester, train_data,
                                  valid_data, selected_features, symbol,
@@ -191,6 +199,7 @@ class HyperparameterOptimizer:
             return -np.inf
 
         fold_returns = []
+        fold_outperf = []
         fold_sharpes = []
         fold_dds = []
         fold_trades = []
@@ -217,6 +226,7 @@ class HyperparameterOptimizer:
             )
 
             fold_returns.append(float(results.total_return_pct))
+            fold_outperf.append(float(results.outperformance_pct))
             fold_sharpes.append(float(results.sharpe_ratio) if np.isfinite(results.sharpe_ratio) else 0.0)
             fold_dds.append(float(results.max_drawdown))
             fold_trades.append(float(results.num_trades))
@@ -225,11 +235,13 @@ class HyperparameterOptimizer:
             return -np.inf
 
         returns = np.array(fold_returns, dtype=float)
+        outperf = np.array(fold_outperf, dtype=float)
         sharpes = np.array(fold_sharpes, dtype=float)
         dds = np.array(fold_dds, dtype=float)
         trades = np.array(fold_trades, dtype=float)
 
         median_return = float(np.median(returns))
+        median_outperf = float(np.median(outperf))
         median_sharpe = float(np.median(sharpes))
         return_std = float(np.std(returns))
         worst_dd = float(np.max(dds))
@@ -239,6 +251,7 @@ class HyperparameterOptimizer:
         # Weights are in native metric units (return and DD in percentage points).
         w_sharpe = float(getattr(cfg, 'OPTUNA_WEIGHT_SHARPE', 1.0))
         w_return = float(getattr(cfg, 'OPTUNA_WEIGHT_RETURN', 0.04))
+        w_outperf = float(getattr(cfg, 'OPTUNA_WEIGHT_OUTPERFORMANCE', 0.03))
         w_dd = float(getattr(cfg, 'OPTUNA_WEIGHT_DRAWDOWN', 0.02))
         w_stability = float(getattr(cfg, 'OPTUNA_WEIGHT_STABILITY', 0.03))
         w_activity = float(getattr(cfg, 'OPTUNA_WEIGHT_ACTIVITY', 0.5))
@@ -246,6 +259,7 @@ class HyperparameterOptimizer:
         score = (
             w_sharpe * median_sharpe
             + w_return * median_return
+            + w_outperf * median_outperf
             - w_dd * worst_dd
             - w_stability * return_std
             + w_activity * active_ratio

@@ -267,9 +267,11 @@ OPTUNA_MIN_WINDOW_SAMPLES = 120
 
 # Robust objective weights
 # Score = w_sharpe*median_sharpe + w_return*median_return
+#         + w_outperf*median_outperformance
 #         - w_dd*worst_drawdown - w_stability*return_std + w_activity*active_ratio
 OPTUNA_WEIGHT_SHARPE = 1.0
 OPTUNA_WEIGHT_RETURN = 0.04
+OPTUNA_WEIGHT_OUTPERFORMANCE = 0.03
 OPTUNA_WEIGHT_DRAWDOWN = 0.02
 OPTUNA_WEIGHT_STABILITY = 0.03
 OPTUNA_WEIGHT_ACTIVITY = 0.5
