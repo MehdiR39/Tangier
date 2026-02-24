@@ -13,6 +13,7 @@ import matplotlib.dates as mdates
 import matplotlib.gridspec as gridspec
 import logging
 import os
+from datetime import datetime
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,35 @@ class Visualizer:
         self.output_dir = getattr(config, 'RESULTS_DIR', 'results')
         os.makedirs(self.output_dir, exist_ok=True)
         logger.info("Visualizer initialized")
+
+    def _save_figure(self, fig, filename: str) -> str:
+        """
+        Save a figure with deterministic "latest" name and optional timestamped copy.
+        This avoids viewer cache confusion when a file keeps the same name.
+        """
+        latest_path = os.path.join(self.output_dir, filename)
+
+        if os.path.exists(latest_path):
+            try:
+                os.remove(latest_path)
+            except OSError:
+                # If deletion fails (e.g. transient file lock), savefig still overwrites in most cases.
+                pass
+
+        fig.savefig(latest_path, dpi=150, bbox_inches='tight')
+
+        save_versioned = bool(getattr(self.config, 'SAVE_VERSIONED_PLOTS', True))
+        if save_versioned:
+            root, ext = os.path.splitext(filename)
+            stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            versioned_name = f"{root}_{stamp}{ext}"
+            versioned_path = os.path.join(self.output_dir, versioned_name)
+            fig.savefig(versioned_path, dpi=150, bbox_inches='tight')
+            logger.info(f"Plot saved: {latest_path} (versioned: {versioned_path})")
+        else:
+            logger.info(f"Plot saved: {latest_path}")
+
+        return latest_path
 
     @staticmethod
     def _sanitize_trades(trades: List[Dict], data_len: int) -> List[Dict]:
@@ -257,8 +287,8 @@ class Visualizer:
         plt.tight_layout()
 
         if save:
-            filepath = os.path.join(self.output_dir, f"{results.symbol}_{results.model_type}_backtest.png")
-            fig.savefig(filepath, dpi=150, bbox_inches='tight')
+            filename = f"{results.symbol}_{results.model_type}_backtest.png"
+            filepath = self._save_figure(fig, filename)
             plt.close(fig)
             logger.info(f"Backtest summary saved: {filepath}")
             return filepath
@@ -316,8 +346,8 @@ class Visualizer:
         plt.tight_layout()
 
         if save:
-            filepath = os.path.join(self.output_dir, f"{symbol}_model_comparison.png")
-            fig.savefig(filepath, dpi=150, bbox_inches='tight')
+            filename = f"{symbol}_model_comparison.png"
+            filepath = self._save_figure(fig, filename)
             plt.close(fig)
             logger.info(f"Model comparison saved: {filepath}")
             return filepath
@@ -388,8 +418,8 @@ class Visualizer:
         plt.tight_layout()
 
         if save:
-            filepath = os.path.join(self.output_dir, f"{symbol}_equity_comparison.png")
-            fig.savefig(filepath, dpi=150, bbox_inches='tight')
+            filename = f"{symbol}_equity_comparison.png"
+            filepath = self._save_figure(fig, filename)
             plt.close(fig)
             logger.info(f"Equity comparison saved: {filepath}")
             return filepath
@@ -458,8 +488,8 @@ class Visualizer:
         plt.tight_layout()
 
         if save:
-            filepath = os.path.join(self.output_dir, "portfolio_summary.png")
-            fig.savefig(filepath, dpi=150, bbox_inches='tight')
+            filename = "portfolio_summary.png"
+            filepath = self._save_figure(fig, filename)
             plt.close(fig)
             logger.info(f"Portfolio summary saved: {filepath}")
             return filepath

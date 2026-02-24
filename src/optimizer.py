@@ -217,6 +217,61 @@ class HyperparameterOptimizer:
             single_score
         )
 
+    def _evaluate_return_first(self, cfg, model_trainer, backtester, train_data,
+                               valid_data, selected_features, symbol,
+                               confidence_threshold, atr_threshold,
+                               stop_loss, take_profit):
+        """
+        Optimize for raw return first, with soft risk/activity constraints.
+        Use this mode when the primary objective is max absolute performance.
+        """
+        X_valid = self._build_X(valid_data, selected_features)
+        if len(X_valid) == 0:
+            return -np.inf
+
+        signals = model_trainer.predict_signals(
+            X_valid,
+            confidence_threshold=confidence_threshold
+        )
+        signals = self._apply_atr_filter(
+            cfg, valid_data, X_valid.index, signals, atr_threshold, train_data
+        )
+
+        bt_data = valid_data.loc[X_valid.index]
+        results = backtester.backtest(
+            bt_data, signals, symbol,
+            model_type="optuna_trial_return_first",
+            stop_loss=stop_loss, take_profit=take_profit
+        )
+
+        realized_return = float(results.total_return_pct)
+        score = realized_return
+
+        # Soft drawdown constraint.
+        max_dd = float(results.max_drawdown) if np.isfinite(results.max_drawdown) else np.inf
+        dd_cap = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_MAX_DRAWDOWN_PCT', np.inf))
+        dd_penalty = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_DRAWDOWN_PENALTY', 0.20))
+        if np.isfinite(dd_cap) and max_dd > dd_cap:
+            score -= (max_dd - dd_cap) * dd_penalty
+
+        # Soft minimum trade count constraint.
+        min_trades = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_MIN_TRADES', 0))
+        trade_penalty = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_TRADE_PENALTY', 0.25))
+        num_trades = float(results.num_trades)
+        if num_trades < min_trades:
+            score -= (min_trades - num_trades) * trade_penalty
+
+        # Tiny tie-breaker so same return prefers better risk-adjusted behavior.
+        sharpe_tie = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_SHARPE_TIEBREAKER', 0.10))
+        sharpe = float(results.sharpe_ratio) if np.isfinite(results.sharpe_ratio) else 0.0
+        score += sharpe_tie * sharpe
+
+        return self._apply_return_constraint(
+            cfg,
+            realized_return,
+            score
+        )
+
     def _evaluate_robust_windows(self, cfg, model_trainer, backtester, train_data,
                                  valid_data, selected_features, symbol,
                                  confidence_threshold, atr_threshold,
@@ -397,6 +452,12 @@ class HyperparameterOptimizer:
                     selected_features, symbol, confidence_threshold, atr_threshold,
                     stop_loss, take_profit
                 )
+            if objective_mode == 'return_first':
+                return self._evaluate_return_first(
+                    trial_cfg, trial_model_trainer, trial_backtester, train_data, valid_data,
+                    selected_features, symbol, confidence_threshold, atr_threshold,
+                    stop_loss, take_profit
+                )
             return self._evaluate_robust_windows(
                 trial_cfg, trial_model_trainer, trial_backtester, train_data, valid_data,
                 selected_features, symbol, confidence_threshold, atr_threshold,
@@ -423,6 +484,11 @@ class HyperparameterOptimizer:
                     'min_return_target_pct': float(getattr(self.config, 'OPTUNA_MIN_RETURN_PCT', -np.inf)),
                     'min_return_hard_floor_pct': float(getattr(self.config, 'OPTUNA_MIN_RETURN_HARD_FLOOR_PCT', -np.inf)),
                     'return_shortfall_penalty': float(getattr(self.config, 'OPTUNA_RETURN_SHORTFALL_PENALTY', 0.15)),
+                    'return_first_max_drawdown_pct': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_MAX_DRAWDOWN_PCT', np.inf)),
+                    'return_first_drawdown_penalty': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_DRAWDOWN_PENALTY', 0.20)),
+                    'return_first_min_trades': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_MIN_TRADES', 0)),
+                    'return_first_trade_penalty': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_TRADE_PENALTY', 0.25)),
+                    'return_first_sharpe_tiebreaker': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_SHARPE_TIEBREAKER', 0.10)),
                     'weight_sharpe': float(getattr(self.config, 'OPTUNA_WEIGHT_SHARPE', 1.0)),
                     'weight_return': float(getattr(self.config, 'OPTUNA_WEIGHT_RETURN', 0.04)),
                     'weight_outperformance': float(getattr(self.config, 'OPTUNA_WEIGHT_OUTPERFORMANCE', 0.03)),

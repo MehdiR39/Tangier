@@ -39,6 +39,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _split_raw_train_test(data: pd.DataFrame):
+    """Chronological split on raw feature data (before labels/feature selection)."""
+    test_start = getattr(config, 'TEST_START_DATE', None)
+    if test_start and isinstance(data.index, pd.DatetimeIndex):
+        test_start_ts = pd.Timestamp(test_start)
+        train_data = data[data.index < test_start_ts]
+        test_data = data[data.index >= test_start_ts]
+    else:
+        split_idx = int(len(data) * (1 - config.TEST_SIZE))
+        train_data = data.iloc[:split_idx]
+        test_data = data.iloc[split_idx:]
+    return train_data, test_data
+
+
+def _build_test_matrix(test_data: pd.DataFrame, selected_features: list) -> pd.DataFrame:
+    feature_cols = [c for c in selected_features if c in test_data.columns]
+    if not feature_cols:
+        return pd.DataFrame(index=test_data.index)
+    X_test = test_data[feature_cols].copy()
+    X_test = X_test.replace([np.inf, -np.inf], np.nan).dropna()
+    return X_test
+
+
 # ============================================================================
 # SINGLE COIN PIPELINE
 # ============================================================================
@@ -80,28 +103,20 @@ def run_single_coin(symbol: str, model_type: str = None) -> BacktestResults:
     data = feature_engineer.engineer_features(data, symbol)
     logger.info(f"  Features: {len(data.columns)} columns, {len(data)} rows after NaN removal")
 
-    # 3. Prepare training data (creates targets, selects features)
+    # 3. Split raw data first to avoid leakage.
+    train_data, test_data_raw = _split_raw_train_test(data)
+    if len(train_data) == 0 or len(test_data_raw) == 0:
+        raise ValueError("Invalid train/test split: one side is empty")
+
+    # 4. Prepare training data on train side only.
     logger.info("Step 3: Preparing training data...")
-    X, y, selected_features = model_trainer.prepare_data(data, symbol)
-    logger.info(f"  X shape: {X.shape}, y shape: {y.shape}")
+    X_train, y_train, selected_features = model_trainer.prepare_data(train_data, symbol)
+    X_test = _build_test_matrix(test_data_raw, selected_features)
+    if len(X_train) == 0 or len(X_test) == 0:
+        raise ValueError("Invalid processed split: empty X_train or X_test")
 
-    # 4. PROPER TRAIN/TEST SPLIT (chronological, no shuffling)
-    test_start = getattr(config, 'TEST_START_DATE', None)
-    if test_start and isinstance(X.index, pd.DatetimeIndex):
-        # Date-based split
-        test_start_ts = pd.Timestamp(test_start)
-        X_train = X[X.index < test_start_ts]
-        X_test = X[X.index >= test_start_ts]
-        y_train = y[y.index < test_start_ts]
-        y_test = y[y.index >= test_start_ts]
-    else:
-        # Fallback to percentage split
-        split_idx = int(len(X) * (1 - config.TEST_SIZE))
-        X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-        y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
-
-    # Get the corresponding data rows for the test set (for backtesting)
-    test_data = data.loc[X_test.index]
+    # Get aligned test rows for backtesting
+    test_data = test_data_raw.loc[X_test.index]
 
     if len(X_test) > 0 and isinstance(X_test.index, pd.DatetimeIndex):
         logger.info(f"  Train: {len(X_train)} samples ({str(X_train.index[0])[:10]} to {str(X_train.index[-1])[:10]})")

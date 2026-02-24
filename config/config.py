@@ -26,7 +26,7 @@ for directory in [DATA_DIR, MODELS_DIR, RESULTS_DIR, LOGS_DIR]:
 # ============================================================================
 
 # Cryptocurrency symbols to test
-SYMBOLS = ["AVAXUSDT"]
+SYMBOLS = ["LINKUSDT"]
 
 # Binance API settings
 BINANCE_INTERVAL = "4h"  # Daily candles
@@ -96,7 +96,7 @@ RANDOM_SEED = 42  # Global seed for reproducible results
 # ============================================================================
 
 # Model type
-MODEL_TYPE = "lgbm"  # Options: lgbm, xgboost, catboost, hist_gradient_boosting, extra_trees, random_forest, logistic_regression, neural_network
+MODEL_TYPE = "xgboost"  # Options: lgbm, xgboost, catboost, hist_gradient_boosting, extra_trees, random_forest, logistic_regression, neural_network
 
 # LightGBM parameters
 LGBM_PARAMS = {
@@ -119,13 +119,15 @@ LGBM_PARAMS = {
 XGB_PARAMS = {
     "objective": "multi:softprob",
     "num_class": 3,
-    "n_estimators": 300,
-    "learning_rate": 0.05,
-    "max_depth": 7,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "reg_alpha": 1.0,
-    "reg_lambda": 1.0,
+    "n_estimators": 200,
+    "learning_rate": 0.06998753874644001,
+    "max_depth": 8,
+    "subsample": 0.6,
+    "colsample_bytree": 0.9,
+    "min_child_weight": 1.0626980331628988,
+    "gamma": 1.111719347380661,
+    "reg_alpha": 0.026611560580938887,
+    "reg_lambda": 0.027726942220707648,
     "verbosity": 0,
     "eval_metric": "mlogloss",
 }
@@ -180,8 +182,8 @@ VALIDATION_SIZE = 0.1
 
 # Target creation for training
 TARGET_WINDOW = 150  # Rolling window for target creation
-BUY_THRESHOLD = 0.70  # Percentile threshold for buy signals
-SELL_THRESHOLD = 0.08  # Percentile threshold for sell signals
+BUY_THRESHOLD = 0.98  # Percentile threshold for buy signals
+SELL_THRESHOLD = 0.16  # Percentile threshold for sell signals
 TARGET_METHOD = "triple_barrier"  # Options: "percentile", "triple_barrier"
 TARGET_HORIZON_BARS = 12  # Label horizon (2h bars => 24h)
 TARGET_NEUTRAL_BAND = 0.0015  # Neutral zone if no barrier is hit
@@ -193,11 +195,11 @@ TARGET_MIN_ATR_PCT = 0.002
 
 # Signal filtering
 USE_ATR_FILTER = True
-ATR_THRESHOLD = 1.0  # Multiples of ATR for signal filtering
+ATR_THRESHOLD = 1.9  # Multiples of ATR for signal filtering
 
 # Signal confidence scoring
 USE_SIGNAL_CONFIDENCE = True
-CONFIDENCE_THRESHOLD = 0.50  # Minimum confidence to take a trade
+CONFIDENCE_THRESHOLD = 0.45  # Minimum confidence to take a trade
 SIGNAL_MARGIN_THRESHOLD = 0.08  # Min (top_prob - second_prob) for Buy/Sell
 
 # ============================================================================
@@ -212,8 +214,8 @@ TRADING_FEE = 0.001  # 0.1% per trade (typical for Binance)
 SLIPPAGE = 0.0005  # 0.05% average slippage
 
 # Risk management
-STOP_LOSS = 0.05  # 5% stop loss
-TAKE_PROFIT = 0.15  # 10% take profit
+STOP_LOSS = 0.08  # 8% stop loss
+TAKE_PROFIT = 0.20  # 20% take profit
 
 # Position sizing
 POSITION_SIZE = 1.0  # Full capital per trade (can be adjusted for risk management)
@@ -290,7 +292,8 @@ SENSITIVITY_PARAMS = {
 # Objective mode:
 # - "robust_windows": score trial on multiple validation windows (recommended)
 # - "single_split": legacy score on one validation block
-OPTUNA_OBJECTIVE_MODE = "robust_windows"
+# - "return_first": maximize raw return with soft DD/trade constraints
+OPTUNA_OBJECTIVE_MODE = "return_first"
 
 # Robust objective windowing
 OPTUNA_VALID_WINDOWS = 5
@@ -319,8 +322,22 @@ OPTUNA_MIN_RETURN_PCT = 0.0
 OPTUNA_MIN_RETURN_HARD_FLOOR_PCT = -12.0
 OPTUNA_RETURN_SHORTFALL_PENALTY = 0.15
 
+# Return-first controls (used only when OPTUNA_OBJECTIVE_MODE="return_first")
+OPTUNA_RETURN_FIRST_MAX_DRAWDOWN_PCT = 35.0
+OPTUNA_RETURN_FIRST_DRAWDOWN_PENALTY = 0.20
+OPTUNA_RETURN_FIRST_MIN_TRADES = 40
+OPTUNA_RETURN_FIRST_TRADE_PENALTY = 0.25
+OPTUNA_RETURN_FIRST_SHARPE_TIEBREAKER = 0.10
+
 # Tune model-level hyperparameters inside Optuna objective.
 OPTUNA_TUNE_MODEL_PARAMS = True
+
+# Apply tuned params only if they beat baseline on validation split.
+OPTUNA_APPLY_VALIDATION_GATE = True
+OPTUNA_GATE_MIN_RETURN_DELTA_PCT = 0.0
+OPTUNA_GATE_MIN_SHARPE_DELTA = -0.10
+OPTUNA_GATE_MAX_DRAWDOWN_DELTA_PCT = 5.0
+OPTUNA_GATE_MIN_TRADES = 5
 
 # ============================================================================
 # OUTPUT SETTINGS

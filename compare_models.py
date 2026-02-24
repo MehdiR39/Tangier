@@ -44,6 +44,30 @@ logger = logging.getLogger(__name__)
 MODEL_TYPES = SUPPORTED_MODEL_TYPES.copy()
 
 
+def _split_raw_train_test(data: pd.DataFrame):
+    """Chronological split on raw feature data (before target/feature selection)."""
+    test_start = getattr(config, 'TEST_START_DATE', None)
+    if test_start and isinstance(data.index, pd.DatetimeIndex):
+        test_start_ts = pd.Timestamp(test_start)
+        train_data = data[data.index < test_start_ts]
+        test_data = data[data.index >= test_start_ts]
+    else:
+        split_idx = int(len(data) * (1 - config.TEST_SIZE))
+        train_data = data.iloc[:split_idx]
+        test_data = data.iloc[split_idx:]
+    return train_data, test_data
+
+
+def _build_test_matrix(test_data: pd.DataFrame, selected_features: list) -> pd.DataFrame:
+    """Build inference matrix on test side using train-selected features only."""
+    feature_cols = [c for c in selected_features if c in test_data.columns]
+    if not feature_cols:
+        return pd.DataFrame(index=test_data.index)
+    X_test = test_data[feature_cols].copy()
+    X_test = X_test.replace([np.inf, -np.inf], np.nan).dropna()
+    return X_test
+
+
 def _auto_allocate_workers(total_workers: int, n_symbols: int, n_models: int):
     """
     Auto-dispatch total workers across symbol-level and model-level parallelism.
@@ -148,31 +172,23 @@ def compare_models_for_symbol(symbol: str, model_workers: int = 1, model_types: 
     data = feature_engineer.engineer_features(data, symbol)
     logger.info(f"  Features: {len(data.columns)} columns, {len(data)} rows")
 
-    # 3. Prepare training data (shared target creation and feature selection)
-    logger.info("Step 3: Preparing training data...")
-    base_trainer = ModelTrainer(config)
-    X, y, selected_features = base_trainer.prepare_data(data, symbol)
-    logger.info(f"  X shape: {X.shape}, y shape: {y.shape}")
-
-    # 4. Chronological train/test split (shared)
-    test_start = getattr(config, 'TEST_START_DATE', None)
-    if test_start and isinstance(X.index, pd.DatetimeIndex):
-        test_start_ts = pd.Timestamp(test_start)
-        X_train = X[X.index < test_start_ts]
-        X_test = X[X.index >= test_start_ts]
-        y_train = y[y.index < test_start_ts]
-        y_test = y[y.index >= test_start_ts]
-    else:
-        split_idx = int(len(X) * (1 - config.TEST_SIZE))
-        X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-        y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
-
-    if len(X_train) == 0 or len(X_test) == 0:
+    # 3. Chronological split on RAW data to avoid target/feature-selection leakage.
+    train_data, test_data_raw = _split_raw_train_test(data)
+    if len(train_data) == 0 or len(test_data_raw) == 0:
         logger.error("Invalid train/test split: one side is empty")
         return []
 
-    test_data = data.loc[X_test.index]
-    logger.info(f"  Train: {len(X_train)} | Test: {len(X_test)}")
+    # 4. Prepare training data using train side only.
+    logger.info("Step 3: Preparing training data...")
+    base_trainer = ModelTrainer(config)
+    X_train, y_train, selected_features = base_trainer.prepare_data(train_data, symbol)
+    X_test = _build_test_matrix(test_data_raw, selected_features)
+    if len(X_train) == 0 or len(X_test) == 0:
+        logger.error("Invalid processed split: empty X_train or X_test after feature filtering")
+        return []
+
+    test_data = test_data_raw.loc[X_test.index]
+    logger.info(f"  X_train: {X_train.shape} | X_test: {X_test.shape}")
 
     # 5. Train and test each model independently
     results_list = []
