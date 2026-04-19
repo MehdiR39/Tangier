@@ -28,6 +28,16 @@ for directory in [DATA_DIR, MODELS_DIR, RESULTS_DIR, LOGS_DIR]:
 # Cryptocurrency symbols to test
 SYMBOLS = ["AVAXUSDT"]
 
+# ---- Stock scanner settings (used by scanner.py) ----
+STOCK_INTERVAL = "1d"           # yfinance interval: 1d, 1h, 1wk...
+# Small default universe — for the full S&P 500 run `scanner.py --universe sp500`
+STOCK_UNIVERSE = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO",
+    "JPM", "V", "UNH", "XOM", "LLY", "MA", "HD", "PG", "COST", "ABBV",
+    "CVX", "MRK", "KO", "PEP", "BAC", "WMT", "ADBE", "CRM", "NFLX",
+    "TMO", "MCD", "ABT",
+]
+
 # Binance API settings
 BINANCE_INTERVAL = "2h"  # 4-hour candles
 BINANCE_START_TIME = "4 years ago UTC"  # Historical data period (used only if dates below are None)
@@ -134,8 +144,11 @@ VALIDATION_SIZE = 0.1
 
 # Target creation for training
 TARGET_WINDOW = 150  # Rolling window for target creation
-BUY_THRESHOLD = 0.90  # Percentile threshold for buy signals
-SELL_THRESHOLD = 0.10  # Percentile threshold for sell signals
+BUY_THRESHOLD = 0.80  # Percentile threshold for buy signals (top 20%)
+SELL_THRESHOLD = 0.20  # Percentile threshold for sell signals (bottom 20%)
+
+# Multi-horizon target (set to None to disable → single-horizon as before)
+TARGET_HORIZONS = [5, 20]  # Predict at both 5-day and 20-day forward returns
 
 # Signal filtering
 USE_ATR_FILTER = True

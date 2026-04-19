@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tangier.dailysignals</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/miniconda3/bin/python</string>
+        <string>/Users/mehdiraqui/Documents/tangier_L/daily_signals.py</string>
+        <string>--universe</string>
+        <string>sp500</string>
+        <string>--top</string>
+        <string>20</string>
+        <string>--min-quality</string>
+        <string>60</string>
+        <string>--min-dollar-volume</string>
+        <string>50000000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/mehdiraqui/Documents/tangier_L</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/mehdiraqui/Documents/tangier_L/logs/daily_signals.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/mehdiraqui/Documents/tangier_L/logs/daily_signals.err</string>
+
+    <!-- Runs Mon-Fri at 13:00 local time (~8am ET pre-market) -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Weekday</key><integer>1</integer>
+            <key>Hour</key><integer>13</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>2</integer>
+            <key>Hour</key><integer>13</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>3</integer>
+            <key>Hour</key><integer>13</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>4</integer>
+            <key>Hour</key><integer>13</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>5</integer>
+            <key>Hour</key><integer>13</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

@@ -49,39 +49,60 @@ class TargetCreator:
     def create_targets(self, data: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """
         Create multi-class targets (0=Sell, 1=Hold, 2=Buy) based on FUTURE returns.
-        Uses forward-looking returns to properly label what the model should predict.
+
+        Multi-horizon logic (Prop 5):
+            If config.TARGET_HORIZONS = [h1, h2, ...] is set, the target requires
+            agreement across ALL horizons to fire a Buy/Sell, making the signal
+            more robust (less horizon-specific noise).
+
+        Single-horizon fallback: if TARGET_HORIZONS is None, uses the legacy 5-bar
+        behavior.
         """
         data = data.copy()
+        horizons = getattr(self.config, "TARGET_HORIZONS", None) or [5]
+        max_h = max(horizons)
 
-        # Calculate future returns (next N periods)
-        # This is what we want to PREDICT - will the price go up or down?
-        future_return = data['Close'].pct_change(periods=5).shift(-5)
+        # Per-horizon percentile labels
+        horizon_labels = []
+        for h in horizons:
+            fwd_ret = data['Close'].pct_change(periods=h).shift(-h)
+            rolling_pct = fwd_ret.rolling(
+                window=self.config.TARGET_WINDOW, min_periods=50
+            ).apply(
+                lambda x: pd.Series(x).rank(pct=True).iloc[-1] if len(x) > 1 else np.nan,
+                raw=False,
+            )
+            lbl = pd.Series(1, index=data.index, dtype='float')
+            lbl[rolling_pct >= self.config.BUY_THRESHOLD] = 2
+            lbl[rolling_pct <= self.config.SELL_THRESHOLD] = 0
+            lbl[rolling_pct.isna()] = np.nan
+            horizon_labels.append(lbl)
 
-        # Use rolling percentile to create adaptive thresholds
-        rolling_percentile = future_return.rolling(
-            window=self.config.TARGET_WINDOW, min_periods=50
-        ).apply(lambda x: pd.Series(x).rank(pct=True).iloc[-1] if len(x) > 1 else np.nan, raw=False)
+        # Consensus: Buy only if all horizons say Buy; Sell only if all say Sell.
+        # Otherwise Hold.
+        if len(horizon_labels) == 1:
+            data['Target'] = horizon_labels[0]
+        else:
+            stacked = pd.concat(horizon_labels, axis=1)
+            all_buy = (stacked == 2).all(axis=1)
+            all_sell = (stacked == 0).all(axis=1)
+            target = pd.Series(1, index=data.index, dtype='float')
+            target[all_buy] = 2
+            target[all_sell] = 0
+            target[stacked.isna().any(axis=1)] = np.nan
+            data['Target'] = target
 
-        # Create target labels
-        data['Target'] = 1  # Default to Hold
-
-        # Buy signals: high future returns + uptrend confirmation
-        buy_condition = (rolling_percentile >= self.config.BUY_THRESHOLD)
-        data.loc[buy_condition, 'Target'] = 2
-
-        # Sell signals: low future returns + downtrend confirmation
-        sell_condition = (rolling_percentile <= self.config.SELL_THRESHOLD)
-        data.loc[sell_condition, 'Target'] = 0
-
-        # Remove rows where we can't compute future returns (last 5 rows)
+        # Drop rows where target is NaN (early rows, last max_h rows)
         data = data.dropna(subset=['Target'])
-        # Remove the last 5 rows that have look-ahead bias in target
-        data = data.iloc[:-5]
+        data = data.iloc[:-max_h] if max_h > 0 else data
+        data['Target'] = data['Target'].astype(int)
 
-        # Log class distribution
         class_dist = data['Target'].value_counts().sort_index()
-        logger.info(f"{symbol} - Target distribution: Sell={class_dist.get(0, 0)}, Hold={class_dist.get(1, 0)}, Buy={class_dist.get(2, 0)}")
-
+        logger.info(
+            f"{symbol} - Target distribution (horizons={horizons}): "
+            f"Sell={class_dist.get(0, 0)}, Hold={class_dist.get(1, 0)}, "
+            f"Buy={class_dist.get(2, 0)}"
+        )
         return data
 
 
@@ -286,7 +307,9 @@ class ModelTrainer:
             learning_rate=0.05, num_leaves=31, max_depth=7,
             min_data_in_leaf=20, feature_fraction=0.8,
             bagging_fraction=0.8, bagging_freq=5,
-            lambda_l1=1.0, lambda_l2=1.0, verbose=-1, random_state=self.seed
+            lambda_l1=1.0, lambda_l2=1.0, verbose=-1,
+            random_state=self.seed,
+            class_weight='balanced',  # compensates class imbalance at inference
         )
         model.fit(X, y, eval_set=[(X, y)],
                   callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)])
@@ -336,7 +359,11 @@ class ModelTrainer:
             raise ValueError("Model not trained yet")
         if X is None or len(X) == 0:
             return np.empty((0, 3))
-        X_scaled = self.scaler.transform(X)
+        X_scaled = pd.DataFrame(
+            self.scaler.transform(X),
+            columns=X.columns if hasattr(X, "columns") else None,
+            index=X.index if hasattr(X, "index") else None,
+        )
         return self.model.predict_proba(X_scaled)
 
     def predict_signals(self, X: pd.DataFrame, confidence_threshold: float = None) -> np.ndarray:

@@ -150,6 +150,9 @@ class FeatureEngineer:
         data = self._add_trend_indicators(data)
         data = self._add_volume_indicators(data)
 
+        if getattr(self.config, "ENABLE_CANDLESTICK_PATTERNS", False):
+            data = self._add_candlestick_patterns(data)
+
         if self.config.LAG_INDICATORS:
             data = self._lag_all_indicators(data)
 
@@ -226,6 +229,10 @@ class FeatureEngineer:
         data['VROC'] = _roc(data['Volume'], 12)
         data['MFI'] = _mfi(data['High'], data['Low'], data['Close'], data['Volume'], 14)
         return data
+
+    def _add_candlestick_patterns(self, data: pd.DataFrame) -> pd.DataFrame:
+        from src.candlestick_patterns import add_all_patterns
+        return add_all_patterns(data)
 
     def _lag_all_indicators(self, data: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
         exclude_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Returns', 'Log_Returns']
