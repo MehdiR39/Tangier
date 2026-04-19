@@ -276,8 +276,11 @@ def main():
                         help="Number of top signals to scan (before filtering)")
     parser.add_argument("--retrain", action="store_true",
                         help="Force model retrain")
-    parser.add_argument("--min-quality", type=float, default=60.0,
-                        help="Minimum signal_quality_pct")
+    parser.add_argument("--min-quality", type=float, default=50.0,
+                        help="Minimum signal_quality_pct (empirical sweet spot: 50-55)")
+    parser.add_argument("--max-quality", type=float, default=70.0,
+                        help="Upper bound — signals above this are paradoxically "
+                             "worse (poor calibration, empirical result)")
     parser.add_argument("--min-dollar-volume", type=float, default=50e6,
                         help="Minimum 20d avg $-volume")
     parser.add_argument("--earnings-days-ahead", type=int, default=7)
@@ -346,6 +349,9 @@ def main():
     else:
         if args.min_quality > 0:
             top = top[top["signal_quality_pct"] >= args.min_quality].reset_index(drop=True)
+        if args.max_quality < 100:
+            # Upper bound: empirically, proba > 70% is worse than random
+            top = top[top["signal_quality_pct"] <= args.max_quality].reset_index(drop=True)
 
         # --- Enrichment with events ---
         if top.empty:
