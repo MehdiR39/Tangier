@@ -1,4 +1,5 @@
 services:
+  # Interactive dev container — `docker compose run --rm tangier`
   tangier:
     build:
       context: .
@@ -13,3 +14,20 @@ services:
     tty: true
     stdin_open: true
     command: bash
+
+  # Daily signals — runs once via scheduler, exits cleanly.
+  # Invoke: `docker compose run --rm daily-signals`
+  # Override command line args by appending: `... daily-signals python daily_signals.py --dry-run`
+  daily-signals:
+    image: tangier-bot:latest
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: >
+      python daily_signals.py
+      --universe sp500
+      --top 20
+      --min-quality 60
+      --min-dollar-volume 50000000
