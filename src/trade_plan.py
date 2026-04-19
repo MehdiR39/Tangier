@@ -86,8 +86,31 @@ def build_trade_plan(
         return {}
 
     last_bar = ohlcv.iloc[-1]
-    atr = float(last_bar.get("ATR", close * 0.02))   # 2% fallback if ATR missing
-    sma_20 = float(last_bar.get("SMA_20", close))
+
+    # SMA_20 : prefer the engineered column, else compute from Close history
+    sma_20_col = last_bar.get("SMA_20")
+    if sma_20_col is not None and pd.notna(sma_20_col) and float(sma_20_col) > 0:
+        sma_20 = float(sma_20_col)
+    elif len(ohlcv) >= 20:
+        sma_20 = float(ohlcv["Close"].tail(20).mean())
+    else:
+        sma_20 = close
+
+    # ATR : prefer engineered column, else compute Wilder true-range on the fly
+    atr_col = last_bar.get("ATR")
+    if atr_col is not None and pd.notna(atr_col) and float(atr_col) > 0:
+        atr = float(atr_col)
+    elif len(ohlcv) >= 14:
+        H, L, C = ohlcv["High"], ohlcv["Low"], ohlcv["Close"]
+        tr = pd.concat([
+            H - L,
+            (H - C.shift(1)).abs(),
+            (L - C.shift(1)).abs(),
+        ], axis=1).max(axis=1)
+        atr = float(tr.tail(14).mean())
+    else:
+        atr = close * 0.02
+
     if not np.isfinite(atr) or atr <= 0:
         atr = close * 0.02
 
@@ -114,7 +137,12 @@ def build_trade_plan(
             target_2 = None
 
         risk = entry_mid - stop
-        trigger = f"close > SMA_20 (${sma_20:.2f}) in next 2 bars"
+        # Adaptive trigger: describe the confirmation to WAIT for
+        if close < sma_20:
+            trigger = f"attendre close > SMA_20 (${sma_20:.2f})"
+        else:
+            # Already above → wait for pullback then bullish bar
+            trigger = f"pullback vers ${entry_low:.2f} puis green candle"
 
     else:  # SHORT
         entry_high = close + DEFAULT_ENTRY_ZONE_LOWER_ATR * atr
@@ -133,7 +161,10 @@ def build_trade_plan(
             target_2 = None
 
         risk = stop - entry_mid
-        trigger = f"close < SMA_20 (${sma_20:.2f}) in next 2 bars"
+        if close > sma_20:
+            trigger = f"attendre close < SMA_20 (${sma_20:.2f})"
+        else:
+            trigger = f"rallye vers ${entry_high:.2f} puis red candle"
 
     # Compute R/R
     if target_1 is None or risk <= 0:
