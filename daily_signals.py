@@ -23,7 +23,7 @@ import sys
 import argparse
 import logging
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 
@@ -170,6 +170,7 @@ def format_telegram_message(
     universe_name: str,
     n_total_universe: int,
     max_signals: int = 8,
+    retrain_note: Optional[str] = None,
 ) -> str:
     """
     Build an HTML message for Telegram with full trade plans per signal.
@@ -177,11 +178,14 @@ def format_telegram_message(
     """
     now = datetime.now(timezone.utc)
 
-    header = (
-        f"📊 <b>STOCK SIGNALS — {now:%Y-%m-%d}</b>\n"
+    header_lines = [
+        f"📊 <b>STOCK SIGNALS — {now:%Y-%m-%d}</b>",
         f"<i>universe: {universe_name} ({n_total_universe} tickers) · "
-        f"generated: {now:%H:%M UTC}</i>\n"
-    )
+        f"generated: {now:%H:%M UTC}</i>",
+    ]
+    if retrain_note:
+        header_lines.append(f"🔄 <i>model retrained ({retrain_note})</i>")
+    header = "\n".join(header_lines) + "\n"
 
     if enriched.empty and dropped.empty:
         return header + "\n<i>No signals today.</i>"
@@ -281,6 +285,9 @@ def main():
     parser.add_argument("--max-quality", type=float, default=70.0,
                         help="Upper bound — signals above this are paradoxically "
                              "worse (poor calibration, empirical result)")
+    parser.add_argument("--retrain-if-older-than-days", type=int, default=7,
+                        help="Force retrain if saved model is older than N days. "
+                             "Set to 0 to disable auto-retrain.")
     parser.add_argument("--min-dollar-volume", type=float, default=50e6,
                         help="Minimum 20d avg $-volume")
     parser.add_argument("--earnings-days-ahead", type=int, default=7)
@@ -336,16 +343,42 @@ def main():
     # --- Training frame + model load/retrain ---
     training, featured = build_training_frame(data_enriched, fe, tc)
 
-    model_loaded = (not args.retrain) and trainer.load_model(SCANNER_MODEL_NAME)
-    if not model_loaded:
-        logger.info("Training global model...")
+    # --- Model loading with auto-retrain based on age ---
+    model_path = os.path.join(
+        config.MODELS_DIR, f"{SCANNER_MODEL_NAME}_lgbm_model.pkl"
+    )
+    model_age_days = None
+    if os.path.exists(model_path):
+        import time as _time
+        model_age_days = (_time.time() - os.path.getmtime(model_path)) / 86400
+
+    force_retrain = args.retrain
+    retrain_reason = None
+    if not force_retrain:
+        if model_age_days is None:
+            force_retrain, retrain_reason = True, "no saved model"
+        elif args.retrain_if_older_than_days > 0 and \
+             model_age_days > args.retrain_if_older_than_days:
+            force_retrain = True
+            retrain_reason = (
+                f"model age {model_age_days:.1f}d > "
+                f"{args.retrain_if_older_than_days}d threshold"
+            )
+
+    retrain_note = None
+    if force_retrain:
+        logger.info(f"Training global model ({retrain_reason or 'manual --retrain'})...")
         train_global_model(training, trainer)
+        retrain_note = retrain_reason or "manual --retrain"
+    else:
+        trainer.load_model(SCANNER_MODEL_NAME)
+        logger.info(f"Loaded existing model (age: {model_age_days:.1f}d)")
 
     # --- Scan ---
     top = scan(featured, trainer, top_n=args.top)
     if top.empty:
         logger.warning("No signals generated")
-        msg = format_telegram_message(top, top, args.universe, n_universe)
+        msg = format_telegram_message(top, top, args.universe, n_universe, retrain_note=retrain_note)
     else:
         if args.min_quality > 0:
             top = top[top["signal_quality_pct"] >= args.min_quality].reset_index(drop=True)
@@ -377,7 +410,10 @@ def main():
         append_to_history(enriched)
 
         # --- Format ---
-        msg = format_telegram_message(enriched, dropped, args.universe, n_universe)
+        msg = format_telegram_message(
+            enriched, dropped, args.universe, n_universe,
+            retrain_note=retrain_note,
+        )
 
     # --- Deliver ---
     if args.dry_run:
