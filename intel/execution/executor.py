@@ -210,12 +210,18 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
             except (TypeError, ValueError, KeyError):
                 liq_usd = None
     check_limits = limits
+    if str(d.get("model_version") or "").startswith("t1-shadow"):
+        # A shadow decision is measured, never sent. Judging it against the real book's quote
+        # whitelist refused every USDG launch (2026-09-07) -- which is precisely the question the
+        # paper book exists to answer. Every other ceiling still applies, so the simulation stays
+        # comparable to the real book.
+        check_limits = dataclasses.replace(limits, allowed_quotes=tuple(ctx.config.quote_assets.keys()))
     if is_t1:
         # The scanner's 20 000 $ floor describes tokens hours old. For a 5 EUR entry at T+1 the
         # relevant question is whether the ticket moves the pool, and 500 $ of quote-side depth
         # keeps that near 1 %; the slippage cap and every daily ceiling still apply unchanged.
         check_limits = dataclasses.replace(
-            limits, min_quote_liquidity_usd=float(ctx.config.get("t1.min_quote_liquidity_usd", 500.0)),
+            check_limits, min_quote_liquidity_usd=float(ctx.config.get("t1.min_quote_liquidity_usd", 500.0)),
             max_slippage_pct=float(ctx.config.get("t1.max_slippage_pct", 8.0)))
     verdict = safety.check(ctx, {"kind": d["kind"], "token": token, "quote": quote_addr,
                                 "size_eur": d.get("size_eur"), "slippage_pct": q.price_impact_pct,
@@ -357,7 +363,7 @@ async def run_once(ctx: IntelContext, *, limit: int = 20) -> dict[str, Any]:
                                 "calldata": order.calldata})
                     log.info("cotation en chaîne %s : %.1f %% sous la cotation calculée, minimum recalculé", order.token[:10], gap * 100)
         if status == "REFUSED":
-            _journal(ctx, d, status="REFUSED", mode=mode, **res)
+            _journal(ctx, d, status="REFUSED", mode="dry_run" if shadow else mode, **res)
             out["refused"] += 1
             log.info("ordre refusé %s %s : %s", d["kind"], d.get("label"), res.get("refused_reason"))
             continue
