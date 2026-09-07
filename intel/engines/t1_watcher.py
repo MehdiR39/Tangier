@@ -482,9 +482,14 @@ class T1Watcher:
                 if n_tries >= retry_max:
                     db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_price=?, close_reason=?, realized_eur=? WHERE id=?",
                                (now, price, f"invendable après {n_tries} essais ({last['status']})", -float(p["size_eur"] or 0), p["id"]))
-                    log.warning("t1 position abandonnee %s : vente refusee %d fois", token[:10], n_tries)
+                    # Written off, not thrown away. On 2026-09-07 five lines were declared a total
+                    # loss after five refusals inside one minute -- and hours later the same tokens
+                    # were worth 18.68 EUR, on pools that were still trading. The loss stays on the
+                    # books until a sale replaces it, and the recovery pass keeps asking for hours.
+                    log.warning("t1 %s : vente refusee %d fois, ligne mise de cote (reprise dans %d min)",
+                                token[:10], n_tries, int(self._cfg("recover_interval_seconds", 600)) // 60)
                     continue
-                if now - int(last["ts"]) < 15:
+                if now - int(last["ts"]) < int(self._cfg("retry_gap_seconds", 20)):
                     continue                                       # let the next try see a fresh state
             age = now - int(p["opened_ts"])
             reason = None

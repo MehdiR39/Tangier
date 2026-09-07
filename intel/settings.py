@@ -437,7 +437,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Depth floor for a T+1 entry, in place of the scanner's 20 000 $ (which describes tokens
         # hours old). 500 $ of quote-side depth keeps a 5 EUR ticket's impact near 1 %; the 5 %
         # slippage cap and the daily ceilings in `execution` still apply unchanged.
-        "min_quote_liquidity_usd": 500.0, "take_profit_multiple": 2.0, "max_hold_seconds": 300, "sell_retry_max": 5, "max_slippage_pct": 8.0,
+        "min_quote_liquidity_usd": 500.0, "take_profit_multiple": 2.0, "max_hold_seconds": 300, "sell_retry_max": 8, "retry_gap_seconds": 20, "recover_interval_seconds": 600, "recover_max": 40, "recover_per_cycle": 6, "sell_slippage_pct": 25.0, "max_slippage_pct": 8.0,
     },
     "decisions": {
         # The user only hears ACHÈTE / VENDS. The book stays virtual unless the execution

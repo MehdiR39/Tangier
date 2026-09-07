@@ -249,3 +249,20 @@ def test_dry_run_still_prices_against_real_pool_state():
     d2 = dict(ctx2.db.query_one("SELECT * FROM decisions WHERE id=?", (_decision(ctx2),)))
     thin = float(prepare(ctx2, d2, limits=safety.Limits.from_config(ctx2))["slippage_pct"])
     assert thin > deep, f"un pool plus mince doit coûter plus cher: {thin} vs {deep}"
+
+
+def test_a_sell_never_asks_for_more_than_the_wallet_holds():
+    """A balance past 2^53 must survive the trip through prepare() exactly.
+
+    `held_raw * 1.0` rounds UP above 2^53: on 2026-09-07 the engine asked to sell
+    3562110037979391066112 of a balance of 3562110037979390964595 and every such sale reverted
+    with TRANSFER_FROM_FAILED, which the book recorded as "unsellable".
+    """
+    held = 3562110037979390964595
+    assert int(held * 1.0) > held, "sans ce piege le test ne prouve rien"
+    ctx = _ctx()
+    _pool(ctx, POOL, 200, liquidity=10 ** 24)
+    _market(ctx)
+    d = dict(ctx.db.query_one("SELECT * FROM decisions WHERE id=?", (_decision(ctx, kind=safety.SELL_ALL),)))
+    res = prepare(ctx, d, limits=safety.Limits.from_config(ctx), held_raw=held)
+    assert int(res["amount_in"]) <= held

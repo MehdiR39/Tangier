@@ -145,9 +145,16 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
         # What WE hold, never what the chain holds. Reading an observed holder's balance here
         # sized a sell from a whale's bag and produced a 103 352 % price impact (2026-09-04):
         # the book's own position is the only honest source.
-        share = 0.5 if d["kind"] == safety.SELL_HALF else 1.0
+        half = d["kind"] == safety.SELL_HALF
+        share = 0.5 if half else 1.0
         if held_raw is not None:
-            amount_in = int(held_raw * share)
+            # Integer arithmetic, never a float. A token balance runs past 10^21 raw units, well
+            # beyond the 2^53 a float can hold exactly, so `held_raw * 1.0` rounds UP: on
+            # 2026-09-07 the book asked to sell 3562110037979391066112 of a balance of
+            # 3562110037979390964595 -- a hundred thousandth of a percent too much -- and the chain
+            # answered TRANSFER_FROM_FAILED. Four bags worth 18 EUR were written off as
+            # "unsellable" for that, and the day was reported 18 EUR worse than it was.
+            amount_in = (held_raw // 2) if half else held_raw
         else:
             decimals = ctx.db.scalar("SELECT decimals FROM tokens WHERE chain_id=? AND address=?", (ctx.chain_id, token))
             if decimals is None:
@@ -241,8 +248,15 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
     # A T+1 pool moves several percent between the quote and the block that includes us; a 0.5 %
     # tolerance would only ever buy the pumps that have already stalled. The tolerance is the
     # book's own ceiling for these orders (t1.max_slippage_pct), never the scanner's.
-    slippage = (float(check_limits.max_slippage_pct) if is_t1
-                else min(limits.max_slippage_pct, max(0.5, q.price_impact_pct * 2)))
+    # Leaving is not entering. A sale refused for a minimum set too high (ROBIN, 2026-09-07,
+    # V4TooLittleReceived on a pool that was still trading) is a position abandoned for nothing,
+    # and the chain quote below already sets that minimum from what the pool really returns.
+    if is_t1 and not is_buy:
+        slippage = float(ctx.config.get("t1.sell_slippage_pct", 25.0))
+    elif is_t1:
+        slippage = float(check_limits.max_slippage_pct)
+    else:
+        slippage = min(limits.max_slippage_pct, max(0.5, q.price_impact_pct * 2))
     order = ord_mod.build_swap(
         key=key, token=token, quote=quote_addr, kind=d["kind"], zero_for_one=zero_for_one, amount_in=amount_in,
         quoted_amount_out=q.amount_out, slippage_pct=slippage,
