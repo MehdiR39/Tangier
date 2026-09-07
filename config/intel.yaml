@@ -113,7 +113,10 @@ execution:
   # sur nos pools (164 000 swaps/24 h), poolManager() = 0x8366a39c..., simulation OK avec et sans hook.
   router: "0x8876789976decbfcbbbe364623c63652db8c0904"
   # Ce que le pool rend en moins par rapport a la cotation calculee (taxe du token/hook a l achat).
-  # A 19 % (0x319c5b3f, 14:47) on ne peut pas viser x2 en cinq minutes ; 10 % est le plafond.
-  max_hook_tax_pct: 10
+  # Mesure le 2026-09-07 sur 90 issues (simulation rejouee + livre reel) : l esperance par ticket
+  # de 5 EUR vaut +1,30 EUR a 10 % de taxe, +0,60 EUR a 20 %, +0,25 EUR a 25 %, et devient negative
+  # vers 28 %. Le plafond de 10 % refusait donc des achats encore rentables ; 20 % garde huit points
+  # de marge sous le point mort, mesure sur une seule journee.
+  max_hook_tax_pct: 20
   allowed_quotes:
     - "0x0000000000000000000000000000000000000000"
