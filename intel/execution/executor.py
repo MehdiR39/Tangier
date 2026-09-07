@@ -338,6 +338,18 @@ async def run_once(ctx: IntelContext, *, limit: int = 20) -> dict[str, Any]:
         order = res.pop("order", None)
         key = res.pop("key", None)
         status = res.pop("status")
+        # The paper book asks the chain the same question and records the answer, but never lets it
+        # refuse: the tax ceiling was set by judgement on four tickets, and a ceiling can only be
+        # placed where the outcomes of the buys it refuses have been measured.
+        if status == "BUILT" and shadow and order is not None and key is not None:
+            try:
+                actual = await chain_actual_out(ctx, order, key)
+            except Exception:  # noqa: BLE001
+                actual = None
+            if actual is not None and order.quoted_amount_out > 0:
+                gap = 1.0 - actual / order.quoted_amount_out
+                res["refused_reason"] = f"taxe mesurée {gap * 100:.1f} %"
+                res["quoted_amount_out"] = str(actual)
         if status == "BUILT" and mode == "live" and not shadow and order is not None and key is not None:
             # Replace the math quote by the chain's own answer before anything is signed.
             actual = await chain_actual_out(ctx, order, key)
