@@ -256,7 +256,9 @@ class TelegramCommands:
             pass
         vn, vw, vp, vl, vle = tally("VIRTUAL")
         if vn or vl:
-            out += ["", f"<i>Carnet à blanc : {vn} vendues, {self._eur(vp)}</i>"]
+            # The sold half alone read as a profit while the simulation's own write-offs were
+            # larger (2026-09-07: +98 shown, -207 hidden). One number, the net, or none.
+            out += ["", f"<i>Carnet à blanc : {self._eur(vp + vle)} ({vn} vendues, {vl} non vendues)</i>"]
         if t1_paused(self.ctx):
             out += ["", "⏸ Achats en pause · /resume"]
         return NL.join(out)
