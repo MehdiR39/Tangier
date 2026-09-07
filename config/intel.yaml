@@ -98,6 +98,14 @@ decisions:
 # execution.mode is deliberately set to live, separately.
 t1:
   enabled: true
+  # Plafond sur le compteur d entree, ajoute le 2026-09-07 apres une journee reelle perdante.
+  # Au-dela de 60 echanges dans la premiere minute, le pool est un bundle qui retire sa liquidite
+  # aussitot : sur 84 pools ETH que ce livre n a PAS achetes (donc sans effet de notre part),
+  # 77 % de ceux sous 60 echanges vivaient encore cinq minutes apres, contre 11 % au-dessus.
+  # Nos propres achats du jour : 6 sous le plafond +57,82 EUR, 13 au-dessus -59,22 EUR.
+  # L historique des 45 jours precedents disait l inverse : c est une tactique qui a change,
+  # pas une loi. Mettre 0 pour retirer le plafond.
+  max_trades: 60
 
 # 2026-09-07: les pools cotes en USDG perdent (historique -6 EUR sur 5, carnet reel -73 EUR sur 42,
 # 24 % de gagnants) la ou les pools ETH gagnent (+159 EUR sur 106). On n achete que les pools ETH.

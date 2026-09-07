@@ -57,7 +57,15 @@ class Runtime:
             except Exception as exc:  # noqa: BLE001
                 log.info("drapeau de redemarrage illisible (%s)", str(exc)[:80])
         if name not in ("history", "digest", "backup", "retention", "t1", "telegram"):  # keep engine_runs meaningful: real cycles only (t1 and telegram poll every few seconds)
-            run_id = self.ctx.db.insert("engine_runs", {"engine": name, "started_ts": started, "finished_ts": None, "ok": None, "tokens_processed": None, "alerts_sent": None, "error": None, "stats_json": None})
+            try:
+                run_id = self.ctx.db.insert("engine_runs", {"engine": name, "started_ts": started, "finished_ts": None, "ok": None, "tokens_processed": None, "alerts_sent": None, "error": None, "stats_json": None})
+            except Exception as exc:  # noqa: BLE001
+                # Bookkeeping must never be able to stop the engine. On 2026-09-07 a long prune held
+                # the database, this insert raised "database is locked" OUTSIDE the try below, the
+                # exception left the loop, and the whole scheduler went down while the process
+                # stayed alive with its HTTP clients closed: two hours of a dead engine that Docker
+                # never restarted because it had not exited.
+                log.warning("journal du cycle %s non écrit (%s) — le cycle continue", name, str(exc)[:80])
         t0 = time.monotonic()
         try:
             stats = await fn()
@@ -216,8 +224,19 @@ class Runtime:
             self.commands = TelegramCommands(self.ctx, self.sender, t1=getattr(self, "t1", None))
             tasks.append(asyncio.create_task(self._loop("telegram", self.commands.run_cycle, 5)))
         try:
-            await asyncio.gather(*tasks)
+            # return_exceptions: one loop dying must not tear the others down mid-flight. Each is
+            # reported, and the engine keeps the rest of its work running.
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for task, res in zip(tasks, results):
+                if isinstance(res, BaseException) and not isinstance(res, asyncio.CancelledError):
+                    log.error("une boucle s'est arrêtée: %s", res)
         except (KeyboardInterrupt, asyncio.CancelledError):
             self._stop.set()
         finally:
+            # Whatever brought us here, nothing must keep spinning against closed clients: cancel
+            # what is left before the context is torn down, then leave for good.
+            self._stop.set()
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
             server.stop()

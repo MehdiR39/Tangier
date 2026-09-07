@@ -205,6 +205,7 @@ class T1Watcher:
     async def _decide(self, head: int) -> int:
         """At T+60 s after the first swap: buy if the pool cleared the bar, then stop watching it."""
         min_trades = int(self._cfg("min_trades", 27))
+        max_trades = int(self._cfg("max_trades", 60))
         window = int(self._cfg("decide_after_blocks", BLOCKS_PER_MIN))
         size = float(self._cfg("size_eur", 5.0))
         per_hour = int(self._cfg("max_per_hour", 20))
@@ -225,8 +226,20 @@ class T1Watcher:
             # Every verdict is recorded, not only the buys. This is the continuous series the
             # regime question needs -- how busy the chain's launches are, minute by minute --
             # and it costs nothing: the watcher already saw every one of these pools.
-            self._observe(pid, w, count, head, count >= min_trades)
+            self._observe(pid, w, count, head, count >= min_trades and not (max_trades and count > max_trades))
             if count < min_trades:
+                continue
+            if max_trades and count > max_trades:
+                # A burst is not enthusiasm past a point, it is a bundle. Measured 2026-09-07 on 84
+                # ETH pools this book did NOT buy, so our own order cannot explain it: below 60
+                # trades in the first minute 77 % were still trading five minutes later, above 60
+                # only 11 %, median life 1.1 minute. Our own money says the same -- 6 buys under the
+                # cap made +57.82 EUR, 13 above it lost 59.22 EUR on the same day.
+                # The historical sample says the opposite (100-200 trades survived best over the
+                # 45 days to 2026-09-06), so this is a tactic that changed, not a law: it is a
+                # config value, and `t1.max_trades: 0` removes the cap.
+                log.info("t1: %s passe la barre (%d swaps) mais depasse le plafond de %d (bundle probable)",
+                         pid[:10], count, max_trades)
                 continue
             # /pause from Telegram: no real order. With t1.shadow (default on) the decision is
             # still written under a shadow model version, which the executor never sends and

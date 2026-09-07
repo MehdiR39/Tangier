@@ -425,7 +425,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Off by default: switching it on only makes the watcher WRITE decisions; the execution
         # section above still has to be deliberately switched live for any order to leave.
         "enabled": False,
-        "min_trades": 27,               # swaps in the first 60 s, the only threshold that held
+        "min_trades": 27, "max_trades": 60,               # swaps in the first 60 s, the only threshold that held
         "decide_after_blocks": 600,     # ~60 s at 0.1 s a block
         "size_eur": 5.0,                # the one ticket size that never lost in any period
         "max_per_hour": 20,
