@@ -226,8 +226,15 @@ class RobustBacktester:
                     position_open = False
                     entry_price = None
 
-            # Record capital at this candle
-            capital_history.append(capital)
+            # Record mark-to-market capital at this candle.
+            if position_open and entry_price is not None and entry_price > 0:
+                mtm_price = close
+                if self.include_slippage:
+                    mtm_price = mtm_price * (1 - self.slippage)
+                mtm_capital = capital * (mtm_price * (1 - self.fee)) / entry_price
+                capital_history.append(float(mtm_capital))
+            else:
+                capital_history.append(float(capital))
 
         # Close open position at the end (exact logic from backtesting_func.py)
         if position_open:

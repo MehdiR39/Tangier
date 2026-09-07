@@ -1,0 +1,6 @@
+{
+  "telegram_bot_token": "123456789:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "telegram_chat_id": "123456789",
+  "cryptopanic_token": "your_cryptopanic_token_here",
+  "coingecko_key": "optional_free_coingecko_demo_key"
+}

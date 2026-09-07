@@ -62,9 +62,11 @@ class DataValidator:
         return True, f"{symbol}: Data validation passed ({len(data)} candles)"
     
     @staticmethod
-    def remove_outliers(data: pd.DataFrame, column: str, std_threshold: float = 5) -> pd.DataFrame:
+    def remove_outliers(data: pd.DataFrame, column: str, std_threshold: float = 5,
+                        min_periods: int = 50) -> pd.DataFrame:
         """
-        Remove statistical outliers from a column.
+        Causally winsorize statistical outliers from a column (do not drop rows).
+        Uses expanding mean/std shifted by one step, so each row only uses past data.
         
         Args:
             data: DataFrame
@@ -72,19 +74,36 @@ class DataValidator:
             std_threshold: Number of standard deviations for outlier detection
         
         Returns:
-            Cleaned DataFrame
+            Cleaned DataFrame (same row count)
         """
         data = data.copy()
-        mean = data[column].mean()
-        std = data[column].std()
-        
-        mask = np.abs((data[column] - mean) / std) <= std_threshold
-        removed = (~mask).sum()
-        
-        if removed > 0:
-            logger.warning(f"Removed {removed} outliers from {column}")
-            data = data[mask]
-        
+        if column not in data.columns or len(data) == 0:
+            return data
+
+        series = pd.to_numeric(data[column], errors='coerce')
+        exp_mean = series.expanding(min_periods=min_periods).mean().shift(1)
+        exp_std = series.expanding(min_periods=min_periods).std(ddof=0).shift(1)
+
+        valid = exp_mean.notna() & exp_std.notna() & (exp_std > 0)
+        if not valid.any():
+            return data
+
+        lower = exp_mean - std_threshold * exp_std
+        upper = exp_mean + std_threshold * exp_std
+
+        clipped = series.copy()
+        clipped_valid = np.minimum(np.maximum(series[valid], lower[valid]), upper[valid])
+        changed = (clipped_valid != series[valid]) & series[valid].notna()
+        outlier_count = int(changed.sum())
+        clipped.loc[valid] = clipped_valid
+        data[column] = clipped
+
+        if outlier_count > 0:
+            logger.warning(
+                f"Causally winsorized {outlier_count} outliers in {column} "
+                f"(std_threshold={std_threshold}, min_periods={min_periods})"
+            )
+
         return data
 
 

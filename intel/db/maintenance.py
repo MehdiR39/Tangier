@@ -78,6 +78,20 @@ def backup_path(src_path: str, dest_path: str) -> str:
 
 
 def rotate_backups(backup_dir: str, keep: int = 4, prefix: str = "intel-") -> list[str]:
+    """Keep the last ``keep`` finished backups, and clear the wreckage of the unfinished ones.
+
+    A backup writes to ``.tmp`` and is renamed only when it completes, so a restart in the middle
+    of one leaves the partial file behind for ever. Rotation matched only finished backups, so
+    those grew unattended: 35 GB of them by 2026-09-07, on a 15 GB database. A ``.tmp`` older than
+    an hour cannot belong to a running backup any more.
+    """
+    for junk in glob.glob(os.path.join(backup_dir, f"{prefix}*.tmp")) + glob.glob(os.path.join(backup_dir, f"{prefix}*.tmp-journal")):
+        try:
+            if time.time() - os.path.getmtime(junk) > 3600:
+                os.remove(junk)
+                log.info("sauvegarde inachevée supprimée: %s", os.path.basename(junk))
+        except OSError:
+            pass
     files = sorted(glob.glob(os.path.join(backup_dir, f"{prefix}*.sqlite")))
     removed = []
     while len(files) > keep:

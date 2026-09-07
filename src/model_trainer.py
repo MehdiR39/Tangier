@@ -16,7 +16,10 @@ from sklearn.model_selection import cross_val_score, TimeSeriesSplit
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
-import lightgbm as lgb
+try:
+    import lightgbm as lgb
+except Exception:
+    lgb = None
 try:
     import xgboost as xgb
 except ImportError:
@@ -99,6 +102,8 @@ class TargetCreator:
         method = str(getattr(self.config, 'TARGET_METHOD', 'percentile')).lower()
         if method == 'triple_barrier':
             labeled = self._create_targets_triple_barrier(data, symbol)
+        elif method == 'tradable_payoff':
+            labeled = self._create_targets_tradable_payoff(data, symbol)
         else:
             labeled = self._create_targets_percentile(data, symbol)
 
@@ -219,6 +224,83 @@ class TargetCreator:
         data = data.iloc[:-horizon]
         return data
 
+    def _create_targets_tradable_payoff(self, data: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """
+        Tradable-aware labeling:
+        - Entry at next bar open.
+        - Exit by ATR-scaled TP/SL barriers or time horizon.
+        - Net return includes fee/slippage proxy.
+        """
+        data = data.copy()
+        n = len(data)
+
+        horizon = max(1, int(getattr(self.config, 'TARGET_HORIZON_BARS', 12)))
+        tp_mult = float(getattr(self.config, 'TARGET_TP_ATR_MULT', 2.0))
+        sl_mult = float(getattr(self.config, 'TARGET_SL_ATR_MULT', 1.2))
+        min_atr_pct = float(getattr(self.config, 'TARGET_MIN_ATR_PCT', 0.002))
+        buy_thr = float(getattr(self.config, 'TARGET_NET_BUY_THRESHOLD', 0.004))
+        sell_thr = float(getattr(self.config, 'TARGET_NET_SELL_THRESHOLD', -0.004))
+        fee = float(getattr(self.config, 'TRADING_FEE', 0.001))
+        slippage = float(getattr(self.config, 'SLIPPAGE', 0.0005))
+        roundtrip_cost = 2.0 * (fee + slippage)
+
+        if n <= (horizon + 1):
+            data['Target'] = 1
+            return data.iloc[0:0]
+
+        open_ = data['Open'].to_numpy(dtype=float)
+        close = data['Close'].to_numpy(dtype=float)
+        high = data['High'].to_numpy(dtype=float)
+        low = data['Low'].to_numpy(dtype=float)
+
+        if 'ATR' in data.columns:
+            atr_pct = (data['ATR'].to_numpy(dtype=float) / (np.abs(close) + 1e-10))
+        else:
+            atr_pct = data['Log_Returns'].rolling(window=20).std().to_numpy(dtype=float)
+
+        finite_vol = atr_pct[np.isfinite(atr_pct) & (atr_pct > 0)]
+        default_vol = float(np.median(finite_vol)) if len(finite_vol) > 0 else min_atr_pct
+        labels = np.ones(n, dtype=int)
+
+        for i in range(n - horizon - 1):
+            entry = open_[i + 1]
+            if not np.isfinite(entry) or entry <= 0:
+                labels[i] = 1
+                continue
+
+            vol = atr_pct[i] if np.isfinite(atr_pct[i]) and atr_pct[i] > 0 else default_vol
+            vol = max(vol, min_atr_pct)
+            up_ret = tp_mult * vol
+            dn_ret = sl_mult * vol
+
+            end = min(n - 1, i + horizon)
+            exit_price = close[end]
+            for j in range(i + 1, end + 1):
+                up_hit = high[j] >= entry * (1.0 + up_ret)
+                dn_hit = low[j] <= entry * (1.0 - dn_ret)
+                if up_hit and not dn_hit:
+                    exit_price = entry * (1.0 + up_ret)
+                    break
+                if dn_hit and not up_hit:
+                    exit_price = entry * (1.0 - dn_ret)
+                    break
+                if up_hit and dn_hit:
+                    exit_price = entry * (1.0 + up_ret) if close[j] >= entry else entry * (1.0 - dn_ret)
+                    break
+
+            gross_ret = (exit_price - entry) / entry
+            net_ret = gross_ret - roundtrip_cost
+            if net_ret >= buy_thr:
+                labels[i] = 2
+            elif net_ret <= sell_thr:
+                labels[i] = 0
+            else:
+                labels[i] = 1
+
+        data['Target'] = labels
+        data = data.iloc[: n - horizon - 1]
+        return data
+
 
 class FeatureSelector:
     """Selects the most important features to prevent overfitting."""
@@ -250,7 +332,10 @@ class FeatureSelector:
 
     def _rfe_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         seed = getattr(self.config, 'RANDOM_SEED', 42)
-        model = lgb.LGBMClassifier(n_estimators=100, random_state=seed, verbose=-1)
+        if lgb is None:
+            model = RandomForestClassifier(n_estimators=200, random_state=seed, n_jobs=-1)
+        else:
+            model = lgb.LGBMClassifier(n_estimators=100, random_state=seed, verbose=-1)
         n_select = min(self.config.N_FEATURES_TO_SELECT, X.shape[1])
         rfe = RFE(estimator=model, n_features_to_select=n_select, step=1)
         rfe.fit(X, y)
@@ -258,7 +343,10 @@ class FeatureSelector:
 
     def _importance_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         seed = getattr(self.config, 'RANDOM_SEED', 42)
-        model = lgb.LGBMClassifier(n_estimators=100, random_state=seed, verbose=-1)
+        if lgb is None:
+            model = RandomForestClassifier(n_estimators=200, random_state=seed, n_jobs=-1)
+        else:
+            model = lgb.LGBMClassifier(n_estimators=100, random_state=seed, verbose=-1)
         model.fit(X, y)
         importance = pd.DataFrame({
             'feature': X.columns,
@@ -287,10 +375,15 @@ class ModelTrainer:
         self.config = config
         self.seed = getattr(config, 'RANDOM_SEED', 42)
         self.model = None
+        self.entry_model = None
+        self.direction_model = None
+        self.entry_threshold_base = None
+        self.direction_threshold_base = None
         self.scaler = StandardScaler()
         self.feature_selector = FeatureSelector(config)
         self.target_creator = TargetCreator(config)
         self.model_type = normalize_model_type(getattr(config, 'MODEL_TYPE', 'lgbm'))
+        self.signal_decision_mode = str(getattr(config, 'SIGNAL_DECISION_MODE', 'legacy')).lower()
         # Set global seed for reproducibility
         set_global_seed(self.seed)
         logger.info(f"ModelTrainer initialized (model_type={self.model_type}, seed={self.seed})")
@@ -422,9 +515,88 @@ class ModelTrainer:
         except Exception as e:
             logger.warning(f"CV scoring skipped: {str(e)}")
 
+        if self.signal_decision_mode == 'two_stage':
+            self._train_two_stage_heads(X_scaled_orig, y)
+
         return self.model
 
+    def _train_two_stage_heads(self, X_scaled: pd.DataFrame, y: pd.Series):
+        """Train entry and direction heads for two-stage signal decision."""
+        self.entry_model = None
+        self.direction_model = None
+        self.entry_threshold_base = None
+        self.direction_threshold_base = None
+        y_series = pd.Series(y).astype(int).reset_index(drop=True)
+        X_use = X_scaled.reset_index(drop=True)
+
+        y_entry = (y_series != 1).astype(int)
+        if y_entry.nunique() >= 2:
+            self.entry_model = RandomForestClassifier(
+                n_estimators=int(getattr(self.config, 'ENTRY_MODEL_N_ESTIMATORS', 300)),
+                max_depth=6,
+                min_samples_leaf=20,
+                class_weight='balanced_subsample',
+                random_state=self.seed,
+                n_jobs=-1,
+            )
+            self.entry_model.fit(X_use, y_entry)
+            # Calibrate entry threshold on training distribution only (causal at inference).
+            try:
+                entry_prob_train = self.entry_model.predict_proba(X_use)[:, 1]
+                target_exposure = float(getattr(self.config, 'TARGET_TIME_IN_MARKET', 0.20))
+                target_exposure = min(max(target_exposure, 0.01), 0.95)
+                q = max(0.0, min(1.0, 1.0 - target_exposure))
+                entry_thr = float(np.quantile(entry_prob_train, q))
+                entry_thr_min = float(getattr(self.config, 'ENTRY_THRESHOLD_MIN', 0.45))
+                entry_thr_max = float(getattr(self.config, 'ENTRY_THRESHOLD_MAX', 0.85))
+                self.entry_threshold_base = float(np.clip(entry_thr, entry_thr_min, entry_thr_max))
+            except Exception as e:
+                logger.warning(f"Entry threshold calibration skipped: {str(e)}")
+        else:
+            logger.warning("Two-stage entry head skipped: single class in y_entry")
+
+        direction_mask = (y_series != 1)
+        if direction_mask.sum() >= 30:
+            y_direction = (y_series[direction_mask] == 2).astype(int)
+            if y_direction.nunique() >= 2:
+                self.direction_model = RandomForestClassifier(
+                    n_estimators=int(getattr(self.config, 'DIRECTION_MODEL_N_ESTIMATORS', 300)),
+                    max_depth=8,
+                    min_samples_leaf=10,
+                    class_weight='balanced_subsample',
+                    random_state=self.seed,
+                    n_jobs=-1,
+                )
+                self.direction_model.fit(X_use.loc[direction_mask], y_direction)
+                # Calibrate buy/sell threshold on training distribution only.
+                try:
+                    direction_prob_train = self.direction_model.predict_proba(X_use.loc[direction_mask])[:, 1]
+                    target_buy_share = float(getattr(self.config, 'TARGET_BUY_SHARE_ON_ENTRY', 0.55))
+                    target_buy_share = min(max(target_buy_share, 0.05), 0.95)
+                    q = max(0.0, min(1.0, 1.0 - target_buy_share))
+                    direction_thr = float(np.quantile(direction_prob_train, q))
+                    dir_min = float(getattr(self.config, 'DIRECTION_THRESHOLD_MIN', 0.40))
+                    dir_max = float(getattr(self.config, 'DIRECTION_THRESHOLD_MAX', 0.60))
+                    self.direction_threshold_base = float(np.clip(direction_thr, dir_min, dir_max))
+                except Exception as e:
+                    logger.warning(f"Direction threshold calibration skipped: {str(e)}")
+            else:
+                logger.warning("Two-stage direction head skipped: single class in y_direction")
+        else:
+            logger.warning("Two-stage direction head skipped: insufficient non-hold samples")
+
+        logger.info(
+            "Two-stage calibrated thresholds: entry_base=%s, direction_base=%s",
+            "None" if self.entry_threshold_base is None else f"{self.entry_threshold_base:.4f}",
+            "None" if self.direction_threshold_base is None else f"{self.direction_threshold_base:.4f}",
+        )
+
     def _train_lgbm(self, X, y):
+        if lgb is None:
+            raise ImportError(
+                "lightgbm is not installed or its runtime dependencies are missing. "
+                "Install lightgbm support in your environment to use model_type='lgbm'."
+            )
         defaults = {
             'objective': 'multiclass',
             'num_class': 3,
@@ -572,7 +744,11 @@ class ModelTrainer:
             raise ValueError("Model not trained yet")
         if X is None or len(X) == 0:
             return np.empty((0, 3))
-        X_scaled = self.scaler.transform(X)
+        X_scaled = pd.DataFrame(
+            self.scaler.transform(X),
+            columns=X.columns,
+            index=X.index
+        )
         return self.model.predict_proba(X_scaled)
 
     def predict_signals(self, X: pd.DataFrame, confidence_threshold: float = None) -> np.ndarray:
@@ -580,6 +756,16 @@ class ModelTrainer:
         Generate trading signals with confidence filtering.
         Returns: Array of signals (0=Sell, 1=Hold, 2=Buy)
         """
+        if self.signal_decision_mode == 'two_stage':
+            signals = self._predict_signals_two_stage(X, confidence_threshold=confidence_threshold)
+            if len(signals) > 0:
+                logger.info(
+                    f"Signal distribution: Buy={np.sum(signals==2)}, "
+                    f"Hold={np.sum(signals==1)}, Sell={np.sum(signals==0)} "
+                    f"(mode=two_stage)"
+                )
+            return signals
+
         if confidence_threshold is None:
             confidence_threshold = self.config.CONFIDENCE_THRESHOLD
         margin_threshold = float(getattr(self.config, 'SIGNAL_MARGIN_THRESHOLD', 0.0))
@@ -606,6 +792,96 @@ class ModelTrainer:
 
         return signals
 
+    def _predict_signals_two_stage(self, X: pd.DataFrame, confidence_threshold: float = None) -> np.ndarray:
+        """
+        Two-stage decision:
+        A) Entry (trade vs hold) with dynamic threshold targeting exposure.
+        B) Direction (buy vs sell) only for rows selected by entry stage.
+        """
+        if self.entry_model is None or self.direction_model is None:
+            logger.warning("Two-stage heads unavailable, falling back to legacy signal decision")
+            # fallback to legacy behavior
+            prev_mode = self.signal_decision_mode
+            self.signal_decision_mode = 'legacy'
+            out = self.predict_signals(X, confidence_threshold=confidence_threshold)
+            self.signal_decision_mode = prev_mode
+            return out
+
+        if X is None or len(X) == 0:
+            return np.array([], dtype=int)
+
+        X_scaled = pd.DataFrame(
+            self.scaler.transform(X),
+            columns=X.columns,
+            index=X.index
+        )
+        entry_prob = self.entry_model.predict_proba(X_scaled)[:, 1]
+        direction_prob = self.direction_model.predict_proba(X_scaled)[:, 1]  # P(Buy | entry)
+
+        if self.entry_threshold_base is not None and np.isfinite(self.entry_threshold_base):
+            base_entry_thr = float(self.entry_threshold_base)
+        else:
+            base_entry_thr = float(getattr(self.config, 'TWO_STAGE_MIN_ENTRY_PROB', 0.45))
+        entry_thr_min = float(getattr(self.config, 'ENTRY_THRESHOLD_MIN', 0.45))
+        entry_thr_max = float(getattr(self.config, 'ENTRY_THRESHOLD_MAX', 0.85))
+        base_entry_thr = min(max(base_entry_thr, entry_thr_min), entry_thr_max)
+
+        if confidence_threshold is None:
+            confidence_threshold = float(getattr(self.config, 'TWO_STAGE_MIN_ENTRY_PROB', 0.45))
+        entry_floor = float(confidence_threshold)
+
+        n = len(X)
+        entry_thr = np.full(n, base_entry_thr, dtype=float)
+        if 'Trend_Regime' in X.columns:
+            trend = X['Trend_Regime'].to_numpy(dtype=float)
+            bull_mult = float(getattr(self.config, 'BULL_ENTRY_THRESHOLD_MULT', 0.90))
+            bear_mult = float(getattr(self.config, 'BEAR_ENTRY_THRESHOLD_MULT', 1.10))
+            entry_thr = np.where(trend >= 0.5, entry_thr * bull_mult, entry_thr * bear_mult)
+
+        if 'ATR_Pct_Z100' in X.columns:
+            vol_z = X['ATR_Pct_Z100'].to_numpy(dtype=float)
+            z_cut = float(getattr(self.config, 'HIGH_VOL_Z_THRESHOLD', 1.0))
+            high_mult = float(getattr(self.config, 'HIGH_VOL_ENTRY_THRESHOLD_MULT', 1.05))
+            low_mult = float(getattr(self.config, 'LOW_VOL_ENTRY_THRESHOLD_MULT', 0.95))
+            entry_thr = np.where(vol_z >= z_cut, entry_thr * high_mult, entry_thr * low_mult)
+
+        entry_thr = np.clip(entry_thr, entry_thr_min, entry_thr_max)
+        enter_mask = (entry_prob >= entry_thr) & (entry_prob >= entry_floor)
+
+        if self.direction_threshold_base is not None and np.isfinite(self.direction_threshold_base):
+            base_direction_thr = float(self.direction_threshold_base)
+        else:
+            base_direction_thr = float(getattr(self.config, 'DIRECTION_BUY_PROB_THRESHOLD', 0.50))
+
+        direction_thr = np.full(n, base_direction_thr, dtype=float)
+        if 'Trend_Regime' in X.columns:
+            trend = X['Trend_Regime'].to_numpy(dtype=float)
+            bull_bias = float(getattr(self.config, 'BULL_DIRECTION_BIAS', -0.03))
+            bear_bias = float(getattr(self.config, 'BEAR_DIRECTION_BIAS', 0.03))
+            direction_thr = np.where(trend >= 0.5, direction_thr + bull_bias, direction_thr + bear_bias)
+
+        dir_min = float(getattr(self.config, 'DIRECTION_THRESHOLD_MIN', 0.40))
+        dir_max = float(getattr(self.config, 'DIRECTION_THRESHOLD_MAX', 0.60))
+        direction_thr = np.clip(direction_thr, dir_min, dir_max)
+
+        buy_candidate = enter_mask & (direction_prob >= direction_thr)
+        sell_candidate = enter_mask & (~buy_candidate)
+
+        # Long-only signal synthesis:
+        # - Buy only when flat
+        # - Sell only when a position is open
+        # This avoids meaningless Sell spam while already flat.
+        signals = np.ones(n, dtype=int)
+        in_position = False
+        for i in range(n):
+            if (not in_position) and bool(buy_candidate[i]):
+                signals[i] = 2
+                in_position = True
+            elif in_position and bool(sell_candidate[i]):
+                signals[i] = 0
+                in_position = False
+        return signals
+
     def save_model(self, symbol: str) -> str:
         if self.model is None:
             raise ValueError("No model to save")
@@ -613,9 +889,14 @@ class ModelTrainer:
         with open(model_path, 'wb') as f:
             pickle.dump({
                 'model': self.model,
+                'entry_model': self.entry_model,
+                'direction_model': self.direction_model,
+                'entry_threshold_base': self.entry_threshold_base,
+                'direction_threshold_base': self.direction_threshold_base,
                 'scaler': self.scaler,
                 'selected_features': self.feature_selector.selected_features,
-                'model_type': self.model_type
+                'model_type': self.model_type,
+                'signal_decision_mode': self.signal_decision_mode,
             }, f)
         logger.info(f"Model saved: {model_path}")
         return model_path
@@ -632,10 +913,16 @@ class ModelTrainer:
             with open(model_path, 'rb') as f:
                 data = pickle.load(f)
                 self.model = data['model']
+                self.entry_model = data.get('entry_model', None)
+                self.direction_model = data.get('direction_model', None)
+                self.entry_threshold_base = data.get('entry_threshold_base', None)
+                self.direction_threshold_base = data.get('direction_threshold_base', None)
                 self.scaler = data['scaler']
                 self.feature_selector.selected_features = data['selected_features']
                 if 'model_type' in data:
                     self.model_type = data['model_type']
+                if 'signal_decision_mode' in data:
+                    self.signal_decision_mode = str(data['signal_decision_mode']).lower()
             logger.info(f"Model loaded: {model_path}")
             return True
         except Exception as e:

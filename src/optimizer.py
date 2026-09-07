@@ -122,6 +122,32 @@ class HyperparameterOptimizer:
         return SimpleNamespace(**data)
 
     @staticmethod
+    def _build_position_mask(results) -> np.ndarray:
+        n = len(getattr(results, 'data_used', []))
+        if n <= 0:
+            return np.array([], dtype=bool)
+        mask = np.zeros(n, dtype=bool)
+        for trade in getattr(results, 'trades', []) or []:
+            try:
+                entry = int(trade.get('entry_idx', -1))
+                exit_ = int(trade.get('exit_idx', -1))
+            except Exception:
+                continue
+            if entry < 0 or exit_ < entry:
+                continue
+            entry = max(0, min(n - 1, entry))
+            exit_ = max(0, min(n - 1, exit_))
+            mask[entry:exit_ + 1] = True
+        return mask
+
+    @classmethod
+    def _time_in_market_ratio(cls, results) -> float:
+        mask = cls._build_position_mask(results)
+        if len(mask) == 0:
+            return 0.0
+        return float(np.mean(mask.astype(float)))
+
+    @staticmethod
     def _apply_return_constraint(cfg, realized_return_pct: float, score: float) -> float:
         """
         Apply return viability logic to objective score.
@@ -144,6 +170,11 @@ class HyperparameterOptimizer:
                           signals: np.ndarray, atr_threshold: float,
                           train_frame: pd.DataFrame) -> np.ndarray:
         if len(signals) == 0:
+            return signals
+
+        decision_mode = str(getattr(cfg, 'SIGNAL_DECISION_MODE', 'legacy')).lower()
+        disable_in_two_stage = bool(getattr(cfg, 'DISABLE_POST_ATR_GATE_IN_TWO_STAGE', True))
+        if decision_mode == 'two_stage' and disable_in_two_stage:
             return signals
 
         if not getattr(cfg, 'USE_ATR_FILTER', False):
@@ -266,6 +297,22 @@ class HyperparameterOptimizer:
         sharpe = float(results.sharpe_ratio) if np.isfinite(results.sharpe_ratio) else 0.0
         score += sharpe_tie * sharpe
 
+        # Activity guard: avoid "good return" from almost no market exposure.
+        time_in_market = self._time_in_market_ratio(results)
+        min_time_in_market = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_MIN_TIME_IN_MARKET', 0.0))
+        time_penalty = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_TIME_IN_MARKET_PENALTY', 0.0))
+        if time_in_market < min_time_in_market:
+            score -= (min_time_in_market - time_in_market) * time_penalty
+
+        # Bull capture guard: in positive market segments, avoid too-low participation.
+        min_bull_capture = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_MIN_BULL_CAPTURE_RATIO', 0.0))
+        bull_capture_penalty = float(getattr(cfg, 'OPTUNA_RETURN_FIRST_BULL_CAPTURE_PENALTY', 0.0))
+        bh_return = float(results.buy_hold_return_pct)
+        if bh_return > 0 and min_bull_capture > 0:
+            bull_capture = realized_return / (bh_return + 1e-10)
+            if bull_capture < min_bull_capture:
+                score -= (min_bull_capture - bull_capture) * bull_capture_penalty
+
         return self._apply_return_constraint(
             cfg,
             realized_return,
@@ -300,6 +347,8 @@ class HyperparameterOptimizer:
         fold_sharpes = []
         fold_dds = []
         fold_trades = []
+        fold_time_in_market = []
+        fold_bull_capture = []
 
         for pos in split_positions:
             x_idx = X_valid.index[pos]
@@ -327,6 +376,10 @@ class HyperparameterOptimizer:
             fold_sharpes.append(float(results.sharpe_ratio) if np.isfinite(results.sharpe_ratio) else 0.0)
             fold_dds.append(float(results.max_drawdown))
             fold_trades.append(float(results.num_trades))
+            fold_time_in_market.append(float(self._time_in_market_ratio(results)))
+            bh_ret = float(results.buy_hold_return_pct)
+            if bh_ret > 0:
+                fold_bull_capture.append(float(results.total_return_pct) / (bh_ret + 1e-10))
 
         if len(fold_returns) == 0:
             return -np.inf
@@ -336,6 +389,8 @@ class HyperparameterOptimizer:
         sharpes = np.array(fold_sharpes, dtype=float)
         dds = np.array(fold_dds, dtype=float)
         trades = np.array(fold_trades, dtype=float)
+        time_in_market = np.array(fold_time_in_market, dtype=float) if len(fold_time_in_market) > 0 else np.array([0.0])
+        bull_capture = np.array(fold_bull_capture, dtype=float) if len(fold_bull_capture) > 0 else np.array([])
 
         median_return = float(np.median(returns))
         median_outperf = float(np.median(outperf))
@@ -344,6 +399,7 @@ class HyperparameterOptimizer:
         worst_dd = float(np.max(dds))
         active_ratio = float(np.mean(trades > 0))
         total_trades = float(np.sum(trades))
+        avg_time_in_market = float(np.mean(time_in_market))
 
         # Weights are in native metric units (return and DD in percentage points).
         w_sharpe = float(getattr(cfg, 'OPTUNA_WEIGHT_SHARPE', 1.0))
@@ -369,6 +425,18 @@ class HyperparameterOptimizer:
         if active_ratio < min_active_ratio:
             score -= (min_active_ratio - active_ratio) * 1.0
 
+        min_time = float(getattr(cfg, 'OPTUNA_MIN_TIME_IN_MARKET', 0.0))
+        time_penalty = float(getattr(cfg, 'OPTUNA_TIME_IN_MARKET_PENALTY', 0.0))
+        if avg_time_in_market < min_time:
+            score -= (min_time - avg_time_in_market) * time_penalty
+
+        min_bull_capture = float(getattr(cfg, 'OPTUNA_MIN_BULL_CAPTURE_RATIO', 0.0))
+        bull_penalty = float(getattr(cfg, 'OPTUNA_BULL_CAPTURE_PENALTY', 0.0))
+        if min_bull_capture > 0 and len(bull_capture) > 0:
+            med_bull_capture = float(np.median(bull_capture))
+            if med_bull_capture < min_bull_capture:
+                score -= (min_bull_capture - med_bull_capture) * bull_penalty
+
         return self._apply_return_constraint(
             cfg,
             median_return,
@@ -381,12 +449,23 @@ class HyperparameterOptimizer:
             stop_loss = trial.suggest_float('stop_loss', 0.02, 0.10, step=0.01)
             take_profit = trial.suggest_float('take_profit', 0.05, 0.30, step=0.05)
             confidence_threshold = trial.suggest_float('confidence_threshold', 0.40, 0.80, step=0.05)
-            buy_threshold = trial.suggest_float('buy_threshold', 0.80, 0.98, step=0.02)
-            sell_threshold = trial.suggest_float('sell_threshold', 0.02, 0.20, step=0.02)
-            atr_threshold = trial.suggest_float('atr_threshold', 0.50, 2.00, step=0.10)
+            target_method = str(getattr(self.config, 'TARGET_METHOD', 'percentile')).lower()
+            if target_method == 'percentile':
+                buy_threshold = trial.suggest_float('buy_threshold', 0.80, 0.98, step=0.02)
+                sell_threshold = trial.suggest_float('sell_threshold', 0.02, 0.20, step=0.02)
+                if sell_threshold >= buy_threshold:
+                    return -np.inf
+            else:
+                buy_threshold = float(getattr(self.config, 'BUY_THRESHOLD', 0.98))
+                sell_threshold = float(getattr(self.config, 'SELL_THRESHOLD', 0.16))
 
-            if sell_threshold >= buy_threshold:
-                return -np.inf
+            decision_mode = str(getattr(self.config, 'SIGNAL_DECISION_MODE', 'legacy')).lower()
+            disable_in_two_stage = bool(getattr(self.config, 'DISABLE_POST_ATR_GATE_IN_TWO_STAGE', True))
+            use_atr_filter = bool(getattr(self.config, 'USE_ATR_FILTER', False))
+            if use_atr_filter and not (decision_mode == 'two_stage' and disable_in_two_stage):
+                atr_threshold = trial.suggest_float('atr_threshold', 0.50, 2.00, step=0.10)
+            else:
+                atr_threshold = float(getattr(self.config, 'ATR_THRESHOLD', 1.0))
 
             # Trial-local config/model/backtester to allow safe parallel Optuna workers.
             trial_cfg = self._clone_config_namespace(self.config)
@@ -489,12 +568,20 @@ class HyperparameterOptimizer:
                     'return_first_min_trades': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_MIN_TRADES', 0)),
                     'return_first_trade_penalty': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_TRADE_PENALTY', 0.25)),
                     'return_first_sharpe_tiebreaker': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_SHARPE_TIEBREAKER', 0.10)),
+                    'return_first_min_time_in_market': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_MIN_TIME_IN_MARKET', 0.0)),
+                    'return_first_time_in_market_penalty': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_TIME_IN_MARKET_PENALTY', 0.0)),
+                    'return_first_min_bull_capture_ratio': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_MIN_BULL_CAPTURE_RATIO', 0.0)),
+                    'return_first_bull_capture_penalty': float(getattr(self.config, 'OPTUNA_RETURN_FIRST_BULL_CAPTURE_PENALTY', 0.0)),
                     'weight_sharpe': float(getattr(self.config, 'OPTUNA_WEIGHT_SHARPE', 1.0)),
                     'weight_return': float(getattr(self.config, 'OPTUNA_WEIGHT_RETURN', 0.04)),
                     'weight_outperformance': float(getattr(self.config, 'OPTUNA_WEIGHT_OUTPERFORMANCE', 0.03)),
                     'weight_drawdown': float(getattr(self.config, 'OPTUNA_WEIGHT_DRAWDOWN', 0.02)),
                     'weight_stability': float(getattr(self.config, 'OPTUNA_WEIGHT_STABILITY', 0.03)),
-                    'weight_activity': float(getattr(self.config, 'OPTUNA_WEIGHT_ACTIVITY', 0.5))
+                    'weight_activity': float(getattr(self.config, 'OPTUNA_WEIGHT_ACTIVITY', 0.5)),
+                    'min_time_in_market': float(getattr(self.config, 'OPTUNA_MIN_TIME_IN_MARKET', 0.0)),
+                    'time_in_market_penalty': float(getattr(self.config, 'OPTUNA_TIME_IN_MARKET_PENALTY', 0.0)),
+                    'min_bull_capture_ratio': float(getattr(self.config, 'OPTUNA_MIN_BULL_CAPTURE_RATIO', 0.0)),
+                    'bull_capture_penalty': float(getattr(self.config, 'OPTUNA_BULL_CAPTURE_PENALTY', 0.0)),
                 }
             }, f, indent=2)
         logger.info(f"Best parameters saved to {path}")
@@ -518,6 +605,11 @@ class WalkForwardValidator:
                           train_frame: pd.DataFrame) -> np.ndarray:
         """Apply the same ATR gating used during hyperparameter optimization."""
         if len(signals) == 0:
+            return signals
+
+        decision_mode = str(getattr(self.config, 'SIGNAL_DECISION_MODE', 'legacy')).lower()
+        disable_in_two_stage = bool(getattr(self.config, 'DISABLE_POST_ATR_GATE_IN_TWO_STAGE', True))
+        if decision_mode == 'two_stage' and disable_in_two_stage:
             return signals
 
         if not getattr(self.config, 'USE_ATR_FILTER', False):

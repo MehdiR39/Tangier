@@ -11,4 +11,4 @@ docker run --rm -it \
   -v "$(pwd)":/app \
   -w /app \
   tangier-bot:latest \
-  python live_trading.py
+  python live_trading.py --once

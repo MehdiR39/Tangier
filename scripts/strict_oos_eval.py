@@ -131,8 +131,144 @@ def apply_best_params(cfg, params: dict) -> dict:
     return applied
 
 
-def to_metrics_dict(result) -> dict:
+def extract_best_params(payload) -> dict:
+    """Extract a flat best_params dict from nested report/params JSON shapes."""
+    if not isinstance(payload, dict):
+        return {}
+
+    allowed = {
+        "stop_loss",
+        "take_profit",
+        "confidence_threshold",
+        "buy_threshold",
+        "sell_threshold",
+        "atr_threshold",
+    }
+
+    direct = {}
+    for key, value in payload.items():
+        if key in allowed or key.startswith("lgbm_") or key.startswith("xgb_"):
+            direct[key] = value
+    if direct:
+        return direct
+
+    # Try known wrappers first.
+    for wrapper in ("best_params", "optimization", "params"):
+        if wrapper in payload:
+            nested = extract_best_params(payload.get(wrapper))
+            if nested:
+                return nested
+
+    # Fallback deep search.
+    for value in payload.values():
+        nested = extract_best_params(value)
+        if nested:
+            return nested
+    return {}
+
+
+def _build_position_mask(result) -> np.ndarray:
+    n = len(getattr(result, "data_used", []))
+    if n <= 0:
+        return np.array([], dtype=bool)
+    mask = np.zeros(n, dtype=bool)
+    for trade in getattr(result, "trades", []) or []:
+        try:
+            entry = int(trade.get("entry_idx", -1))
+            exit_ = int(trade.get("exit_idx", -1))
+        except Exception:
+            continue
+        if entry < 0 or exit_ < entry:
+            continue
+        entry = max(0, min(n - 1, entry))
+        exit_ = max(0, min(n - 1, exit_))
+        mask[entry:exit_ + 1] = True
+    return mask
+
+
+def _compound_return_pct(returns: np.ndarray) -> float:
+    if returns is None or len(returns) == 0:
+        return 0.0
+    clean = np.asarray(returns, dtype=float)
+    clean = clean[np.isfinite(clean)]
+    if len(clean) == 0:
+        return 0.0
+    return float((np.prod(1.0 + clean) - 1.0) * 100.0)
+
+
+def compute_activity_metrics(result, cfg) -> dict:
+    n = len(getattr(result, "data_used", []))
+    if n <= 1:
+        return {
+            "time_in_market_pct": 0.0,
+            "bull_capture_ratio": None,
+            "bull_regime_bh_return_pct": 0.0,
+            "bull_regime_strategy_return_pct": 0.0,
+        }
+
+    mask = _build_position_mask(result)
+    time_in_market_pct = float(np.mean(mask.astype(float)) * 100.0) if len(mask) > 0 else 0.0
+
+    data_used = result.data_used
+    if "Close" not in data_used.columns:
+        return {
+            "time_in_market_pct": time_in_market_pct,
+            "bull_capture_ratio": None,
+            "bull_regime_bh_return_pct": 0.0,
+            "bull_regime_strategy_return_pct": 0.0,
+        }
+
+    close = data_used["Close"].to_numpy(dtype=float)
+    n = min(n, len(close))
+    if n <= 1:
+        return {
+            "time_in_market_pct": time_in_market_pct,
+            "bull_capture_ratio": None,
+            "bull_regime_bh_return_pct": 0.0,
+            "bull_regime_strategy_return_pct": 0.0,
+        }
+
+    lookback = max(5, int(getattr(cfg, "REGIME_LOOKBACK_BARS", 30)))
+    bull_thresh = float(getattr(cfg, "REGIME_BULL_THRESHOLD", 0.08))
+
+    roll_ret = pd.Series(close).pct_change(periods=lookback).fillna(0.0).to_numpy(dtype=float)
+    bull_mask = roll_ret >= bull_thresh
+    if len(bull_mask) != n:
+        bull_mask = bull_mask[:n]
+
+    capital = np.asarray(getattr(result, "capital_history", []), dtype=float)
+    m = min(n, len(capital))
+    if m <= 1:
+        return {
+            "time_in_market_pct": time_in_market_pct,
+            "bull_capture_ratio": None,
+            "bull_regime_bh_return_pct": 0.0,
+            "bull_regime_strategy_return_pct": 0.0,
+        }
+
+    close = close[:m]
+    bull_mask = bull_mask[:m]
+    strat_bar_ret = np.zeros(m, dtype=float)
+    bh_bar_ret = np.zeros(m, dtype=float)
+    strat_bar_ret[1:] = capital[1:m] / (capital[:m - 1] + 1e-12) - 1.0
+    bh_bar_ret[1:] = close[1:m] / (close[:m - 1] + 1e-12) - 1.0
+
+    bull_bh_return_pct = _compound_return_pct(bh_bar_ret[bull_mask])
+    bull_strat_return_pct = _compound_return_pct(strat_bar_ret[bull_mask])
+    bull_capture_ratio = None
+    if bull_bh_return_pct > 0:
+        bull_capture_ratio = float(bull_strat_return_pct / (bull_bh_return_pct + 1e-10))
+
     return {
+        "time_in_market_pct": time_in_market_pct,
+        "bull_capture_ratio": bull_capture_ratio,
+        "bull_regime_bh_return_pct": float(bull_bh_return_pct),
+        "bull_regime_strategy_return_pct": float(bull_strat_return_pct),
+    }
+
+
+def to_metrics_dict(result, cfg) -> dict:
+    metrics = {
         "return_pct": float(result.total_return_pct),
         "buy_hold_pct": float(result.buy_hold_return_pct),
         "outperformance_pct": float(result.outperformance_pct),
@@ -142,6 +278,8 @@ def to_metrics_dict(result) -> dict:
         "win_rate_pct": float(result.win_rate),
         "profit_factor": float(result.profit_factor),
     }
+    metrics.update(compute_activity_metrics(result, cfg))
+    return metrics
 
 
 def deployment_gate(
@@ -151,18 +289,30 @@ def deployment_gate(
     min_sharpe_delta: float = -0.10,
     max_drawdown_delta_pct: float = 5.0,
     min_trades: int = 5,
+    min_time_in_market_pct: float = 0.0,
+    min_bull_capture_ratio: float = 0.0,
 ) -> dict:
     """Decide whether tuned params should replace baseline on holdout."""
     return_delta = float(tuned_metrics["return_pct"]) - float(baseline_metrics["return_pct"])
     sharpe_delta = float(tuned_metrics["sharpe"]) - float(baseline_metrics["sharpe"])
     drawdown_delta = float(tuned_metrics["max_drawdown_pct"]) - float(baseline_metrics["max_drawdown_pct"])
     tuned_trades = int(tuned_metrics["num_trades"])
+    tuned_time_in_market = float(tuned_metrics.get("time_in_market_pct", 0.0))
+    bull_capture = tuned_metrics.get("bull_capture_ratio", None)
+    bull_bh_return = float(tuned_metrics.get("bull_regime_bh_return_pct", 0.0))
+
+    if bull_bh_return > 0 and min_bull_capture_ratio > 0:
+        bull_capture_ok = bool(bull_capture is not None and float(bull_capture) >= float(min_bull_capture_ratio))
+    else:
+        bull_capture_ok = True
 
     checks = {
         "return_delta_ok": bool(return_delta >= float(min_return_delta_pct)),
         "sharpe_delta_ok": bool(sharpe_delta >= float(min_sharpe_delta)),
         "drawdown_delta_ok": bool(drawdown_delta <= float(max_drawdown_delta_pct)),
         "min_trades_ok": bool(tuned_trades >= int(min_trades)),
+        "time_in_market_ok": bool(tuned_time_in_market >= float(min_time_in_market_pct)),
+        "bull_capture_ok": bool(bull_capture_ok),
     }
     deploy_tuned = all(checks.values())
     return {
@@ -171,12 +321,15 @@ def deployment_gate(
             "min_sharpe_delta": float(min_sharpe_delta),
             "max_drawdown_delta_pct": float(max_drawdown_delta_pct),
             "min_trades": int(min_trades),
+            "min_time_in_market_pct": float(min_time_in_market_pct),
+            "min_bull_capture_ratio": float(min_bull_capture_ratio),
         },
         "deltas": {
             "return_pct": float(return_delta),
             "sharpe": float(sharpe_delta),
             "max_drawdown_pct": float(drawdown_delta),
             "num_trades": int(tuned_trades - int(baseline_metrics["num_trades"])),
+            "time_in_market_pct": float(tuned_time_in_market - float(baseline_metrics.get("time_in_market_pct", 0.0))),
         },
         "checks": checks,
         "deploy_tuned": bool(deploy_tuned),
@@ -271,6 +424,7 @@ def main():
     parser = argparse.ArgumentParser(description="Strict OOS validation (tune on dev, test on holdout)")
     parser.add_argument("--symbol", type=str, required=True, help="Trading pair, e.g. SOLUSDT")
     parser.add_argument("--model", type=str, default="random_forest", help="Model type to validate")
+    parser.add_argument("--interval", type=str, default=None, help="Binance interval override (e.g. 1h, 4h, 1d)")
     parser.add_argument("--valid-start", type=str, default="2024-01-01", help="Validation start date (YYYY-MM-DD)")
     parser.add_argument("--holdout-start", type=str, default="2025-01-01", help="Holdout start date (YYYY-MM-DD)")
     parser.add_argument("--dev-start", type=str, default=None, help="Optional dev start date (YYYY-MM-DD)")
@@ -284,6 +438,12 @@ def main():
     parser.add_argument("--gate-min-sharpe-delta", type=float, default=-0.10, help="Min tuned-baseline Sharpe delta to deploy tuned")
     parser.add_argument("--gate-max-dd-delta", type=float, default=5.0, help="Max tuned-baseline drawdown delta to deploy tuned")
     parser.add_argument("--gate-min-trades", type=int, default=5, help="Min tuned trades to deploy tuned")
+    parser.add_argument("--gate-min-time-in-market-pct", type=float, default=10.0, help="Min tuned time-in-market %% to deploy tuned")
+    parser.add_argument("--gate-min-bull-capture", type=float, default=0.15, help="Min tuned bull capture ratio when bull regime exists")
+    parser.add_argument("--opt-min-time-in-market", type=float, default=None, help="Override OPTUNA minimum time-in-market ratio (0-1)")
+    parser.add_argument("--opt-time-penalty", type=float, default=None, help="Override OPTUNA time-in-market penalty weight")
+    parser.add_argument("--opt-min-bull-capture", type=float, default=None, help="Override OPTUNA minimum bull capture ratio")
+    parser.add_argument("--opt-bull-capture-penalty", type=float, default=None, help="Override OPTUNA bull capture penalty weight")
     parser.add_argument("--no-plots", action="store_true", help="Disable plot generation")
     args = parser.parse_args()
 
@@ -292,10 +452,43 @@ def main():
 
     cfg = clone_config(base_config)
     cfg.MODEL_TYPE = normalize_model_type(args.model)
+    if args.interval:
+        cfg.BINANCE_INTERVAL = str(args.interval).strip()
+        # Keep Sharpe annualization coherent with the chosen interval.
+        interval = cfg.BINANCE_INTERVAL
+        if interval.endswith("m"):
+            mins = max(1.0, float(interval[:-1]))
+            bars_per_day = 1440.0 / mins
+            cfg.ANNUAL_PERIODS = int(365 * bars_per_day)
+        elif interval.endswith("h"):
+            hours = max(1.0, float(interval[:-1]))
+            bars_per_day = 24.0 / hours
+            cfg.ANNUAL_PERIODS = int(365 * bars_per_day)
+        elif interval.endswith("d"):
+            days = max(1.0, float(interval[:-1]))
+            cfg.ANNUAL_PERIODS = int(365 / days)
+        elif interval.endswith("w"):
+            weeks = max(1.0, float(interval[:-1]))
+            cfg.ANNUAL_PERIODS = int(52 / weeks)
+        elif interval.endswith("M"):
+            months = max(1.0, float(interval[:-1]))
+            cfg.ANNUAL_PERIODS = int(12 / months)
     if args.objective_mode:
         cfg.OPTUNA_OBJECTIVE_MODE = str(args.objective_mode).strip().lower()
     if args.no_plots:
         cfg.GENERATE_PLOTS = False
+    if args.opt_min_time_in_market is not None:
+        cfg.OPTUNA_MIN_TIME_IN_MARKET = float(args.opt_min_time_in_market)
+        cfg.OPTUNA_RETURN_FIRST_MIN_TIME_IN_MARKET = float(args.opt_min_time_in_market)
+    if args.opt_time_penalty is not None:
+        cfg.OPTUNA_TIME_IN_MARKET_PENALTY = float(args.opt_time_penalty)
+        cfg.OPTUNA_RETURN_FIRST_TIME_IN_MARKET_PENALTY = float(args.opt_time_penalty)
+    if args.opt_min_bull_capture is not None:
+        cfg.OPTUNA_MIN_BULL_CAPTURE_RATIO = float(args.opt_min_bull_capture)
+        cfg.OPTUNA_RETURN_FIRST_MIN_BULL_CAPTURE_RATIO = float(args.opt_min_bull_capture)
+    if args.opt_bull_capture_penalty is not None:
+        cfg.OPTUNA_BULL_CAPTURE_PENALTY = float(args.opt_bull_capture_penalty)
+        cfg.OPTUNA_RETURN_FIRST_BULL_CAPTURE_PENALTY = float(args.opt_bull_capture_penalty)
 
     logger.info("Strict OOS config: symbol=%s, model=%s, trials=%s, workers=%s", symbol, cfg.MODEL_TYPE, args.trials, args.workers)
     logger.info("Split dates: valid_start=%s, holdout_start=%s, dev_start=%s", args.valid_start, args.holdout_start, args.dev_start)
@@ -343,9 +536,18 @@ def main():
     if args.best_params_file:
         with open(args.best_params_file, "r", encoding="utf-8-sig") as f:
             payload = json.load(f)
-        fixed_best_params = payload.get("best_params", payload)
+        fixed_best_params = extract_best_params(payload)
+        if not fixed_best_params:
+            raise ValueError(
+                f"Could not extract best_params from file: {args.best_params_file}"
+            )
     elif args.best_params_json:
-        fixed_best_params = json.loads(args.best_params_json)
+        payload = json.loads(args.best_params_json)
+        fixed_best_params = extract_best_params(payload) if isinstance(payload, dict) else {}
+        if not fixed_best_params and isinstance(payload, dict):
+            fixed_best_params = payload
+        if not fixed_best_params:
+            raise ValueError("Could not parse best params from --best-params-json")
     elif args.skip_hyperopt:
         raise ValueError("--skip-hyperopt requires --best-params-file or --best-params-json")
 
@@ -361,8 +563,8 @@ def main():
         fixed_best_params=fixed_best_params,
     )
 
-    baseline_metrics = to_metrics_dict(baseline_result)
-    tuned_metrics = to_metrics_dict(tuned_result)
+    baseline_metrics = to_metrics_dict(baseline_result, cfg)
+    tuned_metrics = to_metrics_dict(tuned_result, tuned_cfg)
     gate = deployment_gate(
         baseline_metrics=baseline_metrics,
         tuned_metrics=tuned_metrics,
@@ -370,6 +572,8 @@ def main():
         min_sharpe_delta=args.gate_min_sharpe_delta,
         max_drawdown_delta_pct=args.gate_max_dd_delta,
         min_trades=args.gate_min_trades,
+        min_time_in_market_pct=args.gate_min_time_in_market_pct,
+        min_bull_capture_ratio=args.gate_min_bull_capture,
     )
     selected_strategy = "tuned" if gate["deploy_tuned"] else "baseline"
     selected_metrics = tuned_metrics if gate["deploy_tuned"] else baseline_metrics
@@ -380,12 +584,14 @@ def main():
         "positive_sharpe": bool(tuned_result.sharpe_ratio > 0),
         "drawdown_under_35pct": bool(tuned_result.max_drawdown <= 35.0),
         "at_least_10_trades": bool(tuned_result.num_trades >= 10),
+        "time_in_market_over_10pct": bool(float(tuned_metrics.get("time_in_market_pct", 0.0)) >= 10.0),
     }
     is_solid = (
         quality_checks["positive_return"]
         and quality_checks["positive_sharpe"]
         and quality_checks["drawdown_under_35pct"]
         and quality_checks["at_least_10_trades"]
+        and quality_checks["time_in_market_over_10pct"]
     )
 
     report = {
@@ -419,6 +625,12 @@ def main():
             "sharpe": tuned_metrics["sharpe"] - baseline_metrics["sharpe"],
             "max_drawdown_pct": tuned_metrics["max_drawdown_pct"] - baseline_metrics["max_drawdown_pct"],
             "num_trades": tuned_metrics["num_trades"] - baseline_metrics["num_trades"],
+            "time_in_market_pct": tuned_metrics.get("time_in_market_pct", 0.0) - baseline_metrics.get("time_in_market_pct", 0.0),
+            "bull_capture_ratio": (
+                float(tuned_metrics["bull_capture_ratio"]) - float(baseline_metrics["bull_capture_ratio"])
+                if tuned_metrics.get("bull_capture_ratio") is not None and baseline_metrics.get("bull_capture_ratio") is not None
+                else None
+            ),
         },
         "quality_checks": quality_checks,
         "verdict": "solid_on_holdout" if is_solid else "not_solid_yet",
@@ -444,12 +656,14 @@ def main():
     print(
         f"Baseline holdout: Return={baseline_metrics['return_pct']:.2f}% | "
         f"B&H={baseline_metrics['buy_hold_pct']:.2f}% | Sharpe={baseline_metrics['sharpe']:.2f} | "
-        f"MaxDD={baseline_metrics['max_drawdown_pct']:.2f}% | Trades={baseline_metrics['num_trades']}"
+        f"MaxDD={baseline_metrics['max_drawdown_pct']:.2f}% | Trades={baseline_metrics['num_trades']} | "
+        f"TimeInMkt={baseline_metrics.get('time_in_market_pct', 0.0):.1f}%"
     )
     print(
         f"Tuned holdout:    Return={tuned_metrics['return_pct']:.2f}% | "
         f"B&H={tuned_metrics['buy_hold_pct']:.2f}% | Sharpe={tuned_metrics['sharpe']:.2f} | "
-        f"MaxDD={tuned_metrics['max_drawdown_pct']:.2f}% | Trades={tuned_metrics['num_trades']}"
+        f"MaxDD={tuned_metrics['max_drawdown_pct']:.2f}% | Trades={tuned_metrics['num_trades']} | "
+        f"TimeInMkt={tuned_metrics.get('time_in_market_pct', 0.0):.1f}%"
     )
     print(
         f"Delta tuned-baseline: Return={report['delta_tuned_minus_baseline']['return_pct']:+.2f}% | "

@@ -164,12 +164,13 @@ EXTRA_TREES_PARAMS = {
 }
 
 # Feature selection
-FEATURE_SELECTION_METHOD = "rfe"  # Options: "rfe", "importance", "correlation"
+FEATURE_SELECTION_METHOD = "correlation"  # Options: "rfe", "importance", "correlation"
 N_FEATURES_TO_SELECT = 20
 FEATURE_IMPORTANCE_THRESHOLD = 0.01
 
 # Class imbalance handling
-USE_SMOTE = True
+# For time-series, synthetic oversampling can distort temporal structure.
+USE_SMOTE = False
 SMOTE_RATIO = 0.5
 
 # Train-test split (used as fallback if TEST_START_DATE is None)
@@ -182,9 +183,9 @@ VALIDATION_SIZE = 0.1
 
 # Target creation for training
 TARGET_WINDOW = 150  # Rolling window for target creation
-BUY_THRESHOLD = 0.98  # Percentile threshold for buy signals
-SELL_THRESHOLD = 0.16  # Percentile threshold for sell signals
-TARGET_METHOD = "triple_barrier"  # Options: "percentile", "triple_barrier"
+BUY_THRESHOLD = 0.98  # Used only when TARGET_METHOD="percentile"
+SELL_THRESHOLD = 0.16  # Used only when TARGET_METHOD="percentile"
+TARGET_METHOD = "tradable_payoff"  # Options: "percentile", "triple_barrier", "tradable_payoff"
 TARGET_HORIZON_BARS = 12  # Label horizon (2h bars => 24h)
 TARGET_NEUTRAL_BAND = 0.0015  # Neutral zone if no barrier is hit
 
@@ -192,15 +193,42 @@ TARGET_NEUTRAL_BAND = 0.0015  # Neutral zone if no barrier is hit
 TARGET_TP_ATR_MULT = 2.0
 TARGET_SL_ATR_MULT = 1.2
 TARGET_MIN_ATR_PCT = 0.002
+TARGET_NET_BUY_THRESHOLD = 0.004   # Net return threshold to label Buy (after cost proxy)
+TARGET_NET_SELL_THRESHOLD = -0.004  # Net return threshold to label Sell (after cost proxy)
 
 # Signal filtering
 USE_ATR_FILTER = True
 ATR_THRESHOLD = 1.9  # Multiples of ATR for signal filtering
+DISABLE_POST_ATR_GATE_IN_TWO_STAGE = True
 
 # Signal confidence scoring
 USE_SIGNAL_CONFIDENCE = True
 CONFIDENCE_THRESHOLD = 0.45  # Minimum confidence to take a trade
 SIGNAL_MARGIN_THRESHOLD = 0.08  # Min (top_prob - second_prob) for Buy/Sell
+
+# Two-stage signal decision (entry + direction)
+SIGNAL_DECISION_MODE = "two_stage"  # Options: "legacy", "two_stage"
+TARGET_TIME_IN_MARKET = 0.20  # Desired exposure ratio for dynamic entry threshold
+TWO_STAGE_MIN_ENTRY_PROB = 0.45
+ENTRY_THRESHOLD_MIN = 0.45
+ENTRY_THRESHOLD_MAX = 0.85
+ENTRY_MODEL_N_ESTIMATORS = 300
+DIRECTION_MODEL_N_ESTIMATORS = 300
+
+# Regime-aware threshold adjustments
+BULL_ENTRY_THRESHOLD_MULT = 0.90
+BEAR_ENTRY_THRESHOLD_MULT = 1.10
+HIGH_VOL_ENTRY_THRESHOLD_MULT = 1.05
+LOW_VOL_ENTRY_THRESHOLD_MULT = 0.95
+HIGH_VOL_Z_THRESHOLD = 1.0
+
+# Direction threshold (Buy vs Sell once entry is active)
+DIRECTION_BUY_PROB_THRESHOLD = 0.50
+TARGET_BUY_SHARE_ON_ENTRY = 0.55  # Quantile calibration for Buy share within entry candidates
+BULL_DIRECTION_BIAS = -0.03
+BEAR_DIRECTION_BIAS = 0.03
+DIRECTION_THRESHOLD_MIN = 0.40
+DIRECTION_THRESHOLD_MAX = 0.60
 
 # ============================================================================
 # BACKTESTING SETTINGS
@@ -328,6 +356,21 @@ OPTUNA_RETURN_FIRST_DRAWDOWN_PENALTY = 0.20
 OPTUNA_RETURN_FIRST_MIN_TRADES = 40
 OPTUNA_RETURN_FIRST_TRADE_PENALTY = 0.25
 OPTUNA_RETURN_FIRST_SHARPE_TIEBREAKER = 0.10
+OPTUNA_RETURN_FIRST_MIN_TIME_IN_MARKET = 0.18
+OPTUNA_RETURN_FIRST_TIME_IN_MARKET_PENALTY = 12.0
+OPTUNA_RETURN_FIRST_MIN_BULL_CAPTURE_RATIO = 0.25
+OPTUNA_RETURN_FIRST_BULL_CAPTURE_PENALTY = 2.0
+
+# Additional robustness controls for robust_windows mode
+OPTUNA_MIN_TIME_IN_MARKET = 0.15
+OPTUNA_TIME_IN_MARKET_PENALTY = 10.0
+OPTUNA_MIN_BULL_CAPTURE_RATIO = 0.20
+OPTUNA_BULL_CAPTURE_PENALTY = 2.0
+
+# Market regime analysis controls (used in strict OOS reports and pre-screen)
+REGIME_LOOKBACK_BARS = 30
+REGIME_BULL_THRESHOLD = 0.08
+REGIME_BEAR_THRESHOLD = 0.08
 
 # Tune model-level hyperparameters inside Optuna objective.
 OPTUNA_TUNE_MODEL_PARAMS = True

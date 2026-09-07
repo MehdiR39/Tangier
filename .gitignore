@@ -33,3 +33,11 @@ data/recovered.sqlite
 # sauvegardes de .env : elles contiennent la cle privee
 .env.*
 !.env.example
+
+# jeux de donnees bruts: volumineux, regenerables, hors depot
+data_onchain/
+data_raw/
+notebooks/*.csv
+notebooks/*.png
+notebooks/*.log
+notebooks/*.ipynb

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker info *)",
+      "Read(//c/tangier_L//**)",
+      "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Register-ScheduledTask -Xml \\(Get-Content 'C:\\\\tangier_L\\\\scripts\\\\daily_signals_task.xml' -Raw\\) -TaskName 'TangierDailySignals' -Force 2>&1\")",
+      "Bash(docker compose *)",
+      "Read(//c/tangier_L/**)",
+      "Bash(tail -30 /c/Users/Osiris/AppData/Local/Temp/claude/c--Users-Osiris-Documents-Tangier/c384fb74-a4c0-4106-82c4-10dd9cfdfe59/tasks/bih1vzrla.output 2>&1)",
+      "Read(//c/Users/Osiris/AppData/Local/Temp/claude/c--Users-Osiris-Documents-Tangier/c384fb74-a4c0-4106-82c4-10dd9cfdfe59/tasks/**)",
+      "Bash(cd /c/Users/Osiris/.claude/projects/c--Users-Osiris-Documents-Tangier/memory *)",
+      "Read(//c/Users/Osiris/.claude/projects/c--Users-Osiris-Documents-Tangier/memory/**)"
+    ]
+  }
+}
