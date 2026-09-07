@@ -258,7 +258,9 @@ class TelegramCommands:
         if vn or vl:
             # The sold half alone read as a profit while the simulation's own write-offs were
             # larger (2026-09-07: +98 shown, -207 hidden). One number, the net, or none.
-            out += ["", f"<i>Carnet à blanc : {self._eur(vp + vle)} ({vn} vendues, {vl} non vendues)</i>"]
+            # "Carnet à blanc" was read as a second pot of money. It is a simulation on far more
+            # launches than the real book buys, and its euros do not exist: say so in the label.
+            out += ["", f"<i>Simulation, argent fictif : {self._eur(vp + vle)} sur {vn + vl} lignes</i>"]
         if t1_paused(self.ctx):
             out += ["", "⏸ Achats en pause · /resume"]
         return NL.join(out)
