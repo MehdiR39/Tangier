@@ -45,7 +45,12 @@ CREATE INDEX IF NOT EXISTS ix_sol_obs_pair ON sol_obs(pair_id, age_min);
 -- cannot give, and the exact shape of the rule that works on Robinhood Chain.
 CREATE TABLE IF NOT EXISTS sol_first_min(
     pair_id TEXT PRIMARY KEY, measured_ts INTEGER,
-    trades INTEGER, uniq_payers INTEGER, first_tx_ts INTEGER, err TEXT
+    trades INTEGER, uniq_payers INTEGER, first_tx_ts INTEGER, err TEXT,
+    -- Holders AT THE MOMENT OF THE DECISION, not hours later. Counted on tokens hours old, the
+    -- number separates cleanly (under 100 holders the price falls, over 100 it rises), but that
+    -- reading cannot be used to filter a buy: it is not knowable when the buy is made. Only a
+    -- count taken at T+1 can, and it will be far lower, so the threshold has to be learnt here.
+    holders INTEGER, top10_share REAL
 );
 """
 
@@ -163,18 +168,49 @@ async def first_minute(client: httpx.AsyncClient, rpc_url: str, pair_id: str, cr
             "first_tx_ts": min(w["blockTime"] for w in window), "err": None}
 
 
+async def holders_now(client: httpx.AsyncClient, rpc_url: str, mint: str) -> tuple[int | None, float | None]:
+    """(holders, share held by the ten largest) for a mint, right now."""
+    key = rpc_url.split("api-key=")[-1] if "api-key=" in rpc_url else ""
+    holders = None
+    if key:
+        try:
+            r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getTokenAccounts",
+                                                 "params": {"mint": mint, "limit": 1000}}, timeout=40)
+            accounts = ((r.json() or {}).get("result") or {}).get("token_accounts")
+            if accounts is not None:
+                holders = len(accounts)
+        except Exception:  # noqa: BLE001
+            holders = None
+    share = None
+    try:
+        r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getTokenLargestAccounts",
+                                             "params": [mint]}, timeout=25)
+        top = ((r.json() or {}).get("result") or {}).get("value") or []
+        r2 = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getTokenSupply",
+                                              "params": [mint]}, timeout=25)
+        supply = float((((r2.json() or {}).get("result") or {}).get("value") or {}).get("uiAmount") or 0)
+        if top and supply > 0:
+            share = sum(float(a.get("uiAmount") or 0) for a in top[:10]) / supply
+    except Exception:  # noqa: BLE001
+        share = None
+    return holders, share
+
+
 async def measure_pending(db: sqlite3.Connection, client: httpx.AsyncClient, rpc_url: str, limit: int = 5) -> int:
     """Measure the first minute of pools old enough for it to be complete, once each."""
     rows = db.execute(
-        "SELECT p.pair_id, p.created_ms FROM sol_pair p LEFT JOIN sol_first_min f ON f.pair_id=p.pair_id "
+        "SELECT p.pair_id, p.token_address, p.created_ms FROM sol_pair p LEFT JOIN sol_first_min f ON f.pair_id=p.pair_id "
         "WHERE f.pair_id IS NULL AND p.created_ms < ? ORDER BY p.created_ms DESC LIMIT ?",
         (int((time.time() - 120) * 1000), limit)).fetchall()
     n = 0
     for r in rows:
         res = await first_minute(client, rpc_url, r["pair_id"], r["created_ms"])
-        db.execute("INSERT OR REPLACE INTO sol_first_min VALUES(?,?,?,?,?,?)",
+        holders, share = (None, None)
+        if r["token_address"]:
+            holders, share = await holders_now(client, rpc_url, r["token_address"])
+        db.execute("INSERT OR REPLACE INTO sol_first_min VALUES(?,?,?,?,?,?,?,?)",
                    (r["pair_id"], int(time.time()), res.get("trades"), res.get("uniq_payers"),
-                    res.get("first_tx_ts"), res.get("err")))
+                    res.get("first_tx_ts"), res.get("err"), holders, share))
         n += 1
         await asyncio.sleep(0.5)
     db.commit()
