@@ -530,7 +530,10 @@ class T1Watcher:
             # detach the old attempts so the retry counter starts from zero, then reopen the line:
             # the ordinary exit path (age past the window -> sell) takes it from here.
             db.execute("UPDATE decisions SET position_id=NULL WHERE chain_id=? AND position_id=? AND kind='SELL_ALL'", (self.ctx.chain_id, p["id"]))
-            db.execute("UPDATE positions SET status='OPEN', closed_ts=NULL, close_price=NULL, close_reason=NULL, realized_eur=NULL, "
+            # The recorded loss stays on the row. Clearing it made 15 EUR of real losses vanish
+            # from /pnl for as long as the bags were being retried (2026-09-07), so the reported
+            # result swung by that much depending on the minute the question was asked.
+            db.execute("UPDATE positions SET status='OPEN', closed_ts=NULL, close_price=NULL, close_reason=NULL, "
                        "notes=notes || ' recover:' || ? WHERE id=?", (done + 1, p["id"]))
             log.info("t1 reprise %s : le portefeuille detient encore ce token, nouvelle tentative de vente (%d/%s)",
                      p["token_address"][:10], done + 1, self._cfg("recover_max", 8))

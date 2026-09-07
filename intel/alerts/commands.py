@@ -225,9 +225,12 @@ class TelegramCommands:
                 "SELECT COUNT(*) n, SUM(CASE WHEN realized_eur>0 THEN 1 ELSE 0 END) w, COALESCE(SUM(realized_eur),0) p "
                 "FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='CLOSED' AND kind=? "
                 "AND closed_ts>=? AND close_reason LIKE 'vendu%'", (self.ctx.chain_id, kind, since))
+            # A bag being retried is still a loss on the books: counting only CLOSED rows made the
+            # reported result jump by the amount under recovery.
             w = db.query_one(
                 "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
-                "AND status='CLOSED' AND kind=? AND closed_ts>=? AND close_reason NOT LIKE 'vendu%'", (self.ctx.chain_id, kind, since))
+                "AND kind=? AND opened_ts>=? AND realized_eur IS NOT NULL "
+                "AND (close_reason IS NULL OR close_reason NOT LIKE 'vendu%')", (self.ctx.chain_id, kind, since))
             return int(r["n"] or 0), int(r["w"] or 0), float(r["p"] or 0), int(w["n"] or 0), float(w["p"] or 0)
 
         n, wins, pnl, lost, lost_eur = tally("PORTFOLIO")
