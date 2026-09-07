@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS sol_obs(
     PRIMARY KEY(pair_id, ts)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS ix_sol_obs_pair ON sol_obs(pair_id, age_min);
+-- The first minute, transaction by transaction: the only thing DexScreener's five-minute buckets
+-- cannot give, and the exact shape of the rule that works on Robinhood Chain.
+CREATE TABLE IF NOT EXISTS sol_first_min(
+    pair_id TEXT PRIMARY KEY, measured_ts INTEGER,
+    trades INTEGER, uniq_payers INTEGER, first_tx_ts INTEGER, err TEXT
+);
 """
 
 
@@ -109,6 +115,72 @@ def record(db: sqlite3.Connection, pairs: list[dict[str, Any]], max_age_min: flo
     return new, obs
 
 
+async def first_minute(client: httpx.AsyncClient, rpc_url: str, pair_id: str, created_ms: int) -> dict[str, Any]:
+    """Count the trades and the distinct payers of a pool's first sixty seconds, from the chain.
+
+    Reading Solana the way the engine reads Robinhood Chain is out of reach: a block holds ~1100
+    transactions and 7.5 MB, 2.5 blocks a second. An indexed endpoint answers the same question for
+    one account in a tenth of a second, which is why this needs SOLANA_RPC_URL.
+    """
+    start = created_ms // 1000
+    sigs: list[dict[str, Any]] = []
+    before = None
+    for _ in range(6):                                     # 6 x 1000 signatures is far past a minute
+        params: dict[str, Any] = {"limit": 1000}
+        if before:
+            params["before"] = before
+        try:
+            r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getSignaturesForAddress",
+                                                 "params": [pair_id, params]}, timeout=45)
+            got = (r.json() or {}).get("result") or []
+        except Exception as exc:  # noqa: BLE001
+            return {"err": str(exc)[:80]}
+        if not got:
+            break
+        sigs.extend(got)
+        oldest = got[-1].get("blockTime") or 0
+        before = got[-1]["signature"]
+        if oldest and oldest <= start:
+            break
+    window = [g for g in sigs if g.get("blockTime") and start <= g["blockTime"] <= start + 60]
+    if not window:
+        return {"trades": 0, "uniq_payers": 0, "first_tx_ts": None, "err": None}
+    # who paid: the enhanced endpoint decodes in batches of 100, one call per batch
+    payers: set[str] = set()
+    base = rpc_url.split("?")[0].replace("https://mainnet.helius-rpc.com/", "https://api.helius.xyz/v0/transactions/")
+    key = rpc_url.split("api-key=")[-1] if "api-key=" in rpc_url else ""
+    if key and base.startswith("https://api.helius.xyz"):
+        for i in range(0, min(len(window), 300), 100):
+            try:
+                r = await client.post(f"{base}?api-key={key}",
+                                      json={"transactions": [w["signature"] for w in window[i:i + 100]]}, timeout=60)
+                for tx in r.json() or []:
+                    if tx.get("feePayer"):
+                        payers.add(tx["feePayer"])
+            except Exception:  # noqa: BLE001
+                break
+    return {"trades": len(window), "uniq_payers": len(payers) or None,
+            "first_tx_ts": min(w["blockTime"] for w in window), "err": None}
+
+
+async def measure_pending(db: sqlite3.Connection, client: httpx.AsyncClient, rpc_url: str, limit: int = 5) -> int:
+    """Measure the first minute of pools old enough for it to be complete, once each."""
+    rows = db.execute(
+        "SELECT p.pair_id, p.created_ms FROM sol_pair p LEFT JOIN sol_first_min f ON f.pair_id=p.pair_id "
+        "WHERE f.pair_id IS NULL AND p.created_ms < ? ORDER BY p.created_ms DESC LIMIT ?",
+        (int((time.time() - 120) * 1000), limit)).fetchall()
+    n = 0
+    for r in rows:
+        res = await first_minute(client, rpc_url, r["pair_id"], r["created_ms"])
+        db.execute("INSERT OR REPLACE INTO sol_first_min VALUES(?,?,?,?,?,?)",
+                   (r["pair_id"], int(time.time()), res.get("trades"), res.get("uniq_payers"),
+                    res.get("first_tx_ts"), res.get("err")))
+        n += 1
+        await asyncio.sleep(0.5)
+    db.commit()
+    return n
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", default="/app/data/solana.sqlite")
@@ -117,6 +189,9 @@ async def main() -> None:
     ap.add_argument("--max-age-min", type=float, default=30.0)
     args = ap.parse_args()
     db = connect(args.db)
+    import os
+    rpc_url = (os.environ.get("SOLANA_RPC_URL") or "").strip()
+    print("mesure par transaction: " + ("active (RPC indexe)" if rpc_url else "inactive, SOLANA_RPC_URL absent"), flush=True)
     deadline = time.time() + args.minutes * 60 if args.minutes else None
     async with httpx.AsyncClient(headers={"User-Agent": "tangier-intel/solana-study"}) as client:
         while deadline is None or time.time() < deadline:
@@ -127,9 +202,10 @@ async def main() -> None:
             tracked = [r["token_address"] for r in db.execute(
                 "SELECT token_address FROM sol_pair WHERE first_seen_ts > ? AND token_address IS NOT NULL", (cutoff,))]
             new, obs = record(db, await pairs_of(client, list(dict.fromkeys(tokens + tracked))), args.max_age_min)
+            measured = await measure_pending(db, client, rpc_url) if rpc_url else 0
             n_pairs = db.execute("SELECT COUNT(*) FROM sol_pair").fetchone()[0]
             print(f"{time.strftime('%H:%M:%S')} · {new} nouveaux lancements · {obs} observations · "
-                  f"{n_pairs} paires suivies · cycle {time.time() - t0:.0f}s", flush=True)
+                  f"{measured} premieres minutes mesurees · {n_pairs} paires suivies · cycle {time.time() - t0:.0f}s", flush=True)
             await asyncio.sleep(max(20.0, 60.0 - (time.time() - t0)))
 
 
