@@ -54,6 +54,29 @@ class SolanaQuote:
         return self.out_amount > 0
 
 
+def rpc_url() -> str:
+    """The indexed endpoint, from the environment or from a file beside the data.
+
+    A container reads its environment once, at creation. Changing .env therefore needs the
+    container recreated, which is not always possible while a live book is running, so a path is
+    accepted as well -- the same convention as the *_FILE variables of most daemons. The file
+    lives under data/, which is outside the repository.
+    """
+    direct = (os.environ.get(RPC_ENV) or "").strip()
+    if direct.startswith("http"):
+        return direct
+    for path in (os.environ.get(RPC_ENV + "_FILE") or "", "/app/data/.solana_rpc"):
+        if path and os.path.exists(path):
+            try:
+                with open(path) as fh:
+                    val = fh.read().strip()
+                if val.startswith("http"):
+                    return val
+            except OSError:
+                continue
+    return ""
+
+
 def signer_address() -> str | None:
     """The address that would sign, or None when no key is configured. Public information."""
     try:
@@ -65,6 +88,19 @@ def signer_address() -> str | None:
 def _keypair() -> Any:
     """Derive the keypair from the environment. The key never leaves this function."""
     raw = (os.environ.get(KEY_ENV) or "").strip()
+    if not raw:
+        # A container reads its environment once, at creation, so a key added to .env while a live
+        # book is running would need the container recreated. The same file convention as the
+        # endpoint is accepted, under data/, which never enters the repository.
+        for path in (os.environ.get(KEY_ENV + "_FILE") or "", "/app/data/.solana_key"):
+            if path and os.path.exists(path):
+                try:
+                    with open(path) as fh:
+                        raw = fh.read().strip()
+                except OSError:
+                    raw = ""
+                if raw:
+                    break
     if not raw:
         raise SolanaRefused(f"aucune clé dans {KEY_ENV} : rien n'est signé")
     try:

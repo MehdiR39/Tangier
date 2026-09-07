@@ -39,7 +39,8 @@ class HealthState:
             "retention": int(cfg.get("retention.prune_interval_seconds", 6 * 3600)),
             "regime": 3600,
             "t1": int(cfg.get("t1.poll_seconds", 5)),
-            "telegram": 30,                                     # 5 s between polls, each up to 20 s long
+            "telegram": 30,
+            "solana": int(cfg.get("solana.poll_seconds", 30)) * 3,                                     # 5 s between polls, each up to 20 s long
         }.get(engine, 300)
 
     def snapshot(self) -> dict[str, Any]:

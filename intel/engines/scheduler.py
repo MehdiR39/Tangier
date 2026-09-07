@@ -56,7 +56,7 @@ class Runtime:
                     os._exit(0)
             except Exception as exc:  # noqa: BLE001
                 log.info("drapeau de redemarrage illisible (%s)", str(exc)[:80])
-        if name not in ("history", "digest", "backup", "retention", "t1", "telegram"):  # keep engine_runs meaningful: real cycles only (t1 and telegram poll every few seconds)
+        if name not in ("history", "digest", "backup", "retention", "t1", "telegram", "solana"):  # keep engine_runs meaningful: real cycles only (t1 and telegram poll every few seconds)
             try:
                 run_id = self.ctx.db.insert("engine_runs", {"engine": name, "started_ts": started, "finished_ts": None, "ok": None, "tokens_processed": None, "alerts_sent": None, "error": None, "stats_json": None})
             except Exception as exc:  # noqa: BLE001
@@ -90,6 +90,7 @@ class Runtime:
             or (name == "execution" and not (stats or {}).get("seen"))   # an idle execution loop says nothing
             or (name == "t1" and not (stats or {}).get("decisions"))     # a 5-second poll only speaks when it buys
             or (name == "telegram" and not (stats or {}).get("answered"))  # and the command loop only when it answers
+            or (name == "solana" and not (stats or {}).get("judged"))      # and the solana loop only when it judges
         )
         if not quiet:
             log.info("%s cycle done ok=%s %.1fs stats=%s", name, ok, time.monotonic() - t0, json.dumps(slim, default=str)[:600])
@@ -216,6 +217,14 @@ class Runtime:
             from intel.engines.t1_watcher import T1Watcher
             self.t1 = T1Watcher(self.ctx)
             tasks.append(asyncio.create_task(self._loop("t1", self.t1.run_cycle, int(self.ctx.config.get("t1.poll_seconds", 2)))))
+        if self.ctx.config.get("solana.enabled", False):
+            # The same book on another chain: discover, judge the first minute, buy, sell on the
+            # clock. Its thresholds are deliberately uncalibrated until the measurement gives them,
+            # and it signs nothing without a key AND solana.mode set to live.
+            from intel.engines.solana_watcher import SolanaWatcher
+            self.solana = SolanaWatcher(self.ctx)
+            tasks.append(asyncio.create_task(self._loop("solana", self.solana.run_cycle,
+                                                        int(self.ctx.config.get("solana.poll_seconds", 30)))))
         if self.ctx.config.get("alerts.telegram_commands", True):
             # /positions, /closed, /pnl, /orders, /solde, /pause, /resume from the phone. Reads a
             # second bot (INTEL_TELEGRAM_COMMANDS_TOKEN): Telegram allows one reader per bot and

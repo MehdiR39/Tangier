@@ -128,3 +128,22 @@ execution:
   max_hook_tax_pct: 20
   allowed_quotes:
     - "0x0000000000000000000000000000000000000000"
+
+# Livre Solana, active a blanc le 2026-09-07. Il decouvre les lancements, mesure leur premiere
+# minute par transaction (ce que Robinhood ne permettait pas : le champ expediteur y donne le
+# routeur pour 98 % des echanges), et applique la meme sortie x2 ou T+5 min.
+#
+# Les seuils sont volontairement NON calibres : min_buyers a 0 n achete rien. Les seuils de
+# Robinhood (27 a 60 echanges) n ont aucun sens ici, ou les premieres mesures donnent 186 a 2 834
+# echanges dans la premiere minute. Ils seront fixes sur les donnees de cette nuit, pas au jugement.
+#
+# Passer en reel demande deux gestes separes, comme sur l autre chaine : une cle dans
+# SOLANA_PRIVATE_KEY, et mode: live ci-dessous. Aucun portefeuille Solana n existe a ce jour.
+solana:
+  enabled: true
+  mode: dry_run
+  size_eur: 5.0
+  min_buyers: 0
+  max_trades_per_buyer: 0
+  min_liquidity_usd: 5000
+  max_per_hour: 10
