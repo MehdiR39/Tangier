@@ -238,4 +238,14 @@ def test_dry_run_still_prices_against_real_pool_state():
     d = dict(ctx.db.query_one("SELECT * FROM decisions WHERE id=?", (_decision(ctx),)))
     res = prepare(ctx, d, limits=safety.Limits.from_config(ctx))
     assert res["status"] == "BUILT"
-    assert int(res["quoted_amount_out"]) > 0 and float(res["slippage_pct"]) > 0
+    assert int(res["quoted_amount_out"]) > 0
+    # The journalled slippage is the MEASURED impact, not the tolerance we allow: on a deep pool it
+    # is legitimately near zero, and it must grow when the same order meets a thinner pool. Recording
+    # the tolerance there (2026-09-07) made every live buy read "8.0 %" and hid the real figure.
+    deep = float(res["slippage_pct"])
+    ctx2 = _ctx()
+    _pool(ctx2, POOL, 200, liquidity=10 ** 20)
+    _market(ctx2)
+    d2 = dict(ctx2.db.query_one("SELECT * FROM decisions WHERE id=?", (_decision(ctx2),)))
+    thin = float(prepare(ctx2, d2, limits=safety.Limits.from_config(ctx2))["slippage_pct"])
+    assert thin > deep, f"un pool plus mince doit coûter plus cher: {thin} vs {deep}"

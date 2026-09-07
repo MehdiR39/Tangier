@@ -251,7 +251,10 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
     )
     return {"status": "BUILT", "order": order, "key": key, "amount_in": str(order.amount_in),
             "min_amount_out": str(order.min_amount_out), "quoted_amount_out": str(order.quoted_amount_out),
-            "slippage_pct": order.slippage_pct, "quote_address": quote_addr, "calldata": order.calldata}
+            # The measured impact, not the tolerance we allow. Recording the tolerance made every
+            # confirmed buy read "8.0 %" (2026-09-07) and left no way to answer whether a bigger
+            # ticket would cost more -- the one question the journal existed to settle.
+            "slippage_pct": q.price_impact_pct, "quote_address": quote_addr, "calldata": order.calldata}
 
 
 SEL_TOO_LITTLE = "0x8b063d73"     # V4TooLittleReceived(uint256 minimum, uint256 actual)
