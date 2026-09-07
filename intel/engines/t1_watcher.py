@@ -226,10 +226,21 @@ class T1Watcher:
             # Every verdict is recorded, not only the buys. This is the continuous series the
             # regime question needs -- how busy the chain's launches are, minute by minute --
             # and it costs nothing: the watcher already saw every one of these pools.
-            self._observe(pid, w, count, head, count >= min_trades and not (max_trades and count > max_trades))
+            self._observe(pid, w, count, head, count >= min_trades)
             if count < min_trades:
                 continue
-            if max_trades and count > max_trades:
+            # /pause from Telegram: no real order. With t1.shadow (default on) the decision is
+            # still written under a shadow model version, which the executor never sends and
+            # the book marks like the paper book: the honeypot probe and the exit rule keep
+            # being measured while no money moves.
+            shadow = bool(paused and self._cfg("shadow", True))
+            if paused and not shadow:
+                log.info("t1: %s passe la barre (%d swaps) mais les achats sont en pause", pid[:10], count)
+                continue
+            # The cap is for the real book only. The paper book must keep buying above it, or
+            # nothing would tell us the day this tactic stops paying and the historical pattern
+            # (where busier launches survived best) comes back.
+            if not shadow and max_trades and count > max_trades:
                 # A burst is not enthusiasm past a point, it is a bundle. Measured 2026-09-07 on 84
                 # ETH pools this book did NOT buy, so our own order cannot explain it: below 60
                 # trades in the first minute 77 % were still trading five minutes later, above 60
@@ -240,14 +251,6 @@ class T1Watcher:
                 # config value, and `t1.max_trades: 0` removes the cap.
                 log.info("t1: %s passe la barre (%d swaps) mais depasse le plafond de %d (bundle probable)",
                          pid[:10], count, max_trades)
-                continue
-            # /pause from Telegram: no real order. With t1.shadow (default on) the decision is
-            # still written under a shadow model version, which the executor never sends and
-            # the book marks like the paper book: the honeypot probe and the exit rule keep
-            # being measured while no money moves.
-            shadow = bool(paused and self._cfg("shadow", True))
-            if paused and not shadow:
-                log.info("t1: %s passe la barre (%d swaps) mais les achats sont en pause", pid[:10], count)
                 continue
             hooks = (w.init.hooks or "").lower()
             if hooks and int(hooks, 16) != 0 and not self._cfg("allow_hooks", False):
