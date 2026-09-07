@@ -31,18 +31,31 @@ def prune(ctx: IntelContext) -> dict[str, Any]:
     # its pools for `dead_token_days`. Pruning is all-or-nothing per token because the metrics read
     # whole histories (MIN(ts) for the launch date, every transfer for wallet clusters); half a
     # history would quietly produce wrong numbers rather than missing ones.
-    dead = [r["token_address"] for r in ctx.db.query(
-        "SELECT DISTINCT t.token_address FROM transfers t "
-        "WHERE t.chain_id=? "
-        "  AND t.token_address NOT IN (SELECT token_address FROM portfolio_positions WHERE chain_id=? AND active=1) "
-        "  AND t.token_address NOT IN (SELECT token_address FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF')) "
-        "  AND t.token_address NOT IN (SELECT token_address FROM scanner_candidates WHERE chain_id=? AND status NOT IN ('REJECTED','DORMANT')) "
-        "  AND NOT EXISTS (SELECT 1 FROM swap_events s JOIN pairs p ON p.chain_id=s.chain_id AND p.pair_id=s.pair_id "
-        "                  WHERE p.chain_id=? AND p.token_address=t.token_address AND s.ts>?) "
+    candidates = [r["token_address"] for r in ctx.db.query(
+        # Start from `pairs` (113 k rows), never from `transfers` (13 M): a DISTINCT over the big
+        # table with a correlated NOT EXISTS took over half an hour on 2026-09-07 and never
+        # finished, where this answers in a tenth of a second.
+        "SELECT p.token_address FROM pairs p "
+        "WHERE p.chain_id=? AND p.token_address IS NOT NULL "
+        "  AND p.token_address NOT IN (SELECT token_address FROM portfolio_positions WHERE chain_id=? AND active=1) "
+        "  AND p.token_address NOT IN (SELECT token_address FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF')) "
+        "  AND p.token_address NOT IN (SELECT token_address FROM scanner_candidates WHERE chain_id=? AND status NOT IN ('REJECTED','DORMANT')) "
+        "GROUP BY p.token_address "
+        "HAVING COALESCE(MAX((SELECT MAX(s.ts) FROM swap_events s WHERE s.chain_id=p.chain_id AND s.pair_id=p.pair_id)), 0) < ? "
         "LIMIT ?",
-        (ctx.chain_id, ctx.chain_id, ctx.chain_id, ctx.chain_id, ctx.chain_id, dead_before,
-         int(cfg.get("max_tokens_per_prune", 200))),
+        (ctx.chain_id, ctx.chain_id, ctx.chain_id, ctx.chain_id, dead_before,
+         int(cfg.get("scan_tokens_per_prune", 4000))),
     )]
+    # Most dead pools carry no rows at all -- the scanner sees far more pools than it ever ingests --
+    # so a batch picked blindly frees nothing (60 tokens, 100 rows, 2026-09-07). Keep the ones that
+    # actually hold data; the check is one indexed lookup per token.
+    dead: list[str] = []
+    limit = int(cfg.get("max_tokens_per_prune", 60))
+    for token in candidates:
+        if ctx.db.scalar("SELECT 1 FROM transfers WHERE chain_id=? AND token_address=? LIMIT 1", (ctx.chain_id, token)):
+            dead.append(token)
+            if len(dead) >= limit:
+                break
     for token in dead:
         with ctx.db.transaction():
             for t in RAW_TABLES:
