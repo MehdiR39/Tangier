@@ -30,6 +30,7 @@ from intel.utils.timeutil import now_ts
 log = logging.getLogger(__name__)
 CURSOR = "telegram_commands_offset"
 PAUSE_FLAG = "t1_paused"
+NL = chr(10)
 
 
 def t1_paused(ctx: IntelContext) -> bool:
@@ -132,8 +133,21 @@ class TelegramCommands:
         if cmd == "/restart":
             self.ctx.db.cursor_set("engine_restart_request", 1, now_ts())
             return "redémarrage du moteur dans quelques secondes (code et config du disque). /help pour vérifier ensuite."
-        return ("/positions · /closed [n] · /pnl · /orders [n] · /solde · /pause · /resume · /restart\n"
-                f"mode: {self.ctx.config.get('execution.mode', 'dry_run')} · achats {'EN PAUSE' if t1_paused(self.ctx) else 'actifs'}")
+        mode = "réel" if self.ctx.config.get("execution.mode", "dry_run") == "live" else "à blanc"
+        etat = "en pause" if t1_paused(self.ctx) else "actifs"
+        return NL.join([
+            "<b>Commandes</b>", "",
+            "<code>/pnl       </code> résultat du jour",
+            "<code>/positions </code> ce qui est ouvert",
+            "<code>/closed    </code> dernières fermetures",
+            "<code>/orders    </code> ordres passés en chaîne",
+            "<code>/solde     </code> portefeuille",
+            "<code>/pause     </code> arrêter d'acheter",
+            "<code>/resume    </code> reprendre les achats",
+            "<code>/restart   </code> redémarrer le moteur",
+            "", f"<i>/pnl all pour le cumul · /closed 20 pour plus de lignes</i>",
+            "", f"Mode {mode} · achats {etat}",
+        ])
 
     def _mark(self, p: Any) -> float | None:
         if self.t1 is None:
@@ -141,98 +155,113 @@ class TelegramCommands:
         notes = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv)
         return self.t1._mark(notes.get("pool"), p["token_address"], notes.get("quote"))
 
+    def _name(self, token: str) -> str:
+        """The token's ticker, which is what a person recognises -- never a hex address."""
+        sym = self.ctx.db.scalar("SELECT symbol FROM tokens WHERE chain_id=? AND address=?", (self.ctx.chain_id, token))
+        sym = (sym or "").strip()
+        return (sym[:12] if sym else token[2:8].upper())
+
+    @staticmethod
+    def _eur(v: float | None) -> str:
+        return "—" if v is None else f"{v:+.2f} €".replace("-", "−")
+
     def positions(self) -> str:
         rows = self.ctx.db.query(
-            "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='OPEN' ORDER BY opened_ts DESC",
-            (self.ctx.chain_id,))
+            "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='OPEN' AND kind='PORTFOLIO' "
+            "ORDER BY opened_ts DESC", (self.ctx.chain_id,))
         if not rows:
-            return "aucune position ouverte" + (" · achats EN PAUSE" if t1_paused(self.ctx) else "")
+            return "Aucune position ouverte." + (" Achats en pause." if t1_paused(self.ctx) else "")
         now = now_ts()
-        lines = [f"<b>{len(rows)} position(s) ouverte(s)</b>"]
-        exposure = 0.0
+        engaged = sum(float(p["size_eur"] or 0) for p in rows)
+        out = [f"<b>{len(rows)} position{'s' if len(rows) > 1 else ''} ouverte{'s' if len(rows) > 1 else ''}</b> · {engaged:.0f} € engagés", ""]
         for p in rows:
             price = self._mark(p)
             mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
-            age = (now - int(p["opened_ts"])) // 60
-            exposure += float(p["size_eur"] or 0)
-            lines.append(f"{p['token_address'][:10]} · {float(p['size_eur'] or 0):.0f} € · T+{age} min · "
-                         + (f"x{mult:.2f}" if mult is not None else "prix inconnu")
-                         + (" · réel" if p["kind"] == "PORTFOLIO" else " · à blanc"))
-        lines.append(f"engagé : {exposure:.0f} €")
-        return "\n".join(lines)
+            out.append(f"<code>{self._name(p['token_address']):<11}</code> "
+                       + (f"×{mult:.2f}" if mult is not None else "  ?  ")
+                       + f"  T+{(now - int(p['opened_ts'])) // 60} min")
+        return NL.join(out)
 
     def closed(self, n: int) -> str:
         rows = self.ctx.db.query(
-            "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='CLOSED' ORDER BY closed_ts DESC LIMIT ?",
-            (self.ctx.chain_id, n))
+            "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='CLOSED' AND kind='PORTFOLIO' "
+            "ORDER BY closed_ts DESC LIMIT ?", (self.ctx.chain_id, n))
         if not rows:
-            return "aucune position fermée"
-        lines = [f"<b>{len(rows)} dernières positions fermées</b>"]
+            return "Aucune position fermée."
+        out = [f"<b>{len(rows)} dernières fermetures</b>", ""]
         for p in rows:
+            sold = (p["close_reason"] or "").startswith("vendu")
             mult = (float(p["close_price"]) / float(p["entry_price"])) if (p["close_price"] and p["entry_price"]) else None
-            held = (int(p["closed_ts"] or 0) - int(p["opened_ts"])) // 60
-            r = p["realized_eur"]
-            lines.append(f"{time.strftime('%H:%M', time.gmtime(int(p['closed_ts'] or 0)))} {p['token_address'][:10]} · "
-                         + (f"x{mult:.2f}" if mult is not None else "x?") + f" · {held} min · "
-                         + (f"{r:+.2f} €" if r is not None else "?") + f" · {(p['close_reason'] or '')[:28]}"
-                         + (" · réel" if p["kind"] == "PORTFOLIO" else ""))
-        return "\n".join(lines)
+            out.append(f"<code>{time.strftime('%H:%M', time.gmtime(int(p['closed_ts'] or 0)))} {self._name(p['token_address']):<11}</code> "
+                       + (f"×{mult:.2f}  " if (mult is not None and sold) else "      ")
+                       + self._eur(p["realized_eur"]) + ("" if sold else "  invendable"))
+        return NL.join(out)
 
     async def pnl(self, full: bool = False) -> str:
-        """Short by default: the real book today, one line for the paper book. /pnl all for everything."""
+        """The real book, plainly. The paper book is one line; /pnl all opens everything."""
         db = self.ctx.db
-        day0 = now_ts() - (now_ts() % 86400)
-        since = 0 if full else day0
-        head = "<b>P&amp;L</b> " + ("depuis le début" if full else "aujourd'hui") + (" · achats EN PAUSE" if t1_paused(self.ctx) else "")
-        out = [head]
-        for kind, klab in (("PORTFOLIO", "Réel"), ("VIRTUAL", "À blanc")):
+        since = 0 if full else now_ts() - (now_ts() % 86400)
+        title = "depuis le début" if full else "aujourd'hui"
+
+        def tally(kind: str) -> tuple[int, int, float, int, float]:
             r = db.query_one(
-                "SELECT COUNT(*) n, SUM(CASE WHEN realized_eur>0 THEN 1 ELSE 0 END) w, COALESCE(SUM(realized_eur),0) pnl "
-                "FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='CLOSED' AND kind=? AND closed_ts>=? "
-                "AND close_reason LIKE 'vendu%'", (self.ctx.chain_id, kind, since))
+                "SELECT COUNT(*) n, SUM(CASE WHEN realized_eur>0 THEN 1 ELSE 0 END) w, COALESCE(SUM(realized_eur),0) p "
+                "FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='CLOSED' AND kind=? "
+                "AND closed_ts>=? AND close_reason LIKE 'vendu%'", (self.ctx.chain_id, kind, since))
             w = db.query_one(
-                "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) pnl FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
+                "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
                 "AND status='CLOSED' AND kind=? AND closed_ts>=? AND close_reason NOT LIKE 'vendu%'", (self.ctx.chain_id, kind, since))
-            n, wins, pnl = (r["n"] or 0), int(r["w"] or 0), float(r["pnl"] or 0)
-            lost, lost_eur = (w["n"] or 0), float(w["pnl"] or 0)
-            if kind == "PORTFOLIO" or full or n or lost:
-                line = f"{klab} : {n} vendue{'s' if n > 1 else ''}"
-                if n:
-                    line += f", {wins} gagnante{'s' if wins > 1 else ''}, {pnl:+.2f} €"
-                if lost:
-                    line += f" · {lost} invendable{'s' if lost > 1 else ''} ({lost_eur:+.0f} €)"
-                out.append(line)
-        op = db.query_one("SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='OPEN' AND kind='PORTFOLIO'",
-                          (self.ctx.chain_id,))
-        out.append(f"Ouvertes : {op['n']}" + (f" ({op['s']:.0f} € engagés)" if op["n"] else ""))
-        ex = db.query("SELECT kind, status, COUNT(*) n FROM executions WHERE chain_id=? AND mode='live' AND ts>=? AND kind IN ('BUY','SELL_ALL') GROUP BY kind, status",
-                      (self.ctx.chain_id, since))
-        if ex:
-            fr = {"CONFIRMED": "confirmé", "SUBMITTED": "envoyé", "FAILED": "échoué", "REFUSED": "refusé", "BUILT": "construit"}
-            out.append("Ordres : " + " · ".join(f"{'achat' if r['kind'] == 'BUY' else 'vente'} {fr.get(r['status'], r['status'].lower())} {r['n']}" for r in ex))
+            return int(r["n"] or 0), int(r["w"] or 0), float(r["p"] or 0), int(w["n"] or 0), float(w["p"] or 0)
+
+        n, wins, pnl, lost, lost_eur = tally("PORTFOLIO")
+        out = [f"<b>Résultat réel · {title}</b>", "", f"<b>{self._eur(pnl + lost_eur)}</b>", ""]
+        if n:
+            out.append(f"<code>Vendues     {n:>3}</code>  {wins} gagnante{'s' if wins > 1 else ''}   {self._eur(pnl)}")
+        if lost:
+            out.append(f"<code>Invendables {lost:>3}</code>              {self._eur(lost_eur)}")
+        op = db.query_one("SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
+                          "AND status='OPEN' AND kind='PORTFOLIO'", (self.ctx.chain_id,))
+        out.append(f"<code>Ouvertes    {int(op['n']):>3}</code>" + (f"  {float(op['s']):.0f} € engagés" if op["n"] else ""))
         try:
             from intel.execution.signer import signer_address
             addr = signer_address()
             if addr:
                 raw = await self.ctx.rpc.request("eth_getBalance", [addr, "latest"])
-                out.append(f"Solde : {int(raw, 16) / 1e18:.4f} ETH")
+                out += ["", f"Solde : {int(raw, 16) / 1e18:.4f} ETH"]
         except Exception:  # noqa: BLE001
             pass
-        return "\n".join(out)
+        vn, vw, vp, vl, vle = tally("VIRTUAL")
+        if vn or vl:
+            out += ["", f"<i>Carnet à blanc : {vn} vendues, {self._eur(vp)}</i>"]
+        if t1_paused(self.ctx):
+            out += ["", "⏸ Achats en pause · /resume"]
+        return NL.join(out)
 
     def orders(self, n: int) -> str:
+        # Refused orders never left the machine and cost nothing: diagnostics, not history. And a
+        # sell that was retried five times on the same bag is one event, not five lines.
         rows = self.ctx.db.query(
-            "SELECT ts, kind, status, mode, size_eur, token_address, tx_hash, refused_reason, error FROM executions "
-            "WHERE chain_id=? ORDER BY id DESC LIMIT ?", (self.ctx.chain_id, n))
+            "SELECT ts, kind, status, token_address FROM executions "
+            "WHERE chain_id=? AND mode='live' AND kind IN ('BUY','SELL_ALL') AND status IN ('CONFIRMED','SUBMITTED','FAILED') "
+            "ORDER BY id DESC LIMIT ?", (self.ctx.chain_id, max(n * 6, 40)))
         if not rows:
-            return "aucun ordre journalisé"
-        lines = [f"<b>{len(rows)} derniers ordres</b>"]
+            return "Aucun ordre passé en chaîne."
+        fr = {"CONFIRMED": "passé", "SUBMITTED": "en vol", "FAILED": "échoué"}
+        groups: list[list[Any]] = []
         for r in rows:
-            why = (r["refused_reason"] or r["error"] or "")[:40]
-            lines.append(f"{time.strftime('%H:%M', time.gmtime(int(r['ts'])))} {r['kind']} {r['status'].lower()} · {r['token_address'][:10]} · "
-                         f"{float(r['size_eur'] or 0):.0f} € · {r['mode']}"
-                         + (f" · tx {r['tx_hash'][:10]}…" if r["tx_hash"] else "") + (f" · {why}" if why else ""))
-        return "\n".join(lines)
+            key = (r["kind"], r["token_address"], r["status"])
+            if groups and groups[-1][0] == key:
+                groups[-1][2] += 1
+            else:
+                groups.append([key, r["ts"], 1])
+            if len(groups) > n:
+                break
+        out = [f"<b>Derniers ordres en chaîne</b>", ""]
+        for (kind, token, status), ts, count in groups[:n]:
+            out.append(f"<code>{time.strftime('%H:%M', time.gmtime(int(ts)))} "
+                       f"{'achat' if kind == 'BUY' else 'vente':<5} {self._name(token):<11}</code> "
+                       f"{fr.get(status, status.lower())}" + (f" (×{count})" if count > 1 else ""))
+        return NL.join(out)
 
     async def balance(self) -> str:
         from intel.execution.signer import signer_address

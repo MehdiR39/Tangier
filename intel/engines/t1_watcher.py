@@ -465,7 +465,7 @@ class T1Watcher:
                                         (self.ctx.chain_id, p["id"]), 0))
                 if n_tries >= retry_max:
                     db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_price=?, close_reason=?, realized_eur=? WHERE id=?",
-                               (now, price, f"invendable apres {n_tries} essais ({last['status']})", -float(p["size_eur"] or 0), p["id"]))
+                               (now, price, f"invendable après {n_tries} essais ({last['status']})", -float(p["size_eur"] or 0), p["id"]))
                     log.warning("t1 position abandonnee %s : vente refusee %d fois", token[:10], n_tries)
                     continue
                 if now - int(last["ts"]) < 15:
@@ -475,7 +475,7 @@ class T1Watcher:
             if mult is not None and mult >= tp:
                 reason = f"objectif x{tp:g} atteint (x{mult:.2f}) : on vend tout pendant qu'il y a un pool"
             elif age >= max_hold:
-                reason = f"T+{age // 60} min : la fenetre est finie, on vend tout" + (f" (x{mult:.2f})" if mult is not None else "")
+                reason = f"T+{age // 60} min : la fenêtre est finie, on vend tout" + (f" (x{mult:.2f})" if mult is not None else "")
             if not reason:
                 continue
             db.insert("decisions", {
@@ -557,7 +557,7 @@ class T1Watcher:
             if not ok and e["kind"] == "BUY" and e["decision_id"]:
                 db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_reason=?, realized_eur=0 "
                            "WHERE chain_id=? AND status='OPEN' AND notes LIKE ?",
-                           (now_ts(), "achat reverte en chaine : aucune position (gaz perdu)", self.ctx.chain_id, f"decision:{e['decision_id']} %"))
+                           (now_ts(), "achat reverté en chaîne : aucune position (gaz perdu)", self.ctx.chain_id, f"decision:{e['decision_id']} %"))
 
     def _mark(self, pool_id: str | None, token: str, quote: str | None) -> float | None:
         """The token's price in dollars from the pool's latest swap; None when it cannot be known."""
