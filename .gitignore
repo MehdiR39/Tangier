@@ -17,3 +17,19 @@ data/
 
 .Rhistory
 Nalo-Patrimoine-Disposer-de-mon-epargne.pdf
+
+# Secrets (Telegram bot token, CryptoPanic key) - never commit
+scripts/daily_report_config.json
+data_onchain/daily_report.log
+
+# Tangier Intel runtime artifacts
+data/intel.sqlite*
+*.sqlite-wal
+*.sqlite-shm
+data/corrupt/
+data/backups/
+data/recovered.sqlite
+
+# sauvegardes de .env : elles contiennent la cle privee
+.env.*
+!.env.example

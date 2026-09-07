@@ -1,0 +1,119 @@
+# Tangier Intel tunables. Deep-merged over intel/settings.py DEFAULT_CONFIG.
+# Secrets and endpoints are NOT here: see .env (INTEL_* variables, README_INTEL.md).
+
+portfolio:
+  positions:
+    # Tokens are configured by CONTRACT ADDRESS only. quantity / cost_basis_usd / entry_ts
+    # are optional and only used for PnL context in alerts (null = unknown).
+    - address: "0xd18528b39da6464b3662c331a52181ecb15b1e18"
+      label: SAYLORMOON
+      quantity: null
+      cost_basis_usd: null
+      entry_ts: null
+    - address: "0xaa0b48defde440b8445ba45db88cb076cf261e18"
+      label: TAIWAN
+      quantity: null
+      cost_basis_usd: null
+      entry_ts: null
+    - address: "0x6b1d42927b1a84ec28fa88d4fc6fa7af404966be"
+      label: PAIR
+      quantity: null
+      cost_basis_usd: null
+      entry_ts: null
+
+engine:
+  portfolio_cycle_seconds: 60
+  # These tokens are tradeable for a median of six minutes, so the cycle length is what decides
+  # how late a decision arrives. An evaluation costs 2.9 s since migration 6 — capacity is no
+  # longer the constraint, the appointment is.
+  scanner_cycle_seconds: 60
+  scanner_deep_cycle_seconds: 120
+
+scoring:
+  # Derived from measurement on 2026-09-04, not from judgement: 3 942 evaluations paired with the
+  # price 24 h later, weights chosen on the first half of the period and confirmed on the second.
+  # Top quartile doubled 11.7 % of the time against a 3.8 % base rate; the previous weighting
+  # (asymmetry .30 / traction .25 / survival .20 / distribution .15 / narrative .10) scored 1.0 %,
+  # worse than picking at random. asymmetry and narrative are gone: both measured as harmful.
+  # These keys REPLACE the defaults, they are not merged with them.
+  weights:
+    organic_volume: 0.35
+    distribution: 0.30
+    smart_money: 0.15
+    traction: 0.10
+    survival: 0.10
+
+hard_filters:
+  min_liquidity_usd: 20000
+  min_liquidity_to_mc: 0.03
+  liquidity_to_mc_reject_min_age_hours: 24
+  max_top10_excluded_system_pct: 0.50
+  max_insider_cluster_pct: 0.40
+  asymmetry_penalty_x_from_fmm: 50
+
+first_meaningful_market:
+  bucket_seconds: 300
+  min_unique_traders: 25
+  min_trades: 50
+  min_cum_quote_inflow_usd: 10000
+  min_liquidity_usd: 20000
+  persistence_buckets: 3
+
+scanner:
+  moonshot_alert_threshold: 70
+  stage1:
+    max_age_hours: 336
+    min_liquidity_usd: 20000
+    max_market_cap_usd: 5000000
+    min_volume_24h_usd: 5000
+  stage3:
+    # public RPC: keep the first pass of a new candidate short (~8h of history) so new gems
+    # are scored within minutes; the history loop completes older history afterwards.
+    # Slots go to never-scored candidates with the strongest momentum (2026-09-03 lesson:
+    # the queue was monopolised by already-scored tokens and a ×7 was never analysed).
+    # 5 per cycle was sized for an evaluation that cost 355 s. It costs 2.9 s since the covering
+    # indexes of migration 6 (2026-09-05), so the 4-minute cycle budget is the real limit now.
+    max_candidates_per_cycle: 60
+    refresh_per_cycle: 5
+    backfill_blocks: 300000
+
+alerts:
+  enabled: true
+  min_severity: WATCH
+  lp_drop_pct: 0.15
+  # 30k, pas 100k : une ligne de 20 € ne déplace un pool de 37 k$ que de 0,06 %.
+  scanner_min_liquidity_usd: 30000
+
+states:
+  candidate_min_liquidity_usd: 30000
+
+decisions:
+  enabled: true
+  size_eur: 20
+  min_moonshot_buy: 70
+
+# T+1 watcher — switched ON by the operator on 2026-09-06 ("Active oui"). It writes BUY decisions
+# of 5 EUR when a pool has >= 27 swaps in the minute after its first trade (the one entry rule that
+# held out of sample). The execution section stays dry_run: nothing leaves the wallet until
+# execution.mode is deliberately set to live, separately.
+t1:
+  enabled: true
+
+# 2026-09-07: les pools cotes en USDG perdent (historique -6 EUR sur 5, carnet reel -73 EUR sur 42,
+# 24 % de gagnants) la ou les pools ETH gagnent (+159 EUR sur 106). On n achete que les pools ETH.
+# Le passage en reel se fait ici: mode: live (et la cle dans .env). Les deux sont necessaires.
+execution:
+  # live depuis le 2026-09-07 sur ordre de l'operateur ("lance tout"), portefeuille 0x2a33086d...c908
+  # verifie (0.186 ETH). Plafonds inchanges: 25 EUR/ordre, 40 ordres et 200 EUR/jour, 5 % slippage.
+  mode: live
+  cycle_seconds: 5          # une decision T+1 vaut des secondes: 30 s d attente coutait le debut de la pompe
+  # Il y a DEUX deploiements Uniswap v4 sur cette chaine. Le routeur par defaut (0xf8b30c1b...) sert le
+  # PoolManager 0xe5a881e6..., pas le notre (0x8366a39c...): les 5 premiers achats reels du 2026-09-07
+  # ont tous echoue a l estimation (PoolNotInitialized). Celui-ci est le routeur que les bots utilisent
+  # sur nos pools (164 000 swaps/24 h), poolManager() = 0x8366a39c..., simulation OK avec et sans hook.
+  router: "0x8876789976decbfcbbbe364623c63652db8c0904"
+  # Ce que le pool rend en moins par rapport a la cotation calculee (taxe du token/hook a l achat).
+  # A 19 % (0x319c5b3f, 14:47) on ne peut pas viser x2 en cinq minutes ; 10 % est le plafond.
+  max_hook_tax_pct: 10
+  allowed_quotes:
+    - "0x0000000000000000000000000000000000000000"

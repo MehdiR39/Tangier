@@ -13,3 +13,37 @@ services:
     tty: true
     stdin_open: true
     command: bash
+
+  intel:
+    build:
+      context: .
+      dockerfile: Dockerfile.intel
+    image: tangier-intel:latest
+    container_name: tangier-intel
+    env_file:
+      - .env
+    environment:
+      # The live SQLite database lives in a container-private volume: a WAL database on a
+      # Windows bind mount opened from both sides corrupts. Backups/snapshots (static files)
+      # are written to ./data for host-side analysis.
+      - INTEL_DB_PATH=/app/db/intel.sqlite
+      - INTEL_BACKUP_DIR=/app/data/backups
+      - INTEL_LOGS_DIR=/app/logs
+      - INTEL_CONFIG=/app/config/intel.yaml
+    volumes:
+      - intel_db:/app/db
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./results:/app/results
+      - ./config/intel.yaml:/app/config/intel.yaml:ro
+      # The engine code itself, read-only from the host: a fix lands with a process restart
+      # (Telegram /restart, or the restart flag), no rebuild and no recreate. The image still
+      # carries a copy for the case where the mount is absent.
+      - ./intel:/app/intel:ro
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+    command: ["python", "-m", "intel", "run"]
+
+volumes:
+  intel_db:
