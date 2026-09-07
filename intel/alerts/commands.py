@@ -165,21 +165,38 @@ class TelegramCommands:
     def _eur(v: float | None) -> str:
         return "—" if v is None else f"{v:+.2f} €".replace("-", "−")
 
+    @staticmethod
+    def _recovering(p: Any) -> int:
+        """How many recovery rounds this line has had: > 0 means a written-off bag, not a position."""
+        return sum(1 for kv in (p["notes"] or "").split() if kv.startswith("recover:"))
+
     def positions(self) -> str:
         rows = self.ctx.db.query(
             "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='OPEN' AND kind='PORTFOLIO' "
             "ORDER BY opened_ts DESC", (self.ctx.chain_id,))
-        if not rows:
-            return "Aucune position ouverte." + (" Achats en pause." if t1_paused(self.ctx) else "")
+        # A bag reopened by the recovery loop is not a position: its euros are already lost and its
+        # multiple is a price nobody will pay. Counting them as engaged capital (2026-09-07:
+        # "3 positions ouvertes · 15 € engagés" for three honeypots) says the opposite of the truth.
+        live = [p for p in rows if not self._recovering(p)]
+        bags = [p for p in rows if self._recovering(p)]
+        out: list[str] = []
         now = now_ts()
-        engaged = sum(float(p["size_eur"] or 0) for p in rows)
-        out = [f"<b>{len(rows)} position{'s' if len(rows) > 1 else ''} ouverte{'s' if len(rows) > 1 else ''}</b> · {engaged:.0f} € engagés", ""]
-        for p in rows:
-            price = self._mark(p)
-            mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
-            out.append(f"<code>{self._name(p['token_address']):<11}</code> "
-                       + (f"×{mult:.2f}" if mult is not None else "  ?  ")
-                       + f"  T+{(now - int(p['opened_ts'])) // 60} min")
+        if live:
+            engaged = sum(float(p["size_eur"] or 0) for p in live)
+            out += [f"<b>{len(live)} position{'s' if len(live) > 1 else ''} ouverte{'s' if len(live) > 1 else ''}</b> · {engaged:.0f} € engagés", ""]
+            for p in live:
+                price = self._mark(p)
+                mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
+                out.append(f"<code>{self._name(p['token_address']):<11}</code> "
+                           + (f"×{mult:.2f}" if mult is not None else "  ?  ")
+                           + f"  T+{(now - int(p['opened_ts'])) // 60} min")
+        else:
+            out.append("Aucune position ouverte." + (" Achats en pause." if t1_paused(self.ctx) else ""))
+        if bags:
+            cap = int(self.ctx.config.get("t1.recover_max", 8))
+            out += ["", f"<i>{len(bags)} sac{'s' if len(bags) > 1 else ''} invendable{'s' if len(bags) > 1 else ''}, déjà perdu{'s' if len(bags) > 1 else ''}, réessayé{'s' if len(bags) > 1 else ''} :</i>"]
+            for p in bags:
+                out.append(f"<code>{self._name(p['token_address']):<11}</code> tentative {self._recovering(p)}/{cap}")
         return NL.join(out)
 
     def closed(self, n: int) -> str:
@@ -220,8 +237,12 @@ class TelegramCommands:
         if lost:
             out.append(f"<code>Invendables {lost:>3}</code>              {self._eur(lost_eur)}")
         op = db.query_one("SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
-                          "AND status='OPEN' AND kind='PORTFOLIO'", (self.ctx.chain_id,))
+                          "AND status='OPEN' AND kind='PORTFOLIO' AND notes NOT LIKE '%recover:%'", (self.ctx.chain_id,))
         out.append(f"<code>Ouvertes    {int(op['n']):>3}</code>" + (f"  {float(op['s']):.0f} € engagés" if op["n"] else ""))
+        rec = db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='OPEN' "
+                        "AND kind='PORTFOLIO' AND notes LIKE '%recover:%'", (self.ctx.chain_id,), 0)
+        if rec:
+            out.append(f"<code>Réessayés   {int(rec):>3}</code>  sacs déjà perdus")
         try:
             from intel.execution.signer import signer_address
             addr = signer_address()
