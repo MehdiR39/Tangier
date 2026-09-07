@@ -173,14 +173,26 @@ async def holders_now(client: httpx.AsyncClient, rpc_url: str, mint: str) -> tup
     key = rpc_url.split("api-key=")[-1] if "api-key=" in rpc_url else ""
     holders = None
     if key:
+        # Paged: a single call returns at most 1000 and a popular token silently reads as exactly
+        # 1000, which would look like a threshold rather than a ceiling. At T+1 the counts are small
+        # and one page is enough; the pages exist so the retrospective figures stay true.
+        holders = 0
+        cursor = None
         try:
-            r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getTokenAccounts",
-                                                 "params": {"mint": mint, "limit": 1000}}, timeout=40)
-            accounts = ((r.json() or {}).get("result") or {}).get("token_accounts")
-            if accounts is not None:
-                holders = len(accounts)
+            for _ in range(5):
+                params: dict[str, Any] = {"mint": mint, "limit": 1000}
+                if cursor:
+                    params["cursor"] = cursor
+                r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getTokenAccounts",
+                                                     "params": params}, timeout=40)
+                res = ((r.json() or {}).get("result") or {})
+                accounts = res.get("token_accounts") or []
+                holders += len(accounts)
+                cursor = res.get("cursor")
+                if not cursor or len(accounts) < 1000:
+                    break
         except Exception:  # noqa: BLE001
-            holders = None
+            holders = holders or None
     share = None
     try:
         r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getTokenLargestAccounts",
