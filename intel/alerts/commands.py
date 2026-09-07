@@ -234,11 +234,16 @@ class TelegramCommands:
             return int(r["n"] or 0), int(r["w"] or 0), float(r["p"] or 0), int(w["n"] or 0), float(w["p"] or 0)
 
         n, wins, pnl, lost, lost_eur = tally("PORTFOLIO")
+        rec = db.query_one(
+            "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
+            "AND kind='PORTFOLIO' AND closed_ts>=? AND close_reason LIKE 'recupere%'", (self.ctx.chain_id, since))
         out = [f"<b>Résultat réel · {title}</b>", "", f"<b>{self._eur(pnl + lost_eur)}</b>", ""]
         if n:
             out.append(f"<code>Vendues     {n:>3}</code>  {wins} gagnante{'s' if wins > 1 else ''}   {self._eur(pnl)}")
         if lost:
             out.append(f"<code>Invendables {lost:>3}</code>              {self._eur(lost_eur)}")
+        if rec and rec["n"]:
+            out.append(f"<code>Récupérés   {int(rec['n']):>3}</code>  hors règle    {self._eur(float(rec['p']))}")
         op = db.query_one("SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
                           "AND status='OPEN' AND kind='PORTFOLIO' AND notes NOT LIKE '%recover:%'", (self.ctx.chain_id,))
         out.append(f"<code>Ouvertes    {int(op['n']):>3}</code>" + (f"  {float(op['s']):.0f} € engagés" if op["n"] else ""))

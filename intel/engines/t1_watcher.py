@@ -30,7 +30,8 @@ from intel.utils.timeutil import now_ts
 
 log = logging.getLogger(__name__)
 MODEL_VERSION = "t1-watcher-v0.1"
-MODEL_VERSION_SHADOW = "t1-shadow-v0.1"     # decisions the executor builds but never sends (paper book while paused)
+MODEL_VERSION_SHADOW = "t1-shadow-v0.1"
+PAUSE_KEY = "t1_paused"     # decisions the executor builds but never sends (paper book while paused)
 BLOCKS_PER_MIN = 600
 
 
@@ -273,6 +274,20 @@ class T1Watcher:
                 # trade past the ceiling, is never bought again by the real book.
                 log.info("t1: %s passe la barre (%d swaps) mais le token %s a deja ete pris en defaut", pid[:10], count, w.token[:10])
                 continue
+            # A bounded experiment, agreed with the operator: twenty tickets to answer one question
+            # -- with the float bug fixed, does the sale go through INSIDE the exit window? The
+            # engine stops itself at the budget rather than relying on anyone watching the clock.
+            budget = int(self._cfg("buy_budget", 0))
+            if budget:
+                spent = self.ctx.db.scalar(
+                    "SELECT COUNT(*) FROM decisions WHERE chain_id=? AND model_version=? AND kind='BUY' AND ts>?",
+                    (self.ctx.chain_id, MODEL_VERSION, int(self._cfg("budget_since_ts", 0))), 0)
+                if spent >= budget:
+                    if not getattr(self, "_budget_done", False):
+                        self._budget_done = True
+                        log.warning("t1: budget de %d achats atteint, plus aucun achat reel (le carnet a blanc continue)", budget)
+                    self.ctx.db.cursor_set(PAUSE_KEY, 1, now_ts())
+                    continue
             if len(self.sent_ts) >= per_hour:
                 log.info("t1: %s cleared the bar (%d swaps) but the hourly cap is reached", pid[:10], count)
                 continue
@@ -473,8 +488,16 @@ class T1Watcher:
                     continue                                       # not looked at yet, or in flight
                 if last["status"] in done_states:
                     realized = float(p["size_eur"]) * (mult - 1.0) if (mult is not None and p["size_eur"]) else None
+                    # A sale is only "the rule" when it happened inside the exit window. One that
+                    # took an hour is a bag held for an hour, which nothing has ever measured, and
+                    # counting it as the rule working would flatter the strategy with the result of
+                    # a rescue. Held past the window, it is labelled as such and reported apart.
+                    late = age_min > 3 * (max_hold / 60.0)
+                    label = ("recupere" if late else "vendu") + (f" x{mult:.2f}" if mult is not None else "")
+                    if late:
+                        label += f" (T+{age_min:.0f} min, hors regle)"
                     db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_price=?, close_reason=?, realized_eur=? WHERE id=?",
-                               (now, price, "vendu" + (f" x{mult:.2f}" if mult is not None else ""), realized, p["id"]))
+                               (now, price, label, realized, p["id"]))
                     log.info("t1 position fermee %s · %s", token[:10], f"x{mult:.2f}" if mult is not None else "multiple inconnu")
                     continue
                 n_tries = int(db.scalar("SELECT COUNT(*) FROM decisions WHERE chain_id=? AND position_id=? AND kind='SELL_ALL'",
