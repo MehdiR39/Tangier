@@ -171,8 +171,19 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
     pool_fee = int(pool["fee"])
     # A dynamic-fee pool reports 0 here while its hook charges what it likes: quote with 1 % so the
     # minimum output is not set from a fee-free price.
-    q = quote_from_pool(ctx, pool_id=pool["pair_id"], zero_for_one=zero_for_one, amount_in=amount_in,
-                        fee_pips=pool_fee if pool_fee > 0 else 10_000)
+    # Entry guards must not become exit walls. The staleness, single-tick and impact ceilings all
+    # exist to stop us OVERPAYING on the way in; applied to a sell they refuse to let go of a bag
+    # (2026-09-07: "dernier échange il y a 82 min", "impact 7.5 % > 3 %") and the only alternative
+    # to a costly exit is a worthless one. On the way out the chain's own quote decides, and the
+    # minimum output computed from it is what actually protects the trade.
+    if is_buy:
+        q = quote_from_pool(ctx, pool_id=pool["pair_id"], zero_for_one=zero_for_one, amount_in=amount_in,
+                            fee_pips=pool_fee if pool_fee > 0 else 10_000)
+    else:
+        q = quote_from_pool(ctx, pool_id=pool["pair_id"], zero_for_one=zero_for_one, amount_in=amount_in,
+                            fee_pips=pool_fee if pool_fee > 0 else 10_000,
+                            max_state_age_s=7 * 86400, max_order_fraction=1.0,
+                            max_impact_pct=float(ctx.config.get("execution.max_sell_impact_pct", 60.0)))
     if not q.usable:
         return {"status": "REFUSED", "refused_reason": "cotation impossible : " + "; ".join(q.reasons),
                 "amount_in": str(amount_in), "quote_address": quote_addr}

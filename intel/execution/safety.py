@@ -44,6 +44,7 @@ class Limits:
     max_orders_per_day: int = 40
     max_eur_per_day: float = 200.0
     max_slippage_pct: float = 5.0
+    max_sell_impact_pct: float = 60.0        # exits are allowed to be expensive; being stuck is worse
     min_quote_liquidity_usd: float = 20_000.0
     allowed_quotes: tuple[str, ...] = ()      # empty means "no quote allowed": refuse by default
     kill_switch: bool = False
@@ -58,6 +59,7 @@ class Limits:
             max_orders_per_day=int(c.get("max_orders_per_day", 40)),
             max_eur_per_day=float(c.get("max_eur_per_day", 200.0)),
             max_slippage_pct=float(c.get("max_slippage_pct", 5.0)),
+            max_sell_impact_pct=float(c.get("max_sell_impact_pct", 60.0)),
             min_quote_liquidity_usd=float(c.get("min_quote_liquidity_usd", 20_000.0)),
             allowed_quotes=quotes,
             kill_switch=bool(c.get("kill_switch", False)),
@@ -136,7 +138,11 @@ def check(ctx: IntelContext, order: dict[str, Any], limits: Limits) -> Verdict:
 
     if slippage is None:
         reasons.append("slippage non calculé")
-    elif float(slippage) > limits.max_slippage_pct:
+    elif kind == BUY and float(slippage) > limits.max_slippage_pct:
         reasons.append(f"slippage {float(slippage):.1f} % > plafond {limits.max_slippage_pct:.1f} %")
+    elif kind != BUY and float(slippage) > limits.max_sell_impact_pct:
+        # A sale that moves the price is expensive; a sale refused is worth zero. The exit ceiling
+        # is deliberately loose and exists only to catch a pool with nothing left in it.
+        reasons.append(f"impact de sortie {float(slippage):.1f} % > plafond {limits.max_sell_impact_pct:.1f} %")
 
     return Verdict(not reasons, reasons)

@@ -123,3 +123,12 @@ def test_a_sell_is_not_blocked_by_the_quote_allowlist():
     other = "0x" + "cc" * 20
     assert not check(_ctx(), _order(quote=other), _limits()).allowed          # buying there: refused
     assert check(_ctx(), _order(kind=SELL_ALL, quote=other, size_eur=None), _limits()).allowed
+
+
+def test_the_entry_slippage_ceiling_does_not_wall_in_a_sell():
+    # 7.5 % impact refused an exit on 2026-09-07 while the bag's only alternative was zero.
+    # Buying at that price stays refused; leaving is judged against the looser exit ceiling.
+    assert not check(_ctx(), _order(slippage_pct=7.5), _limits()).allowed
+    assert check(_ctx(), _order(kind=SELL_ALL, size_eur=None, slippage_pct=7.5), _limits()).allowed
+    v = check(_ctx(), _order(kind=SELL_ALL, size_eur=None, slippage_pct=95.0), _limits())
+    assert not v.allowed and "impact de sortie" in v.why
