@@ -23,11 +23,25 @@ def prune(ctx: IntelContext) -> dict[str, Any]:
     now = now_ts()
     dead_before = now - int(cfg.get("dead_token_days", 2)) * 86400
     stats: dict[str, Any] = {"tokens": 0}
+    # "Dead" used to mean "a scanner candidate marked REJECTED or DORMANT". The T+1 watcher never
+    # files its tokens as candidates, so its pools -- hundreds a day, each followed for six hours --
+    # were never pruned and the database reached 15.7 GB by 2026-09-07, past the size at which a
+    # backup can finish between two restarts. A token is dead when nothing points at it any more:
+    # no active portfolio line, no open position, no live scanner candidate, and no swap in any of
+    # its pools for `dead_token_days`. Pruning is all-or-nothing per token because the metrics read
+    # whole histories (MIN(ts) for the launch date, every transfer for wallet clusters); half a
+    # history would quietly produce wrong numbers rather than missing ones.
     dead = [r["token_address"] for r in ctx.db.query(
-        "SELECT c.token_address FROM scanner_candidates c LEFT JOIN portfolio_positions p ON p.chain_id=c.chain_id AND p.token_address=c.token_address AND p.active=1 "
-        "WHERE c.chain_id=? AND p.token_address IS NULL AND c.status IN ('REJECTED','DORMANT') AND COALESCE(c.last_stage_ts, c.last_seen_ts) < ? "
-        "AND c.token_address IN (SELECT DISTINCT token_address FROM transfers WHERE chain_id=?)",
-        (ctx.chain_id, dead_before, ctx.chain_id),
+        "SELECT DISTINCT t.token_address FROM transfers t "
+        "WHERE t.chain_id=? "
+        "  AND t.token_address NOT IN (SELECT token_address FROM portfolio_positions WHERE chain_id=? AND active=1) "
+        "  AND t.token_address NOT IN (SELECT token_address FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF')) "
+        "  AND t.token_address NOT IN (SELECT token_address FROM scanner_candidates WHERE chain_id=? AND status NOT IN ('REJECTED','DORMANT')) "
+        "  AND NOT EXISTS (SELECT 1 FROM swap_events s JOIN pairs p ON p.chain_id=s.chain_id AND p.pair_id=s.pair_id "
+        "                  WHERE p.chain_id=? AND p.token_address=t.token_address AND s.ts>?) "
+        "LIMIT ?",
+        (ctx.chain_id, ctx.chain_id, ctx.chain_id, ctx.chain_id, ctx.chain_id, dead_before,
+         int(cfg.get("max_tokens_per_prune", 200))),
     )]
     for token in dead:
         with ctx.db.transaction():
