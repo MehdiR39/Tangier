@@ -109,9 +109,17 @@ t1:
   # serie gagnante et ne protege de rien quand la serie perd vite. Le garde-fou est desormais le
   # plafond de pertes du jour, comme sur Solana. Remettre un nombre ici rebranche le compteur.
   buy_budget: 0
-  # Plafond de pertes reelles par jour, en euros. Ne compte que les lignes kind='PORTFOLIO' :
-  # le carnet a blanc ecrit dans la meme table et a perdu 223,86 EUR fictifs en 24 h (§3.27).
-  max_daily_loss_eur: 100
+  # Plafond horaire de tickets. 0 = aucun. Le code prenait 20 par defaut faute de cle ici ;
+  # la cle est ecrite explicitement pour que la valeur soit visible, et mise a 0 le 08/09.
+  max_per_hour: 0
+  # Plafond de pertes reelles par jour, en euros. 0 = aucun plafond.
+  # Pose a 100 le 08/09 au soir, puis RETIRE le meme soir sur decision de l operateur : il avait
+  # demande qu on enleve les limites, et ce plafond en etait une de plus -- Robinhood avait deja
+  # perdu 99,75 EUR reels dans la journee, il se serait arrete au ticket suivant.
+  # Le mecanisme reste branche et ne compte que les lignes kind='PORTFOLIO' (§5.11) : mettre un
+  # nombre ici le rallume. Il ne reste aujourd hui aucun garde-fou automatique sur ce carnet en
+  # dehors de la taille du ticket (5 EUR) et du solde du portefeuille.
+  max_daily_loss_eur: 0
   budget_since_ts: 1788869200
   # Confirmation en deuxieme minute, ajoutee le 2026-09-08 apres cinq tickets invendables d affilee
   # (-25,32 EUR, aucune vente aboutie). Le diagnostic : on n achetait pas des pieges mais des pools
@@ -249,7 +257,10 @@ solana:
   # Nos achats du jour avaient des liquidites de 118 k, 223 k, 227 k et jusqu a 1 043 k pour LAPTOP.
   # Mettre 0 pour retirer le plafond.
   max_market_cap_usd: 50000
-  max_per_hour: 6
+  # 0 = aucun plafond horaire. Etait a 6 ; retire le 08/09 avec les autres limites portant sur le
+  # nombre de tickets. Le frein reel est le portefeuille : quatre tickets de 20 EUR simultanes
+  # epuisent les 98 EUR disponibles, voir max_open_positions ci-dessus.
+  max_per_hour: 0
   # Abaisse de 2,0 a 1,5 le 2026-09-08 a 18h, sur nos PROPRES releves et contre le backtest.
   # Le suivi du sommet, ajoute le meme jour, a montre que l objectif de x2 ne s est jamais
   # declenche : sur huit tickets, les sommets plafonnent a x1,82 et les positions redescendent

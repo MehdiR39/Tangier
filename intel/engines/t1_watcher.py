@@ -383,7 +383,9 @@ class T1Watcher:
                         log.warning("t1: %.2f EUR perdus aujourd hui, au-dela de la limite de %.0f EUR "
                                     "-- plus aucun achat reel jusqu a demain", perdu, perte_max)
                     continue
-            if len(self.sent_ts) >= per_hour:
+            # 0 = aucun plafond horaire. La valeur etait 6, et l operateur a demande le 08/09 qu aucune
+            # limite ne porte sur le NOMBRE de tickets : « il faut laisser le truc tourner ».
+            if per_hour and len(self.sent_ts) >= per_hour:
                 log.info("t1: %s cleared the bar (%d swaps) but the hourly cap is reached", pid[:10], count)
                 continue
             await self._persist(w)

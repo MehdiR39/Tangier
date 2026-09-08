@@ -348,7 +348,11 @@ class SolanaWatcher:
                      symbol, n_open, max_open)
             return False
         self.sent_ts = [t for t in self.sent_ts if now - t < 3600]
-        if len(self.sent_ts) >= int(self._cfg("max_per_hour", 10)):
+        # 0 = aucun plafond horaire. Etait a 6, retire le 08/09 : l operateur ne veut aucune limite
+        # portant sur le NOMBRE de tickets. Le frein reel reste le portefeuille -- quatre tickets de
+        # 20 EUR simultanes epuisent les 98 EUR disponibles (`max_open_positions`).
+        par_heure = int(self._cfg("max_per_hour", 10) or 0)
+        if par_heure and len(self.sent_ts) >= par_heure:
             log.info("solana: %s passe la regle mais le plafond horaire est atteint", symbol)
             return False
         # Une limite de PERTE, pas un compteur de tickets. Un compteur arrete aussi une serie

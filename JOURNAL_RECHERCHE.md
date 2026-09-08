@@ -25,7 +25,7 @@ quelques minutes plus tard.
 | Sortie | ×2 ou T+5 min | **×1,5**, **stop à −30 %**, ou T+15 min (§3.23, §3.24) |
 | Ticket | 5 € | 20 € |
 | Portefeuille | `0x2a33086d2fce255f61ac1a3000bf944397c9c908` | `HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL` |
-| État au 09/09 00h | actif, **sans limite de tickets**, coupure à 100 € de pertes **réelles** par jour | actif, 4 positions max, sans limite de tickets, coupure à 100 € de pertes **réelles** par jour |
+| État au 09/09 00h30 | actif, **aucune limite** : ni budget, ni plafond horaire, ni coupure de pertes | actif, 4 positions max (contrainte du portefeuille), **aucun plafond horaire**, coupure à 100 € de pertes **réelles** par jour |
 
 **Expériences en cours** — chacune a un critère écrit d'avance :
 
@@ -630,6 +630,31 @@ reste en place, et la question sera reposée sur les 10 tickets complets.
 jour. Il perd de l'argent, régulièrement, à un rythme d'environ 2 € par ticket de 5 € — c'est grave
 mais ce n'est pas la même urgence, et la décision d'arrêter ou non doit se prendre sur les 32
 lignes réelles, pas sur 84 lignes dont les deux tiers n'ont jamais coûté un centime.
+
+### 3.28 — Toutes les limites de tickets retirées, 2026-09-09 00h30
+**Décision de l'opérateur**, deux fois : « il faut laisser le truc tourner », puis, après que j'aie
+retiré une limite pour en poser une autre — « je t'ai demandé de le retirer ».
+
+**Ce qui bridait le nombre de tickets, et que je n'avais pas toutes vues** :
+
+| réglage | avant | après |
+|---|---|---|
+| `t1.buy_budget` | 10 achats | **0** |
+| `t1.max_per_hour` | absent → 20 par défaut dans le code | **0** |
+| `t1.max_daily_loss_eur` | 100 (posé puis retiré le même soir) | **0** |
+| `solana.max_per_hour` | 6 | **0** |
+| `solana.max_open_positions` | 4 | 4 — contrainte du portefeuille, pas un choix |
+| `solana.max_daily_loss_eur` | 100 | 100 — décision antérieure de l'opérateur, inchangée |
+
+Le code traitait `0` comme « zéro ticket autorisé » sur les deux plafonds horaires : `if len(sent)
+>= 0` bloque tout. Corrigé dans les deux moteurs — `0` veut dire « aucun plafond ».
+
+**Ce qu'il reste comme garde-fou sur Robinhood** : la taille du ticket (5 €) et le solde du
+portefeuille (0,106507 ETH). Rien d'autre. À la seconde où j'écris, ce carnet a perdu 99,75 €
+réels dans la journée, avec 66 % d'invendables sur 32 tickets (§3.27) — le plafond que je venais
+de poser l'aurait arrêté au ticket suivant, et c'est précisément ce que l'opérateur a refusé.
+La position est prise en connaissance des chiffres ; ils sont écrits ici pour qu'on puisse la
+rejuger demain sur des faits plutôt que sur une impression.
 ---
 
 ## 4. Pistes ouvertes, non testées
