@@ -121,11 +121,15 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
     token = str(d["token_address"]).lower()
     # A decision is a statement about a moment. Acting on a backlog after a restart would buy a
     # price that no longer exists, so an old decision is dropped rather than executed late.
+    is_buy = d["kind"] == safety.BUY
     max_age = int(ctx.config.get("execution.max_decision_age_s", 600))
     age = now_ts() - int(d.get("ts") or 0)
-    if age > max_age:
+    if is_buy and age > max_age:
+        # Only a purchase expires. A sale is an order to get out of a position we already hold, and
+        # throwing it away because the engine was busy for ten minutes leaves the book holding the
+        # bag with nothing scheduled to sell it -- the same entry rule applied to an exit, for the
+        # fourth time today.
         return {"status": "REFUSED", "refused_reason": f"décision vieille de {age // 60} min (> {max_age // 60} min) : elle ne vaut plus"}
-    is_buy = d["kind"] == safety.BUY
     # Selling looks for the pool that pays, whatever it is quoted in -- the whitelist governs what
     # we are willing to SPEND, not how we get out. Same for a shadow decision (paper book on
     # USDG/WETH pools): it is priced through any configured quote, and nothing is ever sent.
@@ -156,6 +160,11 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
             # "unsellable" for that, and the day was reported 18 EUR worse than it was.
             amount_in = (held_raw // 2) if half else held_raw
         else:
+            if str(ctx.config.get("execution.mode", "dry_run")) == "live":
+                # The wallet is the only honest source live. Falling back to the book's estimate
+                # asks the chain for tokens that may not be there and reverts with
+                # TRANSFER_FROM_FAILED, which the book then records as "unsellable".
+                return {"status": "REFUSED", "refused_reason": "solde du portefeuille illisible : vente reportée"}
             decimals = ctx.db.scalar("SELECT decimals FROM tokens WHERE chain_id=? AND address=?", (ctx.chain_id, token))
             if decimals is None:
                 return {"status": "REFUSED", "refused_reason": "décimales du token inconnues"}

@@ -266,3 +266,22 @@ def test_a_sell_never_asks_for_more_than_the_wallet_holds():
     d = dict(ctx.db.query_one("SELECT * FROM decisions WHERE id=?", (_decision(ctx, kind=safety.SELL_ALL),)))
     res = prepare(ctx, d, limits=safety.Limits.from_config(ctx), held_raw=held)
     assert int(res["amount_in"]) <= held
+
+
+def test_an_old_decision_expires_only_when_it_is_a_purchase():
+    """A sale must still be executable after the engine has been busy.
+
+    Discarding it leaves the book holding a bag with nothing scheduled to sell it -- the entry
+    rule applied to an exit, the fourth instance of that mistake on 2026-09-07.
+    """
+    ctx = _ctx()
+    _pool(ctx, POOL, 200, liquidity=10 ** 24)
+    _market(ctx)
+    old_ts = now_ts() - 3600
+    buy = dict(ctx.db.query_one("SELECT * FROM decisions WHERE id=?", (_decision(ctx),)))
+    buy["ts"] = old_ts
+    assert prepare(ctx, buy, limits=safety.Limits.from_config(ctx))["status"] == "REFUSED"
+    sell = dict(ctx.db.query_one("SELECT * FROM decisions WHERE id=?", (_decision(ctx, kind=safety.SELL_ALL),)))
+    sell["ts"] = old_ts
+    res = prepare(ctx, sell, limits=safety.Limits.from_config(ctx), held_raw=10 ** 21)
+    assert "vieille" not in (res.get("refused_reason") or "")
