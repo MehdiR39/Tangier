@@ -162,7 +162,10 @@ solana:
   # rares. En deca, T+5 ne rend que +0,72. Les donnees couvrent ces durees : 211 lignes sur 237
   # sont suivies au moins une heure apres l entree.
   # Ecarter pump.fun ne change rien (+0,68 dans les deux cas) : filtre inutile, on le garde.
-  mode: dry_run
+  # live depuis le 2026-09-08. Portefeuille dedie HY4wrwep...ZfyL, alimente a 0,5 SOL : MetaMask
+  # n exporte pas la cle privee Solana, seulement celle des chaines EVM, donc le bot ne peut pas
+  # travailler sur le compte de l operateur et dispose du sien. Il ne risque que ce qu on y met.
+  mode: live
   size_eur: 5.0
   min_buyers: 5
   max_trades_per_buyer: 15

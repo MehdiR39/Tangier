@@ -31,6 +31,9 @@ log = logging.getLogger(__name__)
 CURSOR = "telegram_commands_offset"
 PAUSE_FLAG = "t1_paused"
 NL = chr(10)
+# The book runs on two chains now. Each has its own model version, its own wallet and its own rule,
+# so every command names which one it is talking about rather than blending them into one figure.
+BOOKS = (("Robinhood", "t1-%", "ETH"), ("Solana", "sol-t1-%", "SOL"))
 
 
 def t1_paused(ctx: IntelContext) -> bool:
@@ -158,6 +161,10 @@ class TelegramCommands:
     def _name(self, token: str) -> str:
         """The token's ticker, which is what a person recognises -- never a hex address."""
         sym = self.ctx.db.scalar("SELECT symbol FROM tokens WHERE chain_id=? AND address=?", (self.ctx.chain_id, token))
+        if not sym:
+            # Solana mints are not in `tokens`; the decision carried the ticker DexScreener gave.
+            sym = self.ctx.db.scalar("SELECT label FROM decisions WHERE chain_id=? AND token_address=? AND label IS NOT NULL "
+                                     "ORDER BY id DESC LIMIT 1", (self.ctx.chain_id, token))
         sym = (sym or "").strip()
         return (sym[:12] if sym else token[2:8].upper())
 
@@ -171,32 +178,32 @@ class TelegramCommands:
         return sum(1 for kv in (p["notes"] or "").split() if kv.startswith("recover:"))
 
     def positions(self) -> str:
-        rows = self.ctx.db.query(
-            "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='OPEN' AND kind='PORTFOLIO' "
-            "ORDER BY opened_ts DESC", (self.ctx.chain_id,))
-        # A bag reopened by the recovery loop is not a position: its euros are already lost and its
-        # multiple is a price nobody will pay. Counting them as engaged capital (2026-09-07:
-        # "3 positions ouvertes · 15 € engagés" for three honeypots) says the opposite of the truth.
-        live = [p for p in rows if not self._recovering(p)]
-        bags = [p for p in rows if self._recovering(p)]
         out: list[str] = []
         now = now_ts()
-        if live:
-            engaged = sum(float(p["size_eur"] or 0) for p in live)
-            out += [f"<b>{len(live)} position{'s' if len(live) > 1 else ''} ouverte{'s' if len(live) > 1 else ''}</b> · {engaged:.0f} € engagés", ""]
-            for p in live:
-                price = self._mark(p)
-                mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
-                out.append(f"<code>{self._name(p['token_address']):<11}</code> "
-                           + (f"×{mult:.2f}" if mult is not None else "  ?  ")
-                           + f"  T+{(now - int(p['opened_ts'])) // 60} min")
-        else:
-            out.append("Aucune position ouverte." + (" Achats en pause." if t1_paused(self.ctx) else ""))
-        if bags:
-            cap = int(self.ctx.config.get("t1.recover_max", 8))
-            out += ["", f"<i>{len(bags)} sac{'s' if len(bags) > 1 else ''} invendable{'s' if len(bags) > 1 else ''}, déjà perdu{'s' if len(bags) > 1 else ''}, réessayé{'s' if len(bags) > 1 else ''} :</i>"]
-            for p in bags:
-                out.append(f"<code>{self._name(p['token_address']):<11}</code> tentative {self._recovering(p)}/{cap}")
+        for name, mv, _unit in BOOKS:
+            rows = self.ctx.db.query(
+                "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE ? AND status='OPEN' AND kind='PORTFOLIO' "
+                "ORDER BY opened_ts DESC", (self.ctx.chain_id, mv))
+            # A bag reopened by the recovery pass is not a position: its euros are already lost and
+            # its multiple is a price nobody will pay. Counting them as engaged capital said the
+            # opposite of the truth (2026-09-07).
+            live = [p for p in rows if not self._recovering(p)]
+            bags = [p for p in rows if self._recovering(p)]
+            if live:
+                out += [f"<b>{name}</b> · {sum(float(p['size_eur'] or 0) for p in live):.0f} € engagés"]
+                for p in live:
+                    price = self._mark(p)
+                    mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
+                    out.append(f"<code>  {self._name(p['token_address']):<11}</code> "
+                               + (f"×{mult:.2f}" if mult is not None else "  ?  ")
+                               + f"  T+{(now - int(p['opened_ts'])) // 60} min")
+            if bags:
+                cap = int(self.ctx.config.get("t1.recover_max", 8))
+                out += [f"<i>{name} · {len(bags)} sac{'s' if len(bags) > 1 else ''} invendable{'s' if len(bags) > 1 else ''}, déjà perdu{'s' if len(bags) > 1 else ''} :</i>"]
+                for p in bags:
+                    out.append(f"<code>  {self._name(p['token_address']):<11}</code> tentative {self._recovering(p)}/{cap}")
+        if not out:
+            return "Aucune position ouverte." + (" Achats Robinhood en pause." if t1_paused(self.ctx) else "")
         return NL.join(out)
 
     def closed(self, n: int) -> str:
@@ -214,61 +221,87 @@ class TelegramCommands:
                        + self._eur(p["realized_eur"]) + ("" if sold else "  invendable"))
         return NL.join(out)
 
-    async def pnl(self, full: bool = False) -> str:
-        """The real book, plainly. The paper book is one line; /pnl all opens everything."""
-        db = self.ctx.db
-        since = 0 if full else now_ts() - (now_ts() % 86400)
-        title = "depuis le début" if full else "aujourd'hui"
-
-        def tally(kind: str) -> tuple[int, int, float, int, float]:
-            r = db.query_one(
-                "SELECT COUNT(*) n, SUM(CASE WHEN realized_eur>0 THEN 1 ELSE 0 END) w, COALESCE(SUM(realized_eur),0) p "
-                "FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='CLOSED' AND kind=? "
-                "AND closed_ts>=? AND close_reason LIKE 'vendu%'", (self.ctx.chain_id, kind, since))
-            # A bag being retried is still a loss on the books: counting only CLOSED rows made the
-            # reported result jump by the amount under recovery.
-            w = db.query_one(
-                "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
-                "AND kind=? AND opened_ts>=? AND realized_eur IS NOT NULL "
-                "AND (close_reason IS NULL OR close_reason NOT LIKE 'vendu%')", (self.ctx.chain_id, kind, since))
-            return int(r["n"] or 0), int(r["w"] or 0), float(r["p"] or 0), int(w["n"] or 0), float(w["p"] or 0)
-
-        n, wins, pnl, lost, lost_eur = tally("PORTFOLIO")
+    def _tally(self, mv: str, since: int) -> dict[str, Any]:
+        """One chain's real book over a period: sold, unsellable, open, and what each is worth."""
+        db, cid = self.ctx.db, self.ctx.chain_id
+        sold = db.query_one(
+            "SELECT COUNT(*) n, SUM(CASE WHEN realized_eur>0 THEN 1 ELSE 0 END) w, COALESCE(SUM(realized_eur),0) p "
+            "FROM positions WHERE chain_id=? AND model_version LIKE ? AND kind='PORTFOLIO' AND status='CLOSED' "
+            "AND closed_ts>=? AND close_reason LIKE 'vendu%'", (cid, mv, since))
+        lost = db.query_one(
+            "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE ? "
+            "AND kind='PORTFOLIO' AND opened_ts>=? AND realized_eur IS NOT NULL "
+            "AND (close_reason IS NULL OR close_reason NOT LIKE 'vendu%')", (cid, mv, since))
         rec = db.query_one(
-            "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
-            "AND kind='PORTFOLIO' AND closed_ts>=? AND close_reason LIKE 'recupere%'", (self.ctx.chain_id, since))
-        out = [f"<b>Résultat réel · {title}</b>", "", f"<b>{self._eur(pnl + lost_eur)}</b>", ""]
-        if n:
-            out.append(f"<code>Vendues     {n:>3}</code>  {wins} gagnante{'s' if wins > 1 else ''}   {self._eur(pnl)}")
-        if lost:
-            out.append(f"<code>Invendables {lost:>3}</code>              {self._eur(lost_eur)}")
-        if rec and rec["n"]:
-            out.append(f"<code>Récupérés   {int(rec['n']):>3}</code>  hors règle    {self._eur(float(rec['p']))}")
-        op = db.query_one("SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' "
-                          "AND status='OPEN' AND kind='PORTFOLIO' AND notes NOT LIKE '%recover:%'", (self.ctx.chain_id,))
-        out.append(f"<code>Ouvertes    {int(op['n']):>3}</code>" + (f"  {float(op['s']):.0f} € engagés" if op["n"] else ""))
-        rec = db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='OPEN' "
-                        "AND kind='PORTFOLIO' AND notes LIKE '%recover:%'", (self.ctx.chain_id,), 0)
-        if rec:
-            out.append(f"<code>Réessayés   {int(rec):>3}</code>  sacs déjà perdus")
+            "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE ? "
+            "AND kind='PORTFOLIO' AND closed_ts>=? AND close_reason LIKE 'recupere%'", (cid, mv, since))
+        opn = db.query_one(
+            "SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE ? "
+            "AND kind='PORTFOLIO' AND status='OPEN' AND (notes IS NULL OR notes NOT LIKE '%recover:%')", (cid, mv))
+        bags = db.scalar(
+            "SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version LIKE ? AND kind='PORTFOLIO' "
+            "AND status='OPEN' AND notes LIKE '%recover:%'", (cid, mv), 0)
+        return {"sold": int(sold["n"] or 0), "wins": int(sold["w"] or 0), "sold_eur": float(sold["p"] or 0),
+                "lost": int(lost["n"] or 0), "lost_eur": float(lost["p"] or 0),
+                "rec": int(rec["n"] or 0), "rec_eur": float(rec["p"] or 0),
+                "open": int(opn["n"] or 0), "open_eur": float(opn["s"] or 0), "bags": int(bags),
+                "net": float(sold["p"] or 0) + float(lost["p"] or 0)}
+
+    async def pnl(self, full: bool = False) -> str:
+        """Both chains, always, whether or not they traded -- and both periods, because a day
+        boundary otherwise wipes the whole history from the screen at midnight."""
+        day0 = now_ts() - (now_ts() % 86400)
+        bal = await self._wallets()
+        out = ["<b>Résultat réel</b>", ""]
+        today = sum(self._tally(mv, day0)["net"] for _n, mv, _u in BOOKS)
+        ever = sum(self._tally(mv, 0)["net"] for _n, mv, _u in BOOKS)
+        out.append(f"<code>Aujourd'hui     </code><b>{self._eur(today)}</b>")
+        out.append(f"<code>Depuis le début </code>{self._eur(ever)}")
+        for name, mv, unit in BOOKS:
+            t = self._tally(mv, 0 if full else day0)
+            out += ["", f"<b>{name}</b>   {bal.get(unit, '—')}"]
+            if not (t["sold"] or t["lost"] or t["open"] or t["bags"] or t["rec"]):
+                out.append("<code>  aucun mouvement</code>")
+                continue
+            out.append(f"<code>  vendues     {t['sold']:>3}</code>" +
+                       (f"  {t['wins']} gagnante{'s' if t['wins'] > 1 else ''}   {self._eur(t['sold_eur'])}" if t["sold"] else ""))
+            out.append(f"<code>  invendables {t['lost']:>3}</code>" + (f"              {self._eur(t['lost_eur'])}" if t["lost"] else ""))
+            out.append(f"<code>  ouvertes    {t['open']:>3}</code>" + (f"  {t['open_eur']:.0f} € engagés" if t["open"] else ""))
+            if t["rec"]:
+                out.append(f"<code>  récupérées  {t['rec']:>3}</code>  hors règle    {self._eur(t['rec_eur'])}")
+            if t["bags"]:
+                out.append(f"<code>  en reprise  {t['bags']:>3}</code>  sacs déjà perdus, valeur nulle")
+        v = self.ctx.db.query_one("SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? "
+                                  "AND kind='VIRTUAL' AND realized_eur IS NOT NULL AND opened_ts>=?",
+                                  (self.ctx.chain_id, 0 if full else day0))
+        if v and v["n"]:
+            out += ["", f"<i>Simulation, argent fictif : {self._eur(float(v['p']))} sur {int(v['n'])} lignes</i>"]
+        if t1_paused(self.ctx):
+            out += ["", "⏸ Achats Robinhood en pause · /resume"]
+        return NL.join(out)
+
+    async def _wallets(self) -> dict[str, str]:
+        """{unit: balance} for every chain the book trades on."""
+        out: dict[str, str] = {}
         try:
             from intel.execution.signer import signer_address
-            addr = signer_address()
-            if addr:
-                raw = await self.ctx.rpc.request("eth_getBalance", [addr, "latest"])
-                out += ["", f"Solde : {int(raw, 16) / 1e18:.4f} ETH"]
+            a = signer_address()
+            if a:
+                raw = await self.ctx.rpc.request("eth_getBalance", [a, "latest"])
+                out["ETH"] = f"{int(raw, 16) / 1e18:.4f} ETH"
         except Exception:  # noqa: BLE001
             pass
-        vn, vw, vp, vl, vle = tally("VIRTUAL")
-        if vn or vl:
-            # The sold half alone read as a profit while the simulation's own write-offs were
-            # larger (2026-09-07: +98 shown, -207 hidden). One number, the net, or none.
-            # "Carnet à blanc" was read as a second pot of money. It is a simulation on far more
-            # launches than the real book buys, and its euros do not exist: say so in the label.
-            out += ["", f"<i>Simulation, argent fictif : {self._eur(vp + vle)} sur {vn + vl} lignes</i>"]
-        if t1_paused(self.ctx):
-            out += ["", "⏸ Achats en pause · /resume"]
-        return NL.join(out)
+        try:
+            import httpx
+
+            from intel.execution import solana as sol
+            rpc, a = sol.rpc_url(), sol.signer_address()
+            if rpc and a:
+                async with httpx.AsyncClient() as c:
+                    out["SOL"] = f"{await sol.sol_balance(c, rpc, a) / 1e9:.4f} SOL"
+        except Exception:  # noqa: BLE001
+            pass
+        return out
 
     def orders(self, n: int) -> str:
         # Refused orders never left the machine and cost nothing: diagnostics, not history. And a
@@ -297,22 +330,30 @@ class TelegramCommands:
         return NL.join(out)
 
     async def balance(self) -> str:
+        """Both wallets, each read on its own chain."""
+        from intel.execution import solana as sol
         from intel.execution.signer import signer_address
-        addr = signer_address()
-        if not addr:
-            return "aucune clé configurée : pas de portefeuille à lire"
-        raw = await self.ctx.rpc.request("eth_getBalance", [addr, "latest"])
-        eth = int(raw, 16) / 1e18
-        usd = None
-        try:
-            from intel.research.report import native_price_usd
-            px = await native_price_usd(self.ctx)
-            usd = eth * px if px else None
-        except Exception:  # noqa: BLE001
-            usd = None
-        n = await self.ctx.rpc.request("eth_getTransactionCount", [addr, "latest"])
-        return (f"<b>portefeuille</b> {addr[:10]}…{addr[-4:]}\nETH : {eth:.5f}" + (f" ≈ {usd:,.0f} $" if usd else "")
-                + f"\ntransactions envoyées : {int(n, 16)}")
+
+        lines = ["<b>Portefeuilles</b>", ""]
+        eth = signer_address()
+        if eth:
+            try:
+                raw = await self.ctx.rpc.request("eth_getBalance", [eth, "latest"])
+                n = await self.ctx.rpc.request("eth_getTransactionCount", [eth, "latest"])
+                lines.append(f"Robinhood  {int(raw, 16) / 1e18:.4f} ETH")
+                lines.append(f"<code>  {eth[:10]}…{eth[-4:]} · {int(n, 16)} transactions</code>")
+            except Exception:  # noqa: BLE001
+                lines.append("Robinhood  solde illisible")
+        rpc, addr = sol.rpc_url(), sol.signer_address()
+        if rpc and addr:
+            try:
+                import httpx
+                async with httpx.AsyncClient() as c:
+                    lines.append(f"Solana     {await sol.sol_balance(c, rpc, addr) / 1e9:.4f} SOL")
+                lines.append(f"<code>  {addr[:10]}…{addr[-4:]}</code>")
+            except Exception:  # noqa: BLE001
+                lines.append("Solana     solde illisible")
+        return NL.join(lines)
 
     async def close(self) -> None:
         await self._client.aclose()
