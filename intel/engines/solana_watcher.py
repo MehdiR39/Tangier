@@ -197,7 +197,7 @@ class SolanaWatcher:
         """Execute pending Solana decisions, then close positions on the same clock as Robinhood."""
         mode = str(self._cfg("mode", "dry_run"))
         db = self.ctx.db
-        sol_eur = float(self._cfg("sol_eur", 180.0))
+        sol_eur = await sol.sol_eur(self.client)
         for d in db.query(
                 "SELECT d.* FROM decisions d LEFT JOIN executions e ON e.chain_id=d.chain_id AND e.decision_id=d.id "
                 "WHERE d.chain_id=? AND d.model_version=? AND e.id IS NULL ORDER BY d.id LIMIT 5",
@@ -294,11 +294,7 @@ class SolanaWatcher:
             mint = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv).get("mint")
             if not mint:
                 continue
-            px = await self._price(mint)
-            mult = (px / float(p["entry_price"])) if (px and p["entry_price"]) else None
             age = now_ts() - int(p["opened_ts"])
-            if not (mult is not None and mult >= tp) and age < hold:
-                continue
             amount = 0
             if mode == "live":
                 try:
@@ -310,6 +306,17 @@ class SolanaWatcher:
                     db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_reason=?, realized_eur=0 WHERE id=?",
                                (now_ts(), "aucun jeton en portefeuille", p["id"]))
                     continue
+            # What the position is worth is what selling it would RETURN, not what a price feed
+            # prints. On 2026-09-08 haMSTR read x1.66 from DexScreener while the chain would pay
+            # 4.31 EUR on a 5 EUR stake -- a loss shown as a gain, and a take-profit that would
+            # have fired on a doubling that never existed. Impact was 0.6 %, so the gap was the
+            # entry price: taken from a feed at decision time, not from the trade that happened.
+            mult, value = await self._worth(rpc, mint, amount, float(p["size_eur"] or 5.0))
+            if mult is None:
+                px = await self._price(mint)
+                mult = (px / float(p["entry_price"])) if (px and p["entry_price"]) else None
+            if not (mult is not None and mult >= tp) and age < hold:
+                continue
             res = await sol.prepare_sell(self.client, mint=mint, amount=amount or 1,
                                          slippage_pct=float(self._cfg("sell_slippage_pct", 25.0)))
             tx = res.pop("tx", None)
@@ -330,6 +337,20 @@ class SolanaWatcher:
                 log.info("solana VENTE %s · %s · %s", p["label"],
                          f"x{mult:.2f}" if mult is not None else "multiple inconnu",
                          "objectif atteint" if (mult is not None and mult >= tp) else f"T+{age // 60} min")
+
+    async def _worth(self, rpc: str, mint: str, amount: int, stake_eur: float) -> tuple[float | None, float | None]:
+        """(multiple, euros) the position would actually fetch, asked to the router itself."""
+        if amount <= 0 or stake_eur <= 0:
+            return None, None
+        try:
+            r = await sol.prepare_sell(self.client, mint=mint, amount=amount, slippage_pct=25.0)
+        except Exception:  # noqa: BLE001
+            return None, None
+        out = int(r.get("quoted_amount_out") or 0)
+        if out <= 0:
+            return None, None
+        eur = out / 1e9 * await sol.sol_eur(self.client)
+        return eur / stake_eur, eur
 
     async def _price(self, mint: str) -> float | None:
         try:

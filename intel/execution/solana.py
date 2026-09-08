@@ -77,6 +77,34 @@ def rpc_url() -> str:
     return ""
 
 
+_SOL_EUR: tuple[float, float] = (0.0, 0.0)      # (price, fetched_at)
+
+
+async def sol_eur(client: httpx.AsyncClient, fallback: float = 96.0, max_age_s: int = 600) -> float:
+    """What one SOL is worth in euros, read from the market and cached for a few minutes.
+
+    A hard-coded rate is a silent accounting error. On 2026-09-08 the book assumed 180 EUR while
+    SOL traded at 96: a ticket announced at 5 EUR committed 2.67, and every gain was reported 88 %
+    too high. Only the multiples happened to be right, the two errors cancelling each other.
+    """
+    global _SOL_EUR
+    import time as _t
+    px, at = _SOL_EUR
+    if px > 0 and _t.time() - at < max_age_s:
+        return px
+    try:
+        r = await client.get("https://api.dexscreener.com/latest/dex/tokens/" + SOL_MINT, timeout=15)
+        pairs = [x for x in ((r.json() or {}).get("pairs") or []) if x.get("priceUsd")]
+        best = max(pairs, key=lambda x: float((x.get("liquidity") or {}).get("usd") or 0))
+        usd = float(best["priceUsd"])
+        if usd > 0:
+            _SOL_EUR = (usd / 1.08, _t.time())
+            return _SOL_EUR[0]
+    except Exception:  # noqa: BLE001
+        pass
+    return px or fallback
+
+
 def signer_address() -> str | None:
     """The address that would sign, or None when no key is configured. Public information."""
     try:

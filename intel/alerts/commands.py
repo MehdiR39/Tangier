@@ -165,27 +165,33 @@ class TelegramCommands:
         return self.t1._mark(notes.get("pool"), p["token_address"], notes.get("quote"))
 
     async def _load_sol_prices(self, mints: list[str]) -> None:
-        """Price the Solana lines in one request, so an open position shows a figure and not a
-        question mark: a book that cannot say what a position is worth is not a book."""
+        """What each Solana line would FETCH if sold now, asked to the router.
+
+        A price feed says what the last trade printed; it does not say what a wallet would receive.
+        Reading haMSTR from DexScreener on 2026-09-08 gave x1.66 while the chain would have paid
+        4.31 EUR on a 5 EUR stake -- a loss displayed as a gain. The screen now shows the figure
+        the book itself trades on.
+        """
         self._sol_prices = {}
         mints = [m for m in dict.fromkeys(mints) if m]
         if not mints:
             return
         try:
             import httpx
+
+            from intel.execution import solana as sol
+            rpc, owner = sol.rpc_url(), sol.signer_address()
+            if not (rpc and owner):
+                return
             async with httpx.AsyncClient() as c:
-                for i in range(0, len(mints), 25):
-                    r = await c.get("https://api.dexscreener.com/latest/dex/tokens/" + ",".join(mints[i:i + 25]), timeout=20)
-                    for pair in (r.json() or {}).get("pairs") or []:
-                        mint = (pair.get("baseToken") or {}).get("address")
-                        px = pair.get("priceUsd")
-                        if not mint or not px:
-                            continue
-                        liq = float((pair.get("liquidity") or {}).get("usd") or 0)
-                        best = self._sol_liq.get(mint, -1.0)
-                        if liq >= best:                    # the deepest pool is the honest price
-                            self._sol_liq[mint] = liq
-                            self._sol_prices[mint] = float(px)
+                for mint in mints[:8]:
+                    bal = await sol.token_balance(c, rpc, owner, mint)
+                    if bal <= 0:
+                        continue
+                    r = await sol.prepare_sell(c, mint=mint, amount=bal, slippage_pct=25.0)
+                    out = int(r.get("quoted_amount_out") or 0)
+                    if out > 0:
+                        self._sol_prices[mint] = out / 1e9 * await sol.sol_eur(c)
         except Exception:  # noqa: BLE001
             pass
 
@@ -228,8 +234,12 @@ class TelegramCommands:
             out += [f"<b>{len(live)} position{'s' if len(live) > 1 else ''} ouverte{'s' if len(live) > 1 else ''}</b>"
                     f" · {sum(float(p['size_eur'] or 0) for p in live):.0f} € engagés", ""]
             for p in live:
-                price = self._mark(p)
-                mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
+                if str(p["model_version"] or "").startswith("sol-"):
+                    value = self._sol_prices.get(p["token_address"])
+                    mult = (value / float(p["size_eur"])) if (value and p["size_eur"]) else None
+                else:
+                    price = self._mark(p)
+                    mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
                 out.append(f"<code>{self._chain(p['model_version'])[:4]:<5}{self._name(p['token_address']):<11}</code>"
                            + (f" ×{mult:.2f}" if mult is not None else "   ?  ")
                            + f"  T+{(now - int(p['opened_ts'])) // 60} min")
