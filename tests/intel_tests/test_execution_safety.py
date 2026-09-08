@@ -132,3 +132,17 @@ def test_the_entry_slippage_ceiling_does_not_wall_in_a_sell():
     assert check(_ctx(), _order(kind=SELL_ALL, size_eur=None, slippage_pct=7.5), _limits()).allowed
     v = check(_ctx(), _order(kind=SELL_ALL, size_eur=None, slippage_pct=95.0), _limits())
     assert not v.allowed and "impact de sortie" in v.why
+
+
+def test_selling_does_not_consume_the_daily_buying_allowance():
+    """Exits must not spend the entry budget.
+
+    On 2026-09-08 fourteen buys were refused for "41 orders today >= 40" while most of those
+    orders were sales, and every retried sale ate a little more of the allowance.
+    """
+    ctx = _ctx()
+    for _ in range(40):
+        ctx.db.insert("executions", {"ts": now_ts() - 60, "chain_id": ctx.chain_id, "token_address": TOKEN,
+                                     "kind": SELL_ALL, "size_eur": 20.0, "mode": "live", "status": "CONFIRMED"})
+    assert spent_today(ctx) == (0, 0.0), "une vente n'engage rien du budget d'achat"
+    assert check(ctx, _order(), _limits()).allowed

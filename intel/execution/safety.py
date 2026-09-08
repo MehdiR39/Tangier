@@ -67,12 +67,18 @@ class Limits:
 
 
 def spent_today(ctx: IntelContext) -> tuple[int, float]:
-    """(orders, euros) actually submitted in the last 24 h, from the execution journal."""
+    """(buys, euros committed) in the last 24 h, from the execution journal.
+
+    Buys only. The daily ceilings exist to bound what LEAVES the wallet, and every sale used to
+    count against them: on 2026-09-08 fourteen buys in a row were refused for "41 orders today >=
+    40" when most of those orders were exits, and each retried sale ate a little more of the
+    allowance. A book that sells a lot would forbid itself from buying at all.
+    """
     # Spending grants are journalled too, but they are not orders: counting them would eat the
     # daily allowance without a single trade being made.
     row = ctx.db.query_one(
         "SELECT COUNT(*) n, COALESCE(SUM(size_eur), 0) eur FROM executions "
-        "WHERE chain_id=? AND ts>? AND status IN ('SUBMITTED','CONFIRMED') AND kind IN ('BUY','SELL_HALF','SELL_ALL')",
+        "WHERE chain_id=? AND ts>? AND status IN ('SUBMITTED','CONFIRMED') AND kind='BUY'",
         (ctx.chain_id, now_ts() - 86400),
     )
     return (int(row["n"]), float(row["eur"])) if row else (0, 0.0)
