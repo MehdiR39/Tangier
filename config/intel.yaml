@@ -234,6 +234,15 @@ solana:
   #
   # Reserve : huit lignes, dont deux sans sommet mesure. Remettre 2.0 annule.
   take_profit_multiple: 1.5
+  # Stop de perte, ajoute le 2026-09-08 a 19h30. Le carnet avait un objectif de gain et une limite
+  # de temps, rien pour couper une position qui tombe : DLSS5 tenue jusqu a l echeance pour x0,11,
+  # ZAPE pour x0,04, FTFS pour x0,01 apres -99 % en cinq minutes (verifie par le routeur ET par
+  # DexScreener, 1 786 ventes contre 513 achats). Environ 40 EUR perdus sur trois lignes qu un stop
+  # a -30 % aurait limitees a 6 EUR chacune.
+  # Mesure sur les 47 lancements de reference : a objectif egal, le gain par euro passe de +0,123 a
+  # +0,183 et la robustesse de +0,079 a +0,147. Seul reglage du jour sur lequel le backtest et le
+  # reel concordent. Mettre 0 pour retirer le stop.
+  stop_loss_multiple: 0.7
   max_hold_seconds: 900
   sell_slippage_pct: 25.0
   # Plus de plafond de tickets : il arretait aussi une serie gagnante, et de toute facon aucune

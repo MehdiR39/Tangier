@@ -503,7 +503,18 @@ class SolanaWatcher:
                 sommet = float(p["entry_price"]) * mult
                 if p["peak_price"] is None or sommet > float(p["peak_price"]):
                     db.execute("UPDATE positions SET peak_price=? WHERE id=?", (sommet, p["id"]))
-            if not (mult is not None and mult >= tp) and age < hold:
+            # Trois sorties, et le stop de perte est celle qui manquait. Le carnet avait un
+            # objectif de gain et une limite de temps, mais rien pour couper une position qui
+            # tombe : le 08/09/2026, DLSS5 a ete tenue jusqu a l echeance pour x0,11, ZAPE pour
+            # x0,04 et FTFS pour x0,01 apres une chute de 99 % en cinq minutes -- verifiee par le
+            # routeur ET par DexScreener, avec 1 786 ventes contre 513 achats. Environ 40 EUR
+            # perdus sur trois lignes qu un stop a -30 % aurait limitees a 6 EUR chacune.
+            # Mesure sur les 47 lancements de reference : a objectif egal, le stop porte le gain
+            # par euro de +0,123 a +0,183 et la robustesse de +0,079 a +0,147. C est le seul
+            # reglage teste aujourd hui sur lequel le backtest et le reel disent la meme chose.
+            stop = float(self._cfg("stop_loss_multiple", 0) or 0)
+            touche_stop = stop > 0 and mult is not None and mult <= stop
+            if not touche_stop and not (mult is not None and mult >= tp) and age < hold:
                 continue
             res = await sol.prepare_sell(self.client, mint=mint, amount=amount or 1,
                                          slippage_pct=float(self._cfg("sell_slippage_pct", 25.0)))
@@ -532,7 +543,8 @@ class SolanaWatcher:
                     sommet = float(p["peak_price"]) / float(p["entry_price"])
                 log.info("solana VENTE %s · %s · %s%s", p["label"],
                          f"x{mult:.2f}" if mult is not None else "multiple inconnu",
-                         "objectif atteint" if (mult is not None and mult >= tp) else f"T+{age // 60} min",
+                         ("objectif atteint" if (mult is not None and mult >= tp)
+                          else ("STOP de perte" if touche_stop else f"T+{age // 60} min")),
                          f" · sommet traverse x{sommet:.2f}" if (sommet and sommet > (mult or 0) * 1.02) else "")
 
     async def _worth(self, rpc: str, mint: str, amount: int, stake_eur: float) -> tuple[float | None, float | None]:
