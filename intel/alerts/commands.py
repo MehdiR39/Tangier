@@ -218,6 +218,21 @@ class TelegramCommands:
     def _chain(model_version: str | None) -> str:
         return "Solana" if str(model_version or "").startswith("sol-") else "Robinhood"
 
+    def _lien(self, p: Any) -> str:
+        """Le lien vers le graphique de la ligne, pour la voir sans quitter le telephone.
+
+        DexScreener couvre Solana et accepte l adresse du jeton : il redirige vers sa paire la plus
+        profonde, ce qui evite d avoir a retrouver le pool. Robinhood Chain n y figure pas, donc la
+        ligne pointe vers l explorateur de la chaine, seul endroit ou le jeton existe.
+        """
+        tok = (p["token_address"] or "").strip()
+        if not tok:
+            return ""
+        if str(p["model_version"] or "").startswith("sol-"):
+            return f'  <a href="https://dexscreener.com/solana/{tok}">graphique</a>'
+        base = (getattr(self.ctx.settings, "blockscout_url", "") or "").rstrip("/")
+        return f'  <a href="{base}/token/{tok}">explorateur</a>' if base else ""
+
     async def positions(self) -> str:
         """What is open, per chain, and separately what is only waiting to be salvaged."""
         rows = self.ctx.db.query(
@@ -242,7 +257,8 @@ class TelegramCommands:
                     mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
                 out.append(f"<code>{self._chain(p['model_version'])[:4]:<5}{self._name(p['token_address']):<11}</code>"
                            + (f" ×{mult:.2f}" if mult is not None else "   ?  ")
-                           + f"  T+{(now - int(p['opened_ts'])) // 60} min")
+                           + f"  T+{(now - int(p['opened_ts'])) // 60} min"
+                           + self._lien(p))
         else:
             out.append("<b>Aucune position ouverte</b>")
         if bags:
@@ -251,7 +267,7 @@ class TelegramCommands:
                         f"argent deja perdu et compte comme tel, le moteur retente de les vendre.</i>", ""]
             for p in bags:
                 out.append(f"<code>{self._chain(p['model_version'])[:4]:<5}{self._name(p['token_address']):<11}</code>"
-                           f" tentative {self._recovering(p)}/{cap}")
+                           f" tentative {self._recovering(p)}/{cap}" + self._lien(p))
         if t1_paused(self.ctx):
             out += ["", "⏸ Achats Robinhood en pause · /resume"]
         return NL.join(out)
