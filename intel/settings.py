@@ -420,7 +420,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "solana": {"enabled": False, "mode": "dry_run", "poll_seconds": 30, "size_eur": 5.0, "min_buyers": 0,
                "max_trades_per_buyer": 0, "min_liquidity_usd": 5000.0, "max_per_hour": 10, "slippage_pct": 5.0,
-               "max_impact_pct": 10.0, "sol_eur": 180.0, "max_age_seconds": 600, "take_profit_multiple": 2.0, "max_hold_seconds": 900, "sell_slippage_pct": 25.0, "buy_budget": 0, "budget_since_ts": 0},
+               "max_impact_pct": 10.0, "sol_eur": 180.0, "max_open_positions": 4, "max_age_seconds": 600, "take_profit_multiple": 2.0, "max_hold_seconds": 900, "sell_slippage_pct": 25.0, "buy_budget": 0, "budget_since_ts": 0},
     "t1": {
         # T+1 watcher (intel/engines/t1_watcher.py). Measured 2026-09-06 on 5 491 launches drawn
         # at random: pools with >= ~27 swaps in the minute after their first trade reach x2 about

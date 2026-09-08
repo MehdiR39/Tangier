@@ -104,7 +104,7 @@ t1:
   # la vente passe DANS la fenetre de sortie. Si le taux d invendables tombe sous 15 %, la regle
   # tient ; s il reste au-dessus de 40 %, Robinhood s arrete. Le moteur se coupe tout seul au
   # budget, sans dependre de quelqu un qui surveille l heure.
-  buy_budget: 20
+  buy_budget: 10
   budget_since_ts: 1788855948
   # Plafond sur le compteur d entree, ajoute le 2026-09-07 apres une journee reelle perdante.
   # Au-dela de 60 echanges dans la premiere minute, le pool est un bundle qui retire sa liquidite
@@ -166,7 +166,12 @@ solana:
   # n exporte pas la cle privee Solana, seulement celle des chaines EVM, donc le bot ne peut pas
   # travailler sur le compte de l operateur et dispose du sien. Il ne risque que ce qu on y met.
   mode: live
-  size_eur: 5.0
+  # Ticket porte a 20 EUR le 2026-09-08. Le cout de la taille, mesure en cotant toutes les tailles
+  # au meme instant sur les pools reellement achetes, est lineaire et minuscule : 0,12 % a 10 EUR,
+  # 0,37 % a 20, 1,10 % a 50. La taille n est donc pas le frein, le portefeuille l est -- 98 EUR,
+  # soit quatre tickets simultanes, d ou le plafond de positions ouvertes.
+  size_eur: 20.0
+  max_open_positions: 4
   min_buyers: 5
   max_trades_per_buyer: 15
   min_liquidity_usd: 0
@@ -174,5 +179,5 @@ solana:
   take_profit_multiple: 2.0
   max_hold_seconds: 900
   sell_slippage_pct: 25.0
-  buy_budget: 20
+  buy_budget: 20   # 20 tickets de 20 EUR : le plafond de 4 positions borne le risque simultane
   budget_since_ts: 1788857275

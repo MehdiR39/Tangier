@@ -162,6 +162,17 @@ class SolanaWatcher:
             log.info("solana: %s ecarte — %s (%d echanges, %d acheteurs)", symbol, why, trades, payers)
             return False
         now = now_ts()
+        # A ticket is worthless if the wallet cannot fund it. Impact is linear and tiny here
+        # (0.37 % at 20 EUR, 1.10 % at 50), so size is not the constraint -- the balance is, and
+        # nothing checked it: four concurrent tickets already exhaust a 98 EUR wallet.
+        max_open = int(self._cfg("max_open_positions", 4))
+        n_open = self.ctx.db.scalar(
+            "SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version=? AND status='OPEN'",
+            (self.ctx.chain_id, MODEL_VERSION), 0)
+        if n_open >= max_open:
+            log.info("solana: %s passe la regle mais %d positions sont deja ouvertes (plafond %d)",
+                     symbol, n_open, max_open)
+            return False
         self.sent_ts = [t for t in self.sent_ts if now - t < 3600]
         if len(self.sent_ts) >= int(self._cfg("max_per_hour", 10)):
             log.info("solana: %s passe la regle mais le plafond horaire est atteint", symbol)
