@@ -8,7 +8,7 @@ Règle d'écriture : **un chiffre sans sa méthode ne vaut rien.** Chaque entré
 donnée, le résultat, et la conclusion qu'on en tire — y compris quand la conclusion est « on ne
 sait pas ».
 
-Dernière mise à jour : 2026-09-08.
+Dernière mise à jour : 2026-09-09.
 
 ---
 
@@ -20,7 +20,8 @@ quelques minutes plus tard.
 | | Robinhood Chain | Solana |
 |---|---|---|
 | Découverte | logs `Initialize` d'Uniswap v4 | DexScreener **+ flux de migrations en direct** (§3.21) |
-| Règle d'entrée | 27 à 60 échanges dans la 1re minute **puis ≥ 30 échanges dans la 2e** (§3.10) | ≥ 75 acheteurs distincts, **< 600 échanges**, ≤ 15 échanges/acheteur, hors pump.fun (§3.6, §3.13) |
+| Règle d'entrée | 27 à 60 échanges dans la 1re minute **puis ≥ 30 échanges dans la 2e** (§3.10) | ≥ 75 acheteurs distincts, **< 600 échanges**, ≤ 15 échanges/acheteur, capitalisation < 50 k$, hors pump.fun (§3.6, §3.13, §3.26) |
+| Refus d'entrée | — | mesure de la 1re minute incomplète (§3.25) · prix tombé sous la moitié de celui vu sur le même jeton dans le quart d'heure (§3.26) |
 | Sortie | ×2 ou T+5 min | **×1,5**, **stop à −30 %**, ou T+15 min (§3.23, §3.24) |
 | Ticket | 5 € | 20 € |
 | Portefeuille | `0x2a33086d2fce255f61ac1a3000bf944397c9c908` | `HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL` |
@@ -34,6 +35,13 @@ quelques minutes plus tard.
 - **Solana, série ouverte de tickets de 20 €** : l'objectif ramené à ×1,5 (§3.23) inverse-t-il la perte de 5,70 € par ticket constatée à ×2 ? Le plancher de 75 acheteurs tient-il ce que le backtest promet
   (+0,36 par euro, 69 % de gagnants) ? Référence : −18,16 € réels sur les cinq tickets sans
   plancher. Bascule d'annulation : `solana.min_buyers: 5`.
+- **Solana, le refus « jeton effondré » coûte-t-il des occasions ?** Posé le 08/09 22h. Deux cas
+  mesurés (NASFROG, WTW) achetaient le jeton 26× et 4,4× sous le prix auquel la règle venait de
+  l'écarter. Le refus est posé du côté prudent, mais NASFROG est ressortie à ×1,41 : il se peut
+  qu'entrer après une chute soit un bon point d'entrée. `solana_judgements` enregistre désormais
+  chaque passage avec capitalisation, variation à 5 min et âge. **Critère** : d'ici 200 jugements,
+  comparer le résultat des lignes achetées après une chute à celui des autres. Bascule
+  d'annulation : `solana.collapse_memory_seconds: 0`.
 
 Passer en réel demande **deux gestes séparés** sur chaque chaîne : une clé privée dans `.env`, et
 `mode: live` dans `config/intel.yaml`. La clé ne sort jamais de `_keypair()` / `signer.py`.
@@ -655,6 +663,39 @@ Un solde dépasse 2⁵³, donc `int(x * 1.0)` **arrondit vers le haut** et la ve
 En séparant dépôts et négoce, un seuil naïf (« toute entrée > 0,01 ETH est un dépôt ») a classé une
 vente de +0,0367 ETH comme un versement et produit une perte de 63 € qui n'existait pas. Vérifier
 l'expéditeur de chaque grosse entrée.
+
+### 5.8 — Une mesure qui ne sait pas ce qu'elle n'a pas vu
+`_first_minute` remonte l'historique d'une paire à l'envers, par pages de 1 000 signatures. Quand le
+budget de pages s'épuise avant d'atteindre la création du pool, la fenêtre ne contient plus la
+première minute — et le code comptait ce qu'il avait sous la main comme si c'était elle. Un chiffre
+faux, dans le sens exact qui fait passer un jeton. **Toute fonction de mesure doit pouvoir dire
+« je n'ai pas pu »**, et l'appelant doit traiter ce cas comme un refus, pas comme un zéro. Voir
+§3.25.
+
+### 5.9 — Une clé primaire qui jette les mesures suivantes
+`solana_observations` a `pair_id` en clé primaire et un `INSERT OR IGNORE` : elle garde le premier
+jugement d'une paire et jette silencieusement tous les autres. NASFROG a été jugée deux fois, la
+seconde a déclenché l'achat, et cette ligne n'existait nulle part — il a fallu recouper le journal
+texte pour comprendre. Une table d'observation doit enregistrer **un événement par passage**, pas un
+état par entité. `solana_judgements` fait ça depuis le 08/09. Voir §3.26.
+
+### 5.10 — Une tâche de fond qui ne dit rien ne fait peut-être rien
+La purge de la base rendait `"seconds": 0.0` à chaque cycle et personne ne s'en étonnait. Trois
+défauts empilés : elle abandonnait dès que le scanner tenait le verrou d'ingestion (cycles de 145 à
+594 s enchaînés, elle ne l'obtenait jamais) ; puis, une fois patiente, elle attendait que
+`priority_waiting` retombe à zéro, ce qui n'arrive presque jamais ; puis, une fois lancée, elle
+tirait ses candidats de `pairs` dans un ordre quelconque — **sur 400 candidats, un seul portait des
+données**. Pendant ce temps la base a atteint 22,2 Go et son contrôle d'intégrité au démarrage a
+laissé le moteur muet **vingt minutes, positions ouvertes**.
+Corrigé le 08/09 : elle part des jetons les plus lourds de `transfers` (les huit premiers portent
+5,1 des 16,4 millions de lignes), lit « mort ou vif » sur l'index `(chain_id, token_address, ts)`
+au lieu d'une jointure `swap_events`/`pairs` — la sélection passe de plus de 900 s à 0 s —, supprime
+par tranches de 20 000 lignes pour ne pas garder le verrou d'écriture dont le carnet a besoin pour
+vendre, et **écrit une ligne de journal à chaque étape**.
+Première passe réelle : 2,67 millions de lignes effacées, 2,08 Go rendus à la réutilisation.
+**Attention** : SQLite ne rend pas l'espace au disque. Le fichier reste à ~21 Go et cessera
+simplement de grossir ; seul un `VACUUM` le réduira, et il demande une fenêtre d'arrêt avec le
+carnet à plat.
 
 ---
 
