@@ -502,9 +502,17 @@ est le seuil.
 2. **Priorité au problème de SORTIE, pas d'entrée.** 53 % des lignes Robinhood ne sont jamais
    ressorties ; sur Solana 100 % sortent. Comprendre cette différence vaut plus que tout réglage
    de seuil d'entrée.
-3. **Dette de qualité sur `token_snapshots`** : des prix aberrants y produisent des moyennes à
+3. **Le créateur du jeton n'est utilisé par aucun filtre Solana.** Il est disponible — le
+   signataire de la première transaction du mint — et permettrait de refuser un déployeur qui nous
+   a déjà coûté de l'argent. Robinhood a cette garde sous le nom de « jeton déjà pris en défaut »,
+   Solana ne l'a pas. Le 08/09 à 18h28 un jeton nommé FTFS a été acheté huit minutes après qu'un
+   autre du même nom se soit effondré de 99 % : vérification faite, **créateurs différents**
+   (`4oVadmxA…` contre `51x3yvXq…`) et liquidité de 227 000 $ contre 1 962 $ — bloquer par NOM
+   aurait donc été une erreur, les symboles de memecoins n'étant pas uniques. Bloquer par
+   **créateur** viserait la bonne chose.
+4. **Dette de qualité sur `token_snapshots`** : des prix aberrants y produisent des moyennes à
    +3 000 000 % (§3.15). À nettoyer avant toute étude qui utilise ces relevés.
-4. **Sonde de vente avant achat** : le nœud Robinhood **honore les overrides d'état de `eth_call`**
+5. **Sonde de vente avant achat** : le nœud Robinhood **honore les overrides d'état de `eth_call`**
    (vérifié le 08/09, mapping des soldes au slot 4 sur les jetons testés). On peut donc simuler une
    vente en s'inventant un solde. Ça n'aurait pas sauvé les trois tickets du 08/09 (pools morts, pas
    pièges), mais ça reste la seule défense contre les vrais pièges.
