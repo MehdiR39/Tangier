@@ -215,6 +215,19 @@ solana:
   # retire. Cout : 12 % des occasions, 1,50 par heure au lieu de 1,70. Mettre 0 pour le retirer.
   max_trades_first_minute: 600
   min_liquidity_usd: 0
+  # Plafond de capitalisation a l entree, ajoute le 2026-09-08 a 20h40 sur une hypothese de
+  # l operateur : un jeton deja gros ne bouge plus assez pour couvrir les frais. Mesure sur 174
+  # lancements, et le balayage est MONOTONE, ce qui est ce qui le rend credible :
+  #     aucun plafond  51 % gagnants  +0,046 par euro  robustesse -0,005
+  #     moins de 100 k 52 %           +0,045           -0,008
+  #     moins de  50 k 55 %           +0,088           +0,042
+  #     moins de  25 k 59 %           +0,192           +0,155
+  # Par tranches : au-dessus de 50 k$ la strategie perd (-0,074 par euro, 50 % de gagnants), en
+  # dessous elle gagne (+0,169, 71 %). On retient 50 k et non 25 k : le 25 k mesure mieux mais ne
+  # repose que sur 27 lancements, et retenir le meilleur chiffre d un balayage est l erreur du matin.
+  # Nos achats du jour avaient des liquidites de 118 k, 223 k, 227 k et jusqu a 1 043 k pour LAPTOP.
+  # Mettre 0 pour retirer le plafond.
+  max_market_cap_usd: 50000
   max_per_hour: 6
   # Abaisse de 2,0 a 1,5 le 2026-09-08 a 18h, sur nos PROPRES releves et contre le backtest.
   # Le suivi du sommet, ajoute le meme jour, a montre que l objectif de x2 ne s est jamais

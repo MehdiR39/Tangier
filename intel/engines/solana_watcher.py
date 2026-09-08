@@ -223,6 +223,14 @@ class SolanaWatcher:
         max_ratio = float(self._cfg("max_trades_per_buyer", 0) or 0)
         max_trades = int(self._cfg("max_trades_first_minute", 0) or 0)
         min_liq = float(self._cfg("min_liquidity_usd", 5000))
+        # La capitalisation a l entree, hypothese de l operateur le 08/09/2026 devant LAPTOP :
+        # un jeton deja gros ne bouge plus assez pour couvrir les frais. Verifie, et nettement --
+        # au-dessus de 50 k$ la strategie PERD (-0,074 par euro, 50 % de gagnants), en dessous elle
+        # gagne (+0,169, 71 %). Le balayage est monotone : sans plafond la robustesse est negative
+        # (-0,005), a 50 k elle passe a +0,042, a 25 k a +0,155. C est la monotonie qui rend le
+        # resultat credible, pas le meilleur chiffre du balayage.
+        max_mcap = float(self._cfg("max_market_cap_usd", 0) or 0)
+        mcap = float(p.get("marketCap") or p.get("fdv") or 0)
         why = None
         if not min_buyers:
             why = "regle non calibree (solana.min_buyers = 0)"
@@ -240,6 +248,8 @@ class SolanaWatcher:
             why = f"{ratio:.0f} echanges par acheteur > {max_ratio:.0f} (bundle probable)"
         elif liq < min_liq:
             why = f"liquidite {liq:,.0f} $ < {min_liq:,.0f} $"
+        elif max_mcap and mcap and mcap >= max_mcap:
+            why = f"capitalisation {mcap:,.0f} $ >= {max_mcap:,.0f} $ (trop gros pour bouger)"
         if why:
             log.info("solana: %s ecarte — %s (%d echanges, %d acheteurs)", symbol, why, trades, payers)
             return False
