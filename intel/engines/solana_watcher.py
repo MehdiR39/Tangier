@@ -166,6 +166,7 @@ class SolanaWatcher:
         if not window:
             return 0, 0
         payers: set[str] = set()
+        payers30: set[str] = set()
         key = rpc.split("api-key=")[-1] if "api-key=" in rpc else ""
         if key:
             # Buyers are counted on the first 300 transactions, trades on the whole minute, so the
@@ -179,16 +180,33 @@ class SolanaWatcher:
             # negative. Raising this cap "to be correct" would quietly degrade the entry rule.
             # The collector in intel/research/solana_watch.py samples identically on purpose: the
             # thresholds were fitted on this quantity and must keep measuring the same thing.
+            # La signature est retenue avec son payeur, pour pouvoir recompter sur une fenetre plus
+            # courte sans rien redemander au reseau.
+            sig30 = {g["signature"] for g in window if (g.get("blockTime") or 0) <= start + 30}
             for i in range(0, min(len(window), 300), 100):
                 try:
                     r = await self.client.post(f"https://api.helius.xyz/v0/transactions/?api-key={key}",
                                                json={"transactions": [w["signature"] for w in window[i: i + 100]]},
                                                timeout=50)
                     for tx in r.json() or []:
-                        if tx.get("feePayer"):
-                            payers.add(tx["feePayer"])
+                        p = tx.get("feePayer")
+                        if not p:
+                            continue
+                        payers.add(p)
+                        if tx.get("signature") in sig30:
+                            payers30.add(p)
                 except Exception:  # noqa: BLE001
                     break
+        # La meme mesure a trente secondes, gratuite : les signatures sont deja la, on les compte
+        # deux fois. Elle ne sert a aucune decision aujourd hui -- elle sert a repondre demain a une
+        # question qu on ne peut pas trancher avec ce qu on a.
+        #
+        # La question, posee par l operateur le 08/09/2026 devant BabyQQQ : on achete a T+1,9 min,
+        # donc a un prix qui contient deja toute la montee de la premiere minute. Ce jeton avait
+        # fait +116 % avant notre entree et on a paye pres du sommet. Juger a trente secondes
+        # donnerait un meilleur prix contre moins d information sur la foule ; personne ne sait
+        # laquelle des deux l emporte, et une collecte a la minute ne permet pas de le savoir.
+        self._demi = (len([g for g in window if (g.get("blockTime") or 0) <= start + 30]), len(payers30))
         return len(window), len(payers)
 
     async def _decide(self, rpc: str, p: dict[str, Any]) -> bool:
@@ -200,7 +218,7 @@ class SolanaWatcher:
         trades, payers = await self._first_minute(rpc, pid, p["pairCreatedAt"])
         liq = float((p.get("liquidity") or {}).get("usd") or 0)
         ratio = trades / max(payers, 1)
-        self._observe(pid, mint, symbol, p.get("dexId"), trades, payers, liq)
+        self._observe(pid, mint, symbol, p.get("dexId"), trades, payers, liq, float(p.get("priceUsd") or 0) or None)
         min_buyers = int(self._cfg("min_buyers", 0))
         max_ratio = float(self._cfg("max_trades_per_buyer", 0) or 0)
         max_trades = int(self._cfg("max_trades_first_minute", 0) or 0)
@@ -303,15 +321,27 @@ class SolanaWatcher:
                  float(self._cfg("size_eur", 5.0)))
         return True
 
-    def _observe(self, pid: str, mint: str, symbol: str, dex: str | None, trades: int, payers: int, liq: float) -> None:
+    def _observe(self, pid: str, mint: str, symbol: str, dex: str | None, trades: int, payers: int, liq: float, price: float | None = None) -> None:
         """One row per judged launch, bought or not: the series any calibration will be built from."""
         try:
             self.ctx.db.execute(
                 "CREATE TABLE IF NOT EXISTS solana_observations("
                 "  ts INTEGER NOT NULL, pair_id TEXT PRIMARY KEY, mint TEXT, symbol TEXT, dex TEXT,"
                 "  trades_first_minute INTEGER, uniq_payers INTEGER, liquidity_usd REAL)")
-            self.ctx.db.execute("INSERT OR IGNORE INTO solana_observations VALUES(?,?,?,?,?,?,?,?)",
-                                (now_ts(), pid, mint, symbol, dex, trades, payers, liq))
+            # Les deux colonnes a trente secondes sont ajoutees apres coup : la table existe deja
+            # sur les installations en cours, et une migration ratee coute plus cher que deux
+            # colonnes manquantes.
+            for col in ("trades_30s INTEGER", "uniq_payers_30s INTEGER", "price_usd REAL"):
+                try:
+                    self.ctx.db.execute(f"ALTER TABLE solana_observations ADD COLUMN {col}")
+                except Exception:  # noqa: BLE001
+                    pass
+            t30, p30 = getattr(self, "_demi", (None, None))
+            self.ctx.db.execute(
+                "INSERT OR IGNORE INTO solana_observations"
+                "(ts, pair_id, mint, symbol, dex, trades_first_minute, uniq_payers, liquidity_usd,"
+                " trades_30s, uniq_payers_30s, price_usd) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (now_ts(), pid, mint, symbol, dex, trades, payers, liq, t30, p30, price))
         except Exception as exc:  # noqa: BLE001
             log.info("solana: observation non enregistree (%s)", str(exc)[:80])
 
