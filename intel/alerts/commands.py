@@ -51,6 +51,8 @@ class TelegramCommands:
             log.warning("commandes Telegram: le token BIS est le meme que le bot d alertes, deja lu par tangier_watcher (409 garanti)")
         self.chat_id = str(ctx.settings.telegram_chat_id or "")
         self._client = httpx.AsyncClient(timeout=40)
+        self._sol_prices: dict[str, float] = {}
+        self._sol_liq: dict[str, float] = {}
         self._warned = False
 
     @property
@@ -118,7 +120,7 @@ class TelegramCommands:
         cmd = cmd.split("@")[0].lower()
         n = int(arg) if arg.strip().isdigit() else 5
         if cmd in ("/positions", "/pos"):
-            return self.positions()
+            return await self.positions()
         if cmd == "/closed":
             return self.closed(n)
         if cmd == "/pnl":
@@ -154,13 +156,38 @@ class TelegramCommands:
         ])
 
     def _mark(self, p: Any) -> float | None:
-        """The token's price now, from whichever chain the line lives on."""
+        """The token's price now, from whichever chain the line lives on. None only when unknown."""
         notes = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv)
         if str(p["model_version"] or "").startswith("sol-"):
-            return None                                # Solana marks come from the watcher, not here
+            return self._sol_prices.get(p["token_address"])
         if self.t1 is None:
             return None
         return self.t1._mark(notes.get("pool"), p["token_address"], notes.get("quote"))
+
+    async def _load_sol_prices(self, mints: list[str]) -> None:
+        """Price the Solana lines in one request, so an open position shows a figure and not a
+        question mark: a book that cannot say what a position is worth is not a book."""
+        self._sol_prices = {}
+        mints = [m for m in dict.fromkeys(mints) if m]
+        if not mints:
+            return
+        try:
+            import httpx
+            async with httpx.AsyncClient() as c:
+                for i in range(0, len(mints), 25):
+                    r = await c.get("https://api.dexscreener.com/latest/dex/tokens/" + ",".join(mints[i:i + 25]), timeout=20)
+                    for pair in (r.json() or {}).get("pairs") or []:
+                        mint = (pair.get("baseToken") or {}).get("address")
+                        px = pair.get("priceUsd")
+                        if not mint or not px:
+                            continue
+                        liq = float((pair.get("liquidity") or {}).get("usd") or 0)
+                        best = self._sol_liq.get(mint, -1.0)
+                        if liq >= best:                    # the deepest pool is the honest price
+                            self._sol_liq[mint] = liq
+                            self._sol_prices[mint] = float(px)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _name(self, token: str) -> str:
         """The token's ticker, which is what a person recognises -- never a hex address."""
@@ -185,7 +212,7 @@ class TelegramCommands:
     def _chain(model_version: str | None) -> str:
         return "Solana" if str(model_version or "").startswith("sol-") else "Robinhood"
 
-    def positions(self) -> str:
+    async def positions(self) -> str:
         """What is open, per chain, and separately what is only waiting to be salvaged."""
         rows = self.ctx.db.query(
             "SELECT * FROM positions WHERE chain_id=? AND kind='PORTFOLIO' AND status='OPEN' "
@@ -193,6 +220,8 @@ class TelegramCommands:
             (self.ctx.chain_id,))
         live = [p for p in rows if not self._recovering(p)]
         bags = [p for p in rows if self._recovering(p)]
+        await self._load_sol_prices([p["token_address"] for p in live
+                                     if str(p["model_version"] or "").startswith("sol-")])
         now = now_ts()
         out: list[str] = []
         if live:
