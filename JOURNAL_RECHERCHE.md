@@ -21,10 +21,10 @@ quelques minutes plus tard.
 |---|---|---|
 | Découverte | logs `Initialize` d'Uniswap v4 | DexScreener **+ flux de migrations en direct** (§3.21) |
 | Règle d'entrée | 27 à 60 échanges dans la 1re minute **puis ≥ 30 échanges dans la 2e** (§3.10) | ≥ 75 acheteurs distincts, **< 600 échanges**, ≤ 15 échanges/acheteur, hors pump.fun (§3.6, §3.13) |
-| Sortie | ×2 ou T+5 min | **×1,5** ou T+15 min (§3.23) |
+| Sortie | ×2 ou T+5 min | **×1,5**, **stop à −30 %**, ou T+15 min (§3.23, §3.24) |
 | Ticket | 5 € | 20 € |
 | Portefeuille | `0x2a33086d2fce255f61ac1a3000bf944397c9c908` | `HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL` |
-| État au 08/09 18h15 | actif, expérience bornée à 10 tickets | actif, 4 positions max, **sans limite de tickets**, coupure à 100 € de pertes par jour |
+| État au 08/09 19h30 | actif, expérience bornée à 10 tickets | actif, 4 positions max, **sans limite de tickets**, coupure à 100 € de pertes par jour |
 
 **Expériences en cours** — chacune a un critère écrit d'avance :
 
@@ -261,6 +261,28 @@ qualité de données à traiter dans `token_snapshots`.
 **Effet de bord utile** : à 24 h la médiane est de −21 % quelle que soit la note. Tenir un de ces
 jetons une journée coûte un cinquième — ce qui confirme que seuls les horizons courts sont
 jouables, et donc les sorties à T+5 et T+15.
+
+### 3.24 — Il manquait un stop de perte, 2026-09-08 19h30
+**Le défaut** : le carnet avait un objectif de gain et une limite de temps, **rien pour couper une
+position qui tombe**. Trois lignes ont été tenues jusqu'à l'échéance pendant qu'elles mouraient —
+DLSS5 à ×0,11, ZAPE à ×0,04, FTFS à ×0,01 après **−99 % en cinq minutes**. L'effondrement de FTFS
+a été vérifié par deux sources indépendantes : le routeur ne payait plus 0,01 € pour le sac, et
+DexScreener affichait 1 786 ventes contre 513 achats sur la période. Ce n'est pas un pool vidé,
+c'est tout le monde qui sort en même temps.
+
+| Règle (objectif ×1,5) | Gagnants | Par euro | Médiane | Robustesse |
+|---|---|---|---|---|
+| Sans stop | 68 % | +0,123 | +0,487 | +0,079 |
+| **Stop à −30 %** | 66 % | **+0,183** | +0,487 | **+0,147** |
+| Stop à −50 % | 66 % | +0,134 | +0,487 | +0,092 |
+
+**Appliqué** : `solana.stop_loss_multiple: 0.7`. Aurait limité les trois lignes ci-dessus à 6 €
+chacune au lieu de 18 à 20, soit **environ 40 € sur une seule journée**.
+**Ce qui distingue ce réglage de tous les autres du jour** : le backtest et le réel disent la même
+chose. Sur l'objectif de sortie ils se contredisaient et il a fallu trancher pour le réel ; ici ils
+convergent. Le stop **suiveur** depuis le sommet, lui, avait été écarté au §3.22 parce qu'il sortait
+sur du bruit — un stop sec depuis l'entrée est une règle différente, il ne coupe jamais une gagnante.
+**Outil** : `intel/research/sol_stoploss.py`.
 
 ### 3.23 — L'objectif de ×2 ne se déclenchait jamais, 2026-09-08 18h
 **Ce que le suivi du sommet a révélé** (fonction ajoutée le jour même sur la remarque de
