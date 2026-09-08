@@ -655,6 +655,64 @@ réels dans la journée, avec 66 % d'invendables sur 32 tickets (§3.27) — le 
 de poser l'aurait arrêté au ticket suivant, et c'est précisément ce que l'opérateur a refusé.
 La position est prise en connaissance des chiffres ; ils sont écrits ici pour qu'on puisse la
 rejuger demain sur des faits plutôt que sur une impression.
+
+### 3.29 — La règle de sortie enfin simulée en entier, 2026-09-09 (nuit)
+**Défaut trouvé d'abord** : `solana_backtest.outcome()` ne connaissait que l'objectif et la durée.
+**Le stop de perte, en production depuis le 08/09 à −30 %, n'était pas modélisé.** Le simulateur
+jugeait donc une règle qui n'existe pas — précisément ce que §6 interdit. Corrigé dans
+`intel/research/sol_exit_sweep.py`, qui modélise les trois branches ensemble et, quand un relevé à
+la minute franchit les deux bornes, retient le **stop** : l'hypothèse défavorable.
+
+**1. Le stop est validé, pour la première fois.** 53 lancements passant la règle d'entrée :
+
+| stop | par euro | sans le meilleur dixième |
+|---|---|---|
+| aucun | +0,090 | +0,048 |
+| 0,5 | +0,111 | +0,071 |
+| 0,6 | +0,134 | +0,097 |
+| **0,7 (production)** | **+0,160** | **+0,126** |
+| 0,8 | +0,148 | +0,113 |
+| 0,9 | +0,145 | +0,109 |
+
+Le balayage monte puis redescend, sans pic : 0,7 est un optimum, pas un accident de grille. Le stop
+fait +78 % de rendement à lui seul. Branches de sortie sous la règle de production : objectif 26,
+stop 16, durée 11.
+
+**2. Le simulateur veut ×2 ; notre carnet dit non, et c'est le carnet qui a raison.**
+Rejeu : ×2,0 rend +0,273 contre +0,160 pour ×1,5. Mais sur **nos 25 lignes réelles** :
+
+| multiple traversé avant la sortie | part |
+|---|---|
+| ×1,2 | 28 % |
+| ×1,5 | 24 % |
+| ×1,8 | **4 %** |
+| ×2,0 | **0 %** |
+
+Sommet médian atteint : **×1,02**. Aucune position n'a jamais doublé. Relever l'objectif
+transformerait les 24 % de sorties à ×1,5 en sorties à l'expiration, à un prix presque toujours
+plus bas. **On ne touche pas à ×1,5.** Cela confirme §3.23 avec un mécanisme, pas seulement un
+constat.
+
+**3. Pourquoi le rejeu se trompe — deux causes, une mesurée, une hypothèse.**
+*Mesurée* : le rejeu achète à T+1, la production à T+1,9. Décaler l'entrée à T+2 fait tomber ×2 de
++0,273 à +0,189, soit **31 % de l'avantage perdu dans cette seule minute**. C'est réel mais
+insuffisant.
+*Hypothèse, non concluante* : le régime de marché se dégrade. Découpé en quatre par date de
+création, le rejeu donne +0,120 / +0,277 / +0,140 / **+0,050** par euro, et la part des lancements
+atteignant ×2 en quinze minutes passe de 38 % à **7 %**. **Mais chaque quart ne compte que 13 ou 14
+lancements** — c'est trop mince, et la même mesure par journée entière donne +0,147 puis +0,144,
+donc stable. **On ne conclut pas.**
+
+**Métrique posée pour trancher** : `intel/research/sol_regime.py` écrit chaque jour dans la table
+`sol_regime` la part des lancements éligibles qui traversent ×1,2, ×1,5 et ×2,0, et le rendement du
+rejeu. **Critère écrit d'avance** : si la part atteignant ×1,5 tombe durablement sous 25 % sur trois
+journées consécutives d'au moins 20 lancements, la règle ne paie plus ses frais et on arrête
+d'acheter — quelle que soit sa supériorité sur les autres règles.
+
+**L'écart qui compte vraiment** : sur la même période, le rejeu promet +0,144 par euro et le carnet
+réel a rendu **−0,094** (−47,24 € sur 25 tickets de 20 €). L'écart, **0,24 par euro**, est le coût
+de l'exécution et de la réaction du déployeur. Il est plus grand que tout ce que le rejeu promet.
+C'est le vrai sujet, et aucun balayage de paramètres ne le réduira.
 ---
 
 ## 4. Pistes ouvertes, non testées
