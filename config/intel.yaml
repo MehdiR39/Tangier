@@ -98,13 +98,20 @@ decisions:
 # execution.mode is deliberately set to live, separately.
 t1:
   enabled: true
-  # Experience bornee, decidee avec l operateur le 2026-09-07 : vingt tickets de 5 EUR, soit
-  # 100 EUR de risque, pour repondre a une seule question. Le bug d arrondi corrige ce soir
-  # faisait echouer des ventes parfaitement possibles ; il reste a savoir si, une fois corrige,
-  # la vente passe DANS la fenetre de sortie. Si le taux d invendables tombe sous 15 %, la regle
-  # tient ; s il reste au-dessus de 40 %, Robinhood s arrete. Le moteur se coupe tout seul au
-  # budget, sans dependre de quelqu un qui surveille l heure.
-  buy_budget: 10
+  # Experience close le 08/09/2026 : dix tickets de 5 EUR pour savoir si la confirmation en
+  # deuxieme minute fait tomber le taux d invendables sous 40 %. Resultat sur les 8 tickets reels
+  # joues depuis 12h06 : 3 invendables, soit 38 %, pour -15,70 EUR. Le critere est tenu de justesse
+  # sur un echantillon trop petit pour conclure ; la confirmation reste en place et la question est
+  # reposee sur la serie ouverte. Reference avant elle : 100 % sur cinq tickets, 46 % sur vingt-huit.
+  # Voir JOURNAL_RECHERCHE.md §3.27.
+  # Limite de tickets RETIREE le 08/09/2026 a la demande de l operateur : « s il y a une limite sur
+  # le nombre de tickets enleve-la, tu m as parle de 100 EUR ». Un compteur de tickets coupe une
+  # serie gagnante et ne protege de rien quand la serie perd vite. Le garde-fou est desormais le
+  # plafond de pertes du jour, comme sur Solana. Remettre un nombre ici rebranche le compteur.
+  buy_budget: 0
+  # Plafond de pertes reelles par jour, en euros. Ne compte que les lignes kind='PORTFOLIO' :
+  # le carnet a blanc ecrit dans la meme table et a perdu 223,86 EUR fictifs en 24 h (§3.27).
+  max_daily_loss_eur: 100
   budget_since_ts: 1788869200
   # Confirmation en deuxieme minute, ajoutee le 2026-09-08 apres cinq tickets invendables d affilee
   # (-25,32 EUR, aucune vente aboutie). Le diagnostic : on n achetait pas des pieges mais des pools

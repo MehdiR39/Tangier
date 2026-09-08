@@ -359,8 +359,11 @@ class SolanaWatcher:
         if perte_max > 0:
             jour = now - (now % 86400)
             perdu = -float(self.ctx.db.scalar(
+                # kind='PORTFOLIO' : la table melange carnet reel et carnet a blanc sous le meme
+                # model_version, et un plafond qui compte des pertes fictives se declenche sur de
+                # l argent qui n existe pas. Voir §3.27.
                 "SELECT COALESCE(SUM(realized_eur), 0) FROM positions WHERE chain_id=? "
-                "AND model_version=? AND closed_ts>=? AND realized_eur IS NOT NULL",
+                "AND model_version=? AND kind='PORTFOLIO' AND closed_ts>=? AND realized_eur IS NOT NULL",
                 (self.ctx.chain_id, MODEL_VERSION, jour), 0.0) or 0.0)
             if perdu >= perte_max:
                 if not getattr(self, "_stop_perte", False):

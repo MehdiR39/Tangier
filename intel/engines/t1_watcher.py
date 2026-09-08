@@ -360,6 +360,29 @@ class T1Watcher:
                         log.warning("t1: budget de %d achats atteint, plus aucun achat reel (le carnet a blanc continue)", budget)
                     self.ctx.db.cursor_set(PAUSE_KEY, 1, now_ts())
                     continue
+            # Plafond de pertes du jour, pose le 08/09/2026 a la demande de l operateur en meme temps
+            # qu il retirait la limite de tickets : « s il y a une limite sur le nombre de tickets
+            # enleve-la, tu m as parle de 100 EUR ». Un compteur de tickets coupe une serie gagnante
+            # et ne protege de rien quand la serie perd vite ; une limite de perte ne coupe que si ca
+            # perd vraiment. Robinhood n avait AUCUN plafond de ce genre -- seulement le compteur.
+            #
+            # `kind='PORTFOLIO'` n est pas un detail : la table `positions` melange le carnet reel et
+            # le carnet a blanc sous le meme `model_version`. Sur 24 h le carnet a blanc a perdu
+            # 223,86 EUR fictifs contre 115,57 EUR reels ; sans ce filtre le plafond se declencherait
+            # sur de l argent qui n existe pas, et resterait declenche. Voir §3.27 et §5.11.
+            perte_max = float(self._cfg("max_daily_loss_eur", 0) or 0)
+            if perte_max > 0:
+                jour = now_ts() - (now_ts() % 86400)
+                perdu = -float(self.ctx.db.scalar(
+                    "SELECT COALESCE(SUM(realized_eur), 0) FROM positions WHERE chain_id=? "
+                    "AND model_version=? AND kind='PORTFOLIO' AND closed_ts>=? AND realized_eur IS NOT NULL",
+                    (self.ctx.chain_id, MODEL_VERSION, jour), 0.0) or 0.0)
+                if perdu >= perte_max:
+                    if not getattr(self, "_stop_perte", False):
+                        self._stop_perte = True
+                        log.warning("t1: %.2f EUR perdus aujourd hui, au-dela de la limite de %.0f EUR "
+                                    "-- plus aucun achat reel jusqu a demain", perdu, perte_max)
+                    continue
             if len(self.sent_ts) >= per_hour:
                 log.info("t1: %s cleared the bar (%d swaps) but the hourly cap is reached", pid[:10], count)
                 continue

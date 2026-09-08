@@ -25,7 +25,7 @@ quelques minutes plus tard.
 | Sortie | ×2 ou T+5 min | **×1,5**, **stop à −30 %**, ou T+15 min (§3.23, §3.24) |
 | Ticket | 5 € | 20 € |
 | Portefeuille | `0x2a33086d2fce255f61ac1a3000bf944397c9c908` | `HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL` |
-| État au 08/09 19h30 | actif, expérience bornée à 10 tickets | actif, 4 positions max, **sans limite de tickets**, coupure à 100 € de pertes par jour |
+| État au 09/09 00h | actif, **sans limite de tickets**, coupure à 100 € de pertes **réelles** par jour | actif, 4 positions max, sans limite de tickets, coupure à 100 € de pertes **réelles** par jour |
 
 **Expériences en cours** — chacune a un critère écrit d'avance :
 
@@ -585,6 +585,51 @@ premier jugement et jetait celui qui déclenchait l'achat. Trois champs ajoutés
 `market_cap`, `chg_m5`, `age_s`. Aucun ne filtre aujourd'hui — ils sont là pour trancher demain
 sur des données, notamment : **une chute récente prédit-elle l'échec, ou est-elle au contraire un
 point d'entrée ?** NASFROG, achetée après −96 %, est ressortie à ×1,41.
+
+### 3.27 — Bilan réel des deux carnets au 08/09 23h, et une erreur de lecture
+**Déclencheur** : contrôle de nuit. Première lecture alarmante — « Robinhood : 84 tickets, 10 % de
+gagnants, 80 % d'invendables, −339 € ». **Cette lecture était fausse.**
+
+**L'erreur** : la table `positions` mélange le carnet réel et le carnet à blanc. Les deux portent le
+même `model_version` ; seule la colonne `kind` les sépare (`PORTFOLIO` = argent réel, `VIRTUAL` =
+fictif, `DOUBLON` = ligne annulée). Une requête sans `kind` compte les pertes fictives comme des
+pertes réelles.
+
+**Les vrais chiffres, sur 24 h** :
+
+| carnet | tickets réels | résultat réel | fictifs comptés à tort |
+|---|---|---|---|
+| Robinhood | 32, dont 66 % invendables | **−115,57 €** | 52 tickets, −223,86 € |
+| Solana | 25, 56 % gagnants | **−47,24 €** | 2 tickets |
+
+**Vérification en chaîne** : portefeuille Robinhood `0x2a33086d…`, 0,186 ETH versés, **0,106507 ETH
+restants** — soit −0,0795 ETH depuis le début, 105 transactions envoyées. Le livre annonce −43,06 €
+de négoce réel depuis toujours ; l'écart avec la chaîne est le gaz, y compris celui des ordres
+refusés, qui sort du portefeuille sans appartenir à aucune ligne.
+
+**L'expérience des 10 tickets (confirmation en deuxième minute), ouverte à 12h06 UTC** :
+
+| heure | jeton | issue |
+|---|---|---|
+| 14:21 | 0x3761600a | vendu ×0,00 · +3,19 € |
+| 14:25 | 0x3761600a | **invendable** · −5,06 € (doublon, avant le garde-fou) |
+| 14:56 | 0xdbb9d6b5 | vendu ×0,13 · −4,47 € |
+| 17:06 | 0xde1a4b89 | vendu ×1,19 · +0,39 € |
+| 19:02 | 0x71b67232 | vendu ×0,83 · −1,52 € |
+| 19:42 | 0xf4085b61 | **invendable** · −5,00 € |
+| 21:11 | 0x84395562 | **invendable** · −5,00 € |
+| 21:56 | 0x06c6f41d | vendu ×1,10 · +1,77 € |
+
+**8 tickets réels, 3 invendables (38 %), −15,70 €.** Le critère écrit d'avance était « sous 40 % » :
+il est **tenu de justesse**, sur un échantillon de 8 — trop petit pour conclure quoi que ce soit.
+Référence avant la confirmation : 100 % sur cinq tickets, 46 % sur vingt-huit.
+**On ne touche à rien** : le budget s'arrête tout seul à 10 achats, il en reste 2. La confirmation
+reste en place, et la question sera reposée sur les 10 tickets complets.
+
+**Ce que la lecture correcte change au diagnostic** : le carnet Robinhood ne saigne pas 339 € par
+jour. Il perd de l'argent, régulièrement, à un rythme d'environ 2 € par ticket de 5 € — c'est grave
+mais ce n'est pas la même urgence, et la décision d'arrêter ou non doit se prendre sur les 32
+lignes réelles, pas sur 84 lignes dont les deux tiers n'ont jamais coûté un centime.
 ---
 
 ## 4. Pistes ouvertes, non testées
@@ -696,9 +741,17 @@ Première passe réelle : 2,67 millions de lignes effacées, 2,08 Go rendus à l
 **Attention** : SQLite ne rend pas l'espace au disque. Le fichier reste à ~21 Go et cessera
 simplement de grossir ; seul un `VACUUM` le réduira, et il demande une fenêtre d'arrêt avec le
 carnet à plat.
-
 ---
 
+### 5.11 — `positions` mélange le carnet réel et le carnet à blanc
+Les deux portent le même `model_version` ; seule la colonne `kind` les sépare — `PORTFOLIO` pour
+l'argent réel, `VIRTUAL` pour le fictif, `DOUBLON` pour une ligne annulée. **Toute requête de
+résultat doit filtrer sur `kind='PORTFOLIO'`.** Sans ce filtre, le 08/09 : « Robinhood, 84 tickets,
+80 % d'invendables, −339 € » au lieu de 32 tickets et −115,57 €.
+Le plafond de pertes du jour tombait dans le même piège : il sommait `realized_eur` sans filtrer, et
+se serait déclenché sur 223,86 € de pertes fictives. Corrigé dans les deux moteurs le 08/09.
+
+---
 ## 6. Discipline
 
 - **Vérifier avant d'annoncer.** Densité des données et réalisme des exécutions d'abord.
