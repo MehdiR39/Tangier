@@ -236,8 +236,10 @@ solana:
   take_profit_multiple: 1.5
   max_hold_seconds: 900
   sell_slippage_pct: 25.0
-  buy_budget: 20   # 20 tickets de 20 EUR : le plafond de 4 positions borne le risque simultane
-  budget_since_ts: 1788866057   # remis a zero le 08/09 : les 20 tickets doivent mesurer la NOUVELLE regle
+  # Plus de plafond de tickets : il arretait aussi une serie gagnante, et de toute facon aucune
+  # ligne de code ne le lisait -- il ne protegeait rien. Remplace par une limite de PERTE, qui ne
+  # coupe que si ca perd vraiment et laisse courir tant que ca marche. Mettre 0 pour tout enlever.
+  max_daily_loss_eur: 100
 
   # Ecoute des creations de pool en direct, ajoutee le 2026-09-08 apres l abonnement Helius
   # Developpeur. Mesure du jour : la chaine gradue une vingtaine de jetons par heure sur PumpSwap,

@@ -24,14 +24,14 @@ quelques minutes plus tard.
 | Sortie | ×2 ou T+5 min | **×1,5** ou T+15 min (§3.23) |
 | Ticket | 5 € | 20 € |
 | Portefeuille | `0x2a33086d2fce255f61ac1a3000bf944397c9c908` | `HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL` |
-| État au 08/09 18h00 | actif, expérience bornée à 10 tickets | actif, 4 positions max, budget 20 tickets |
+| État au 08/09 18h15 | actif, expérience bornée à 10 tickets | actif, 4 positions max, **sans limite de tickets**, coupure à 100 € de pertes par jour |
 
 **Expériences en cours** — chacune a un critère écrit d'avance :
 
 - **Robinhood, 10 tickets de 5 €** : la confirmation en deuxième minute fait-elle tomber le taux
   d'invendables sous 40 % ? Référence : 100 % sur les cinq derniers tickets, 46 % sur les
   vingt-huit précédents. Bascule d'annulation : `t1.confirm_minute2: 0`.
-- **Solana, 20 tickets de 20 €** : le plancher de 75 acheteurs tient-il ce que le backtest promet
+- **Solana, série ouverte de tickets de 20 €** : l'objectif ramené à ×1,5 (§3.23) inverse-t-il la perte de 5,70 € par ticket constatée à ×2 ? Le plancher de 75 acheteurs tient-il ce que le backtest promet
   (+0,36 par euro, 69 % de gagnants) ? Référence : −18,16 € réels sur les cinq tickets sans
   plancher. Bascule d'annulation : `solana.min_buyers: 5`.
 

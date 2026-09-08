@@ -272,6 +272,23 @@ class SolanaWatcher:
         if len(self.sent_ts) >= int(self._cfg("max_per_hour", 10)):
             log.info("solana: %s passe la regle mais le plafond horaire est atteint", symbol)
             return False
+        # Une limite de PERTE, pas un compteur de tickets. Un compteur arrete aussi une serie
+        # gagnante et ne protege de rien quand la serie perd vite ; une limite de perte ne coupe
+        # que si ca perd vraiment, et laisse courir tant que ca marche. Le `buy_budget` inscrit
+        # dans la configuration n a d ailleurs jamais ete lu par ce moteur : il ne protegeait rien.
+        perte_max = float(self._cfg("max_daily_loss_eur", 0) or 0)
+        if perte_max > 0:
+            jour = now - (now % 86400)
+            perdu = -float(self.ctx.db.scalar(
+                "SELECT COALESCE(SUM(realized_eur), 0) FROM positions WHERE chain_id=? "
+                "AND model_version=? AND closed_ts>=? AND realized_eur IS NOT NULL",
+                (self.ctx.chain_id, MODEL_VERSION, jour), 0.0) or 0.0)
+            if perdu >= perte_max:
+                if not getattr(self, "_stop_perte", False):
+                    self._stop_perte = True
+                    log.warning("solana: %.2f EUR perdus aujourd hui, au-dela de la limite de "
+                                "%.0f EUR -- plus aucun achat jusqu a demain", perdu, perte_max)
+                return False
         self.ctx.db.insert("decisions", {
             "ts": now, "chain_id": self.ctx.chain_id, "token_address": mint, "label": symbol,
             "kind": "BUY", "reason": f"Solana T+1 · {trades} echanges, {payers} acheteurs distincts",
