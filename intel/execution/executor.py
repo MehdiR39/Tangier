@@ -187,14 +187,33 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
     pool_fee = int(pool["fee"])
     # A dynamic-fee pool reports 0 here while its hook charges what it likes: quote with 1 % so the
     # minimum output is not set from a fee-free price.
+    is_t1 = str(d.get("model_version") or "").startswith("t1-")
+    check_limits = limits
+    if str(d.get("model_version") or "").startswith("t1-shadow"):
+        # A shadow decision is measured, never sent. Judging it against the real book's quote
+        # whitelist refused every USDG launch (2026-09-07) -- which is precisely the question the
+        # paper book exists to answer. Every other ceiling still applies, so the simulation stays
+        # comparable to the real book.
+        check_limits = dataclasses.replace(limits, allowed_quotes=tuple(ctx.config.quote_assets.keys()))
+    if is_t1:
+        # The scanner's 20 000 $ floor describes tokens hours old. For a 5 EUR entry at T+1 the
+        # relevant question is whether the ticket moves the pool, and 500 $ of quote-side depth
+        # keeps that near 1 %; the slippage cap and every daily ceiling still apply unchanged.
+        check_limits = dataclasses.replace(
+            check_limits, min_quote_liquidity_usd=float(ctx.config.get("t1.min_quote_liquidity_usd", 500.0)),
+            max_slippage_pct=float(ctx.config.get("t1.max_slippage_pct", 8.0)))
     # Entry guards must not become exit walls. The staleness, single-tick and impact ceilings all
     # exist to stop us OVERPAYING on the way in; applied to a sell they refuse to let go of a bag
     # (2026-09-07: "dernier échange il y a 82 min", "impact 7.5 % > 3 %") and the only alternative
     # to a costly exit is a worthless one. On the way out the chain's own quote decides, and the
     # minimum output computed from it is what actually protects the trade.
     if is_buy:
+        # The quoter's own 3 % ceiling describes a scanner order on an established pool. A T+1 pool
+        # is minutes old and a 5 EUR ticket routinely moves it more than that: four of the twenty
+        # test tickets died on "impact 3.0 % > 3.0 %" while the book's own ceiling was 8 %.
         q = quote_from_pool(ctx, pool_id=pool["pair_id"], zero_for_one=zero_for_one, amount_in=amount_in,
-                            fee_pips=pool_fee if pool_fee > 0 else 10_000)
+                            fee_pips=pool_fee if pool_fee > 0 else 10_000,
+                            max_impact_pct=float(check_limits.max_slippage_pct))
     else:
         q = quote_from_pool(ctx, pool_id=pool["pair_id"], zero_for_one=zero_for_one, amount_in=amount_in,
                             fee_pips=pool_fee if pool_fee > 0 else 10_000,
@@ -208,7 +227,6 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
         "SELECT liquidity_usd FROM token_snapshots WHERE chain_id=? AND token_address=? AND liquidity_usd IS NOT NULL ORDER BY ts DESC LIMIT 1",
         (ctx.chain_id, token))
     liq_source = "snapshot"
-    is_t1 = str(d.get("model_version") or "").startswith("t1-")
     if liq_usd is None:
         # A pool sixty seconds old has no market snapshot yet, so the first three T+1 decisions
         # (2026-09-06, all quoted at 0.1-0.2 % impact) were refused as "liquidité inconnue". The
@@ -225,20 +243,6 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
                 liq_source = "pool_state"
             except (TypeError, ValueError, KeyError):
                 liq_usd = None
-    check_limits = limits
-    if str(d.get("model_version") or "").startswith("t1-shadow"):
-        # A shadow decision is measured, never sent. Judging it against the real book's quote
-        # whitelist refused every USDG launch (2026-09-07) -- which is precisely the question the
-        # paper book exists to answer. Every other ceiling still applies, so the simulation stays
-        # comparable to the real book.
-        check_limits = dataclasses.replace(limits, allowed_quotes=tuple(ctx.config.quote_assets.keys()))
-    if is_t1:
-        # The scanner's 20 000 $ floor describes tokens hours old. For a 5 EUR entry at T+1 the
-        # relevant question is whether the ticket moves the pool, and 500 $ of quote-side depth
-        # keeps that near 1 %; the slippage cap and every daily ceiling still apply unchanged.
-        check_limits = dataclasses.replace(
-            check_limits, min_quote_liquidity_usd=float(ctx.config.get("t1.min_quote_liquidity_usd", 500.0)),
-            max_slippage_pct=float(ctx.config.get("t1.max_slippage_pct", 8.0)))
     verdict = safety.check(ctx, {"kind": d["kind"], "token": token, "quote": quote_addr,
                                 "size_eur": d.get("size_eur"), "slippage_pct": q.price_impact_pct,
                                 "quote_liquidity_usd": liq_usd,

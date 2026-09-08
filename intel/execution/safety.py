@@ -126,8 +126,12 @@ def check(ctx: IntelContext, order: dict[str, Any], limits: Limits) -> Verdict:
         mv = str(order.get("model_version") or "")
         prefix = mv.split("-")[0] + "-" if mv else ""
         if prefix:
-            n_open = ctx.db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF') AND model_version LIKE ?",
-                                   (ctx.chain_id, prefix + "%"), 0)
+            # A bag reopened by the recovery pass is not a working position: its euros are already
+            # lost and it is only waiting for a pool that will take it. Counting it against the
+            # ceiling let seventeen dead bags forbid every new purchase (2026-09-08, 07:30).
+            n_open = ctx.db.scalar(
+                "SELECT COUNT(*) FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF') AND model_version LIKE ? "
+                "AND (notes IS NULL OR notes NOT LIKE '%recover:%')", (ctx.chain_id, prefix + "%"), 0)
         else:
             n_open = ctx.db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF')", (ctx.chain_id,), 0)
         if n_open >= limits.max_open_positions:

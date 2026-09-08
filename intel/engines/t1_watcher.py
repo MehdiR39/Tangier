@@ -279,8 +279,13 @@ class T1Watcher:
             # engine stops itself at the budget rather than relying on anyone watching the clock.
             budget = int(self._cfg("buy_budget", 0))
             if budget:
+                # Count purchases that actually happened, not decisions written. The first run of
+                # this experiment burned its whole budget on twenty refusals and bought nothing:
+                # a refused order costs nothing and must not consume the allowance.
                 spent = self.ctx.db.scalar(
-                    "SELECT COUNT(*) FROM decisions WHERE chain_id=? AND model_version=? AND kind='BUY' AND ts>?",
+                    "SELECT COUNT(*) FROM decisions d JOIN executions e ON e.chain_id=d.chain_id AND e.decision_id=d.id "
+                    "WHERE d.chain_id=? AND d.model_version=? AND d.kind='BUY' AND d.ts>? "
+                    "AND e.status IN ('SUBMITTED','CONFIRMED')",
                     (self.ctx.chain_id, MODEL_VERSION, int(self._cfg("budget_since_ts", 0))), 0)
                 if spent >= budget:
                     if not getattr(self, "_budget_done", False):

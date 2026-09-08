@@ -105,7 +105,7 @@ t1:
   # tient ; s il reste au-dessus de 40 %, Robinhood s arrete. Le moteur se coupe tout seul au
   # budget, sans dependre de quelqu un qui surveille l heure.
   buy_budget: 20
-  budget_since_ts: 1788822494
+  budget_since_ts: 1788855948
   # Plafond sur le compteur d entree, ajoute le 2026-09-07 apres une journee reelle perdante.
   # Au-dela de 60 echanges dans la premiere minute, le pool est un bundle qui retire sa liquidite
   # aussitot : sur 84 pools ETH que ce livre n a PAS achetes (donc sans effet de notre part),

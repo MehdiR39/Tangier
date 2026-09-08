@@ -146,3 +146,17 @@ def test_selling_does_not_consume_the_daily_buying_allowance():
                                      "kind": SELL_ALL, "size_eur": 20.0, "mode": "live", "status": "CONFIRMED"})
     assert spent_today(ctx) == (0, 0.0), "une vente n'engage rien du budget d'achat"
     assert check(ctx, _order(), _limits()).allowed
+
+
+def test_bags_awaiting_recovery_do_not_forbid_new_purchases():
+    """A written-off bag reopened to be retried is not a working position.
+
+    On 2026-09-08 seventeen dead bags filled the open-position ceiling and every new purchase was
+    refused, so the experiment that was supposed to answer whether the book still works never ran.
+    """
+    ctx = _ctx()
+    for i in range(20):
+        ctx.db.insert("positions", {"chain_id": ctx.chain_id, "token_address": f"0x{i:040d}", "kind": "PORTFOLIO",
+                                    "opened_ts": now_ts() - 3600, "status": "OPEN", "model_version": "t1-watcher-v0.1",
+                                    "notes": f"decision:{i} recover:3"})
+    assert check(ctx, _order(model_version="t1-watcher-v0.1"), _limits()).allowed
