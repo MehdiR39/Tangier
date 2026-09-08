@@ -710,9 +710,70 @@ journées consécutives d'au moins 20 lancements, la règle ne paie plus ses fra
 d'acheter — quelle que soit sa supériorité sur les autres règles.
 
 **L'écart qui compte vraiment** : sur la même période, le rejeu promet +0,144 par euro et le carnet
-réel a rendu **−0,094** (−47,24 € sur 25 tickets de 20 €). L'écart, **0,24 par euro**, est le coût
-de l'exécution et de la réaction du déployeur. Il est plus grand que tout ce que le rejeu promet.
-C'est le vrai sujet, et aucun balayage de paramètres ne le réduira.
+réel a rendu **−0,094** (−47,24 € sur 25 tickets de 20 €). L'écart est de **0,24 par euro**, plus
+grand que tout ce que le rejeu promet. J'ai d'abord écrit ici que c'était le coût de l'exécution.
+**C'est faux, et §3.30 le mesure** : l'exécution est propre. L'écart est ailleurs.
+
+### 3.30 — L'exécution est propre : l'écart n'est pas un coût, c'est une population, 2026-09-09 (nuit)
+**Question** : les 0,24 € par euro qui manquent entre le rejeu et le carnet réel (§3.29), où
+partent-ils ? Hypothèse de départ, la mienne : glissement de prix à l'achat et à la vente, plus la
+réaction du déployeur.
+
+**Méthode** : pour chacune des 20 ventes abouties, comparer le net *théorique* qu'implique le
+multiple annoncé — `mise × multiple × (1 − 0,3 %)² − mise − gaz` — au net *réel* réglé sur la
+chaîne. La différence est tout ce que le multiple ne dit pas.
+
+**Résultat** :
+
+| | écart par euro |
+|---|---|
+| médian | **+0,004** |
+| moyen | +0,054 |
+
+Le médian est nul : à 0,4 % près, l'argent reçu est exactement celui que le multiple annonce.
+Entrée et sortie confondues, le glissement de prix est négligeable. **La moyenne de 5,4 % est
+entièrement portée par une seule ligne** — BIPOLAR, +20,02 € d'écart, le double achat de la
+collision d'exécuteur déjà corrigée le 08/09. Une ligne sur vingt, un bug connu, pas un coût
+structurel.
+
+**Conclusion** : il n'y a ni glissement caché ni coût d'exécution à récupérer. Chercher des
+dixièmes de pour cent de ce côté serait du temps perdu. J'ai alors supposé que l'écart venait de la
+**population** — collecteur de recherche et découverte en direct ne voient que 54 % des mêmes
+jetons. **C'était encore faux** : §3.31 le mesure sur des jetons identiques.
+
+### 3.31 — Le rejeu est fiable quand il simule la règle qui tournait vraiment, 2026-09-09 (nuit)
+**Test** : 15 des 25 jetons réellement achetés sont aussi dans le jeu de rejeu. On peut donc
+comparer, **sur les mêmes jetons**, ce que le rejeu prédit et ce que le carnet a encaissé — ce que
+ni la population ni l'exécution ne peuvent plus expliquer.
+
+**Première lecture, alarmante** : sur 14 jetons appariés, rejeu +0,182 par euro, réel −0,051. Écart
++0,233 — exactement l'écart global. Le rejeu semblait donc faux sur des cas identiques.
+
+**Le piège, visible dans les chiffres** : plusieurs lignes du rejeu valent exactement −6,10 €,
+c'est-à-dire le stop à 0,7 appliqué à un ticket de 20 €. Or **le stop n'existait pas en production
+avant le 08/09 19h30** (§3.24). Je comparais la règle d'aujourd'hui simulée contre la règle d'hier
+jouée en réel.
+
+**En séparant par époque de règle** :
+
+| | n | rejeu | réel | écart |
+|---|---|---|---|---|
+| avant l'ajout du stop | 9 | +0,208 | **−0,204** | +0,412 |
+| après l'ajout du stop | 5 | +0,134 | **+0,224** | **−0,090** |
+
+**Le rejeu est fiable, et même légèrement pessimiste, dès lors qu'il simule la règle qui tournait.**
+Les cinq lignes ne font pas une preuve, mais le mécanisme est compris et l'écart change de signe.
+
+**Ce que ça vaut au-delà de Solana** : la même erreur explique peut-être le désastre Robinhood, où
+un rejeu promettait +3 € par ticket pour une réalité à −1,72 €. Avant de rejeter un backtest, il
+faut vérifier qu'il simule la règle qui tournait à la date de chaque ligne, pas la règle du jour.
+
+**Règle de méthode à appliquer désormais** : toute comparaison rejeu / réel se fait par époque de
+règle. Les changements de règle sont datés dans ce journal — ils servent exactement à ça.
+
+**Ce que ça dit du stop, accessoirement** : les 9 lignes jouées sans stop ont rendu −0,204 par euro
+en réel. Ce n'est pas une contrefactuelle rigoureuse — notre propre achat pèse sur le marché — mais
+c'est cohérent avec le balayage de §3.29 qui donne au stop +78 % de rendement.
 ---
 
 ## 4. Pistes ouvertes, non testées
@@ -846,3 +907,11 @@ se serait déclenché sur 223,86 € de pertes fictives. Corrigé dans les deux 
   notre propre achat. Sur Robinhood, un backtest à +3 €/ticket a donné un carnet réel à −1,72.
 - **Corriger le fichier, pas seulement la base.** Une réparation ponctuelle sans le correctif de
   code revient le lendemain.
+- **Comparer rejeu et réel se fait par époque de règle.** Les lignes jouées avant l'ajout du stop
+  ne se comparent pas à un rejeu qui l'applique : l'écart apparent était de +0,412 par euro, il
+  devient −0,090 une fois les époques séparées (§3.31). Les dates de changement de règle sont
+  consignées ici exactement pour ça.
+- **Toute requête de résultat filtre sur `kind='PORTFOLIO'`.** La table `positions` mélange carnet
+  réel et carnet à blanc ; sans le filtre on annonce −339 € au lieu de −115 € (§5.11).
+- **Un chiffre s'annonce avec la taille de son échantillon**, et quand elle est mince la conclusion
+  s'écrit « on ne conclut pas ». Une chute mesurée sur 14 lancements n'est pas une tendance.
