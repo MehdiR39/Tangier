@@ -149,7 +149,24 @@ class SolanaWatcher:
         start = created_ms // 1000
         sigs: list[dict[str, Any]] = []
         before = None
-        for _ in range(6):
+        # On remonte l historique du plus recent vers le plus ancien. Tant qu on n a pas franchi
+        # l instant de creation, la fenetre est INCOMPLETE : ce qu on a sous la main n est pas la
+        # premiere minute, c est la fin de la periode observee. Le compte serait alors trop petit,
+        # et trop petit dans le sens qui fait passer un jeton.
+        #
+        # C est exactement ce qui a coute NASFROG le 08/09/2026. Mesure a 20:54:27, la remontee
+        # atteignait encore la creation : 1 387 echanges, au-dessus du plafond de 600, ecarte. Six
+        # minutes plus tard le pool avait grossi, la meme remontee n atteignait plus le debut et ne
+        # rapportait que 258 echanges -- sous le plafond, donc achete, a 2,374e-06 contre 6,194e-05
+        # mesures six minutes plus tot. Une chute de 96 % entre la mesure et l achat. Le filtre
+        # anti-pompe a ete contourne par sa propre mesure : plus le lancement est violent, plus vite
+        # la remontee cesse de l atteindre, donc plus il a de chances de passer.
+        #
+        # Une mesure qui ne sait pas ce qu elle n a pas vu ne vaut rien. On rend -1 pour dire
+        # "je n ai pas pu mesurer", et l appelant refuse d acheter. Un refus se compte et se lit ;
+        # un chiffre faux ne se voit pas.
+        atteint = False
+        for _ in range(int(self._cfg("signature_pages", 12) or 12)):
             params: dict[str, Any] = {"limit": 1000}
             if before:
                 params["before"] = before
@@ -157,11 +174,15 @@ class SolanaWatcher:
                                                   "params": [pair_id, params]}, timeout=40)
             got = (r.json() or {}).get("result") or []
             if not got:
+                atteint = True          # l historique est epuise : on a bien tout vu
                 break
             sigs.extend(got)
             before = got[-1]["signature"]
             if (got[-1].get("blockTime") or 0) <= start:
+                atteint = True
                 break
+        if not atteint:
+            return -1, -1
         window = [g for g in sigs if g.get("blockTime") and start <= g["blockTime"] <= start + 60]
         if not window:
             return 0, 0
@@ -216,6 +237,12 @@ class SolanaWatcher:
         if not mint:
             return False
         trades, payers = await self._first_minute(rpc, pid, p["pairCreatedAt"])
+        if trades < 0:
+            # Mesure incomplete : la remontee n a pas atteint la creation du pool. On ne sait pas ce
+            # qui s est passe dans la premiere minute, donc on n achete pas. Voir _first_minute.
+            log.info("solana: %s ecarte — premiere minute hors de portee (pool trop actif pour "
+                     "etre remonte), aucune mesure fiable", symbol)
+            return False
         liq = float((p.get("liquidity") or {}).get("usd") or 0)
         ratio = trades / max(payers, 1)
         self._observe(pid, mint, symbol, p.get("dexId"), trades, payers, liq, float(p.get("priceUsd") or 0) or None)

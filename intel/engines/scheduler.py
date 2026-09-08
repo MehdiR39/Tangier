@@ -160,10 +160,25 @@ class Runtime:
         # 08/09/2026 : la base a atteint 22,2 Go, et la verification d integrite qu elle declenche
         # au demarrage a laisse le moteur muet vingt minutes, positions ouvertes et Telegram
         # silencieux. Elle ne tourne que quatre fois par jour : la faire patienter ne retarde rien.
-        if self.pipeline.priority_waiting > 0:
-            return {"status": "idle", "reason": "evaluation prioritaire en attente"}
-        async with self.pipeline.ingest_lock:
-            return prune(self.ctx)
+        # La purge ne prend PAS le verrou d ingestion. Ce verrou fait alterner les ingestions qui
+        # tapent le RPC ; la purge ne fait aucun appel reseau, elle n a rien a y faire. Deux essais
+        # ont echoue avant d en arriver la, le 08/09/2026 : abandonner quand le verrou etait pris la
+        # renvoyait a 0,0 s (les cycles du scanner durent 145 a 594 s et s enchainent), puis attendre
+        # que `priority_waiting` retombe a zero ne marchait pas davantage -- ce compteur suit les
+        # evaluations de portefeuille et reste positif presque en permanence. Pendant ce temps la
+        # base montait a 22,2 Go et son controle d integrite au demarrage a laisse le moteur muet
+        # vingt minutes.
+        #
+        # A la place elle cede le pas entre deux jetons : une evaluation prioritaire attend au pire
+        # la suppression d un jeton, pas une passe entiere. Le travail tourne dans un fil pour ne pas
+        # bloquer la boucle, ce que la connexion partagee autorise (check_same_thread=False).
+        def cede() -> None:
+            for _ in range(60):
+                if self.pipeline.priority_waiting == 0:
+                    return
+                time.sleep(0.5)
+
+        return await asyncio.to_thread(prune, self.ctx, cede)
 
     async def execution_cycle(self) -> dict[str, Any]:
         """Turn decisions into orders. Dry run by default: builds and checks, sends nothing."""

@@ -489,7 +489,46 @@ l'essentiel (0,99/h au plancher 125). Meteora : 29 lancements observés, **zéro
 **Conclusion** : sans flux payant ni adresse publique pour des webhooks, le seul levier de rythme
 est le seuil.
 
+
+### 3.25 — La mesure de la première minute se dégrade avec l'âge du pool, 2026-09-08
+**Déclencheur** : l'opérateur montre le graphique de NASFROG à 22h02 locale — une flambée puis un
+effondrement, capitalisation retombée à 2,39 k$ — et demande ce qui s'est passé.
+
+**Donnée, lue dans `solana_observations` et `positions`** :
+
+| moment | prix | échanges 1re min | acheteurs | décision |
+|---|---|---|---|---|
+| 20:54:27 | 6,194 × 10⁻⁵ | 1 387 | 99 | **écarté** (≥ 600, trop dense) |
+| 21:00:15 | — | 258 | 87 | **acheté**, 20 € |
+| 21:00:18 | 2,374 × 10⁻⁶ | | | entrée, soit **−96 %** en six minutes |
+
+**Mécanisme** : `_first_minute` remonte l'historique de la paire à l'envers, du plus récent au plus
+ancien, par pages de 1 000 signatures, six pages au maximum. Elle s'arrête quand elle franchit
+l'instant de création. Si le pool a accumulé plus de 6 000 transactions depuis sa création, la
+remontée n'atteint jamais la première minute — et le code comptait alors ce qu'il avait sous la
+main **comme si c'était la première minute**, sans pouvoir distinguer « peu d'échanges » de « je ne
+les ai pas vus ».
+
+L'effet est pervers dans le sens exact qui coûte de l'argent : plus le lancement est violent, plus
+vite la remontée cesse de l'atteindre, donc plus il a de chances de passer sous le plafond
+anti-pompe. **Le filtre a été contourné par sa propre mesure.**
+
+**Vérification que ce n'est pas général** : sur les 7 positions Solana du jour, 6 achètent 0 à 4 s
+après la mesure, au prix mesuré (écart 1,00×). NASFROG seule attend 351 s et paie 0,04× le prix
+mesuré. Le défaut est ponctuel, pas systémique — mais il n'a pas de limite haute : il frappe
+précisément les lancements les plus violents.
+
+**Correction** : la mesure rend `-1` quand la remontée n'a pas atteint la création, et l'appelant
+refuse d'acheter avec une ligne de journal explicite. Budget porté à 12 pages
+(`solana.signature_pages`) pour réduire la fréquence des refus. Un refus se compte et se lit ; un
+chiffre faux ne se voit pas.
+
+**Ce qu'il reste à mesurer** : combien de lancements le nouveau refus écarte par heure. Si c'est
+beaucoup, le budget de pages doit monter ; s'il est rare, on ne perd rien. À relire demain dans les
+lignes « premiere minute hors de portee ».
+
 ---
+
 
 ## 4. Pistes ouvertes, non testées
 
