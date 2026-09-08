@@ -80,7 +80,10 @@ class SolanaWatcher:
                 bought += 1
         self._forget()
         await self._book(rpc)
-        await self._positions(rpc, str(self._cfg("mode", "dry_run")))
+        mode = str(self._cfg("mode", "dry_run"))
+        if mode == "live":
+            await self._reconcile(rpc)
+        await self._positions(rpc, mode)
         return {"status": "ok", "seen": len(pairs), "judged": judged, "decisions": bought}
 
     async def _discover(self) -> list[dict[str, Any]]:
@@ -223,6 +226,34 @@ class SolanaWatcher:
             else:
                 log.info("solana ordre refuse %s : %s", d["label"], res.get("refused_reason"))
             db.insert("executions", row)
+
+    async def _reconcile(self, rpc: str) -> None:
+        """Turn sent orders into confirmed or failed ones, from their receipts.
+
+        Without this a Solana order stays "in flight" for ever: the book would count a purchase
+        the chain rejected, and every screen would show a state that stopped being true seconds
+        after it was written.
+        """
+        rows = self.ctx.db.query(
+            "SELECT id, tx_hash, kind, token_address FROM executions WHERE chain_id=? AND model_version=? "
+            "AND status='SUBMITTED' AND tx_hash IS NOT NULL AND ts>?",
+            (self.ctx.chain_id, MODEL_VERSION, now_ts() - 6 * 3600))
+        for e in rows:
+            try:
+                r = await self.client.post(rpc, json={"jsonrpc": "2.0", "id": 1, "method": "getSignatureStatuses",
+                                                      "params": [[e["tx_hash"]], {"searchTransactionHistory": True}]},
+                                           timeout=25)
+                st = (((r.json() or {}).get("result") or {}).get("value") or [None])[0]
+            except Exception:  # noqa: BLE001
+                continue
+            if not st or not st.get("confirmationStatus"):
+                continue                                    # still travelling
+            ok = st.get("err") is None
+            self.ctx.db.execute("UPDATE executions SET status=?, error=? WHERE id=?",
+                                ("CONFIRMED" if ok else "FAILED",
+                                 None if ok else str(st.get("err"))[:200], e["id"]))
+            log.info("solana ordre %s %s en chaine · tx %s", e["kind"],
+                     "confirme" if ok else "REJETE", str(e["tx_hash"])[:14])
 
     async def _positions(self, rpc: str, mode: str) -> None:
         """Open a line on a confirmed buy, then close it on the rule: x2, or the holding window.

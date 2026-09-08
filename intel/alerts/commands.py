@@ -136,26 +136,30 @@ class TelegramCommands:
         if cmd == "/restart":
             self.ctx.db.cursor_set("engine_restart_request", 1, now_ts())
             return "redémarrage du moteur dans quelques secondes (code et config du disque). /help pour vérifier ensuite."
-        mode = "réel" if self.ctx.config.get("execution.mode", "dry_run") == "live" else "à blanc"
-        etat = "en pause" if t1_paused(self.ctx) else "actifs"
+        rh = "réel" if self.ctx.config.get("execution.mode", "dry_run") == "live" else "à blanc"
+        so = "réel" if self.ctx.config.get("solana.mode", "dry_run") == "live" else "à blanc"
         return NL.join([
             "<b>Commandes</b>", "",
-            "<code>/pnl       </code> résultat du jour",
+            "<code>/pnl       </code> resultat, par chaine",
             "<code>/positions </code> ce qui est ouvert",
-            "<code>/closed    </code> dernières fermetures",
-            "<code>/orders    </code> ordres passés en chaîne",
-            "<code>/solde     </code> portefeuille",
-            "<code>/pause     </code> arrêter d'acheter",
+            "<code>/closed    </code> dernieres fermetures",
+            "<code>/orders    </code> ordres partis en chaine",
+            "<code>/solde     </code> les deux portefeuilles",
+            "<code>/pause     </code> arreter d acheter (Robinhood)",
             "<code>/resume    </code> reprendre les achats",
-            "<code>/restart   </code> redémarrer le moteur",
-            "", f"<i>/pnl all pour le cumul · /closed 20 pour plus de lignes</i>",
-            "", f"Mode {mode} · achats {etat}",
+            "<code>/restart   </code> redemarrer le moteur",
+            "", "<i>/pnl all pour le cumul · /closed 20 pour plus de lignes</i>",
+            "", f"Robinhood {rh} · Solana {so}"
+            + (" · achats Robinhood en pause" if t1_paused(self.ctx) else ""),
         ])
 
     def _mark(self, p: Any) -> float | None:
+        """The token's price now, from whichever chain the line lives on."""
+        notes = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv)
+        if str(p["model_version"] or "").startswith("sol-"):
+            return None                                # Solana marks come from the watcher, not here
         if self.t1 is None:
             return None
-        notes = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv)
         return self.t1._mark(notes.get("pool"), p["token_address"], notes.get("quote"))
 
     def _name(self, token: str) -> str:
@@ -166,7 +170,7 @@ class TelegramCommands:
             sym = self.ctx.db.scalar("SELECT label FROM decisions WHERE chain_id=? AND token_address=? AND label IS NOT NULL "
                                      "ORDER BY id DESC LIMIT 1", (self.ctx.chain_id, token))
         sym = (sym or "").strip()
-        return (sym[:12] if sym else token[2:8].upper())
+        return (sym[:11] if sym else str(token)[:8].upper())
 
     @staticmethod
     def _eur(v: float | None) -> str:
@@ -177,48 +181,59 @@ class TelegramCommands:
         """How many recovery rounds this line has had: > 0 means a written-off bag, not a position."""
         return sum(1 for kv in (p["notes"] or "").split() if kv.startswith("recover:"))
 
+    @staticmethod
+    def _chain(model_version: str | None) -> str:
+        return "Solana" if str(model_version or "").startswith("sol-") else "Robinhood"
+
     def positions(self) -> str:
-        out: list[str] = []
+        """What is open, per chain, and separately what is only waiting to be salvaged."""
+        rows = self.ctx.db.query(
+            "SELECT * FROM positions WHERE chain_id=? AND kind='PORTFOLIO' AND status='OPEN' "
+            "AND (model_version LIKE 't1-%' OR model_version LIKE 'sol-t1-%') ORDER BY opened_ts DESC",
+            (self.ctx.chain_id,))
+        live = [p for p in rows if not self._recovering(p)]
+        bags = [p for p in rows if self._recovering(p)]
         now = now_ts()
-        for name, mv, _unit in BOOKS:
-            rows = self.ctx.db.query(
-                "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE ? AND status='OPEN' AND kind='PORTFOLIO' "
-                "ORDER BY opened_ts DESC", (self.ctx.chain_id, mv))
-            # A bag reopened by the recovery pass is not a position: its euros are already lost and
-            # its multiple is a price nobody will pay. Counting them as engaged capital said the
-            # opposite of the truth (2026-09-07).
-            live = [p for p in rows if not self._recovering(p)]
-            bags = [p for p in rows if self._recovering(p)]
-            if live:
-                out += [f"<b>{name}</b> · {sum(float(p['size_eur'] or 0) for p in live):.0f} € engagés"]
-                for p in live:
-                    price = self._mark(p)
-                    mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
-                    out.append(f"<code>  {self._name(p['token_address']):<11}</code> "
-                               + (f"×{mult:.2f}" if mult is not None else "  ?  ")
-                               + f"  T+{(now - int(p['opened_ts'])) // 60} min")
-            if bags:
-                cap = int(self.ctx.config.get("t1.recover_max", 8))
-                out += [f"<i>{name} · {len(bags)} sac{'s' if len(bags) > 1 else ''} invendable{'s' if len(bags) > 1 else ''}, déjà perdu{'s' if len(bags) > 1 else ''} :</i>"]
-                for p in bags:
-                    out.append(f"<code>  {self._name(p['token_address']):<11}</code> tentative {self._recovering(p)}/{cap}")
-        if not out:
-            return "Aucune position ouverte." + (" Achats Robinhood en pause." if t1_paused(self.ctx) else "")
+        out: list[str] = []
+        if live:
+            out += [f"<b>{len(live)} position{'s' if len(live) > 1 else ''} ouverte{'s' if len(live) > 1 else ''}</b>"
+                    f" · {sum(float(p['size_eur'] or 0) for p in live):.0f} € engagés", ""]
+            for p in live:
+                price = self._mark(p)
+                mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
+                out.append(f"<code>{self._chain(p['model_version'])[:4]:<5}{self._name(p['token_address']):<11}</code>"
+                           + (f" ×{mult:.2f}" if mult is not None else "   ?  ")
+                           + f"  T+{(now - int(p['opened_ts'])) // 60} min")
+        else:
+            out.append("<b>Aucune position ouverte</b>")
+        if bags:
+            cap = int(self.ctx.config.get("t1.recover_max", 40))
+            out += ["", f"<i>{len(bags)} sac{'s' if len(bags) > 1 else ''} invendable{'s' if len(bags) > 1 else ''} : "
+                        f"argent deja perdu et compte comme tel, le moteur retente de les vendre.</i>", ""]
+            for p in bags:
+                out.append(f"<code>{self._chain(p['model_version'])[:4]:<5}{self._name(p['token_address']):<11}</code>"
+                           f" tentative {self._recovering(p)}/{cap}")
+        if t1_paused(self.ctx):
+            out += ["", "⏸ Achats Robinhood en pause · /resume"]
         return NL.join(out)
 
     def closed(self, n: int) -> str:
         rows = self.ctx.db.query(
-            "SELECT * FROM positions WHERE chain_id=? AND model_version LIKE 't1-%' AND status='CLOSED' AND kind='PORTFOLIO' "
-            "ORDER BY closed_ts DESC LIMIT ?", (self.ctx.chain_id, n))
+            "SELECT * FROM positions WHERE chain_id=? AND kind='PORTFOLIO' AND status='CLOSED' "
+            "AND (model_version LIKE 't1-%' OR model_version LIKE 'sol-t1-%') ORDER BY closed_ts DESC LIMIT ?",
+            (self.ctx.chain_id, n))
         if not rows:
-            return "Aucune position fermée."
-        out = [f"<b>{len(rows)} dernières fermetures</b>", ""]
+            return "Aucune position fermee."
+        out = [f"<b>{len(rows)} dernieres fermetures</b>", ""]
         for p in rows:
-            sold = (p["close_reason"] or "").startswith("vendu")
+            cr = p["close_reason"] or ""
+            sold, late = cr.startswith("vendu"), cr.startswith("recupere")
             mult = (float(p["close_price"]) / float(p["entry_price"])) if (p["close_price"] and p["entry_price"]) else None
-            out.append(f"<code>{time.strftime('%H:%M', time.gmtime(int(p['closed_ts'] or 0)))} {self._name(p['token_address']):<11}</code> "
-                       + (f"×{mult:.2f}  " if (mult is not None and sold) else "      ")
-                       + self._eur(p["realized_eur"]) + ("" if sold else "  invendable"))
+            tag = "" if sold else ("  recupere hors regle" if late else "  invendable")
+            out.append(f"<code>{time.strftime('%H:%M', time.gmtime(int(p['closed_ts'] or 0)))} "
+                       f"{self._chain(p['model_version'])[:4]:<5}{self._name(p['token_address']):<11}</code>"
+                       + (f" ×{mult:.2f}" if (mult is not None and (sold or late)) else "      ")
+                       + f"  {self._eur(p['realized_eur'])}{tag}")
         return NL.join(out)
 
     def _tally(self, mv: str, since: int) -> dict[str, Any]:
@@ -304,28 +319,28 @@ class TelegramCommands:
         return out
 
     def orders(self, n: int) -> str:
-        # Refused orders never left the machine and cost nothing: diagnostics, not history. And a
-        # sell that was retried five times on the same bag is one event, not five lines.
+        """Only what actually left for a chain. A refusal costs nothing and is a diagnostic, not
+        history; a sale retried five times on one bag is one event, not five lines."""
         rows = self.ctx.db.query(
-            "SELECT ts, kind, status, token_address FROM executions "
+            "SELECT ts, kind, status, token_address, model_version FROM executions "
             "WHERE chain_id=? AND mode='live' AND kind IN ('BUY','SELL_ALL') AND status IN ('CONFIRMED','SUBMITTED','FAILED') "
             "ORDER BY id DESC LIMIT ?", (self.ctx.chain_id, max(n * 6, 40)))
         if not rows:
-            return "Aucun ordre passé en chaîne."
-        fr = {"CONFIRMED": "passé", "SUBMITTED": "en vol", "FAILED": "échoué"}
+            return "Aucun ordre passe en chaine."
+        fr = {"CONFIRMED": "passe", "SUBMITTED": "en vol", "FAILED": "echoue"}
         groups: list[list[Any]] = []
         for r in rows:
-            key = (r["kind"], r["token_address"], r["status"])
+            key = (r["kind"], r["token_address"], r["status"], self._chain(r["model_version"]))
             if groups and groups[-1][0] == key:
                 groups[-1][2] += 1
             else:
                 groups.append([key, r["ts"], 1])
             if len(groups) > n:
                 break
-        out = [f"<b>Derniers ordres en chaîne</b>", ""]
-        for (kind, token, status), ts, count in groups[:n]:
-            out.append(f"<code>{time.strftime('%H:%M', time.gmtime(int(ts)))} "
-                       f"{'achat' if kind == 'BUY' else 'vente':<5} {self._name(token):<11}</code> "
+        out = ["<b>Derniers ordres en chaine</b>", ""]
+        for (kind, token, status, chain), ts, count in groups[:n]:
+            out.append(f"<code>{time.strftime('%H:%M', time.gmtime(int(ts)))} {chain[:4]:<5}"
+                       f"{'achat' if kind == 'BUY' else 'vente':<6}{self._name(token):<11}</code> "
                        f"{fr.get(status, status.lower())}" + (f" (×{count})" if count > 1 else ""))
         return NL.join(out)
 
@@ -337,13 +352,20 @@ class TelegramCommands:
         lines = ["<b>Portefeuilles</b>", ""]
         eth = signer_address()
         if eth:
+            # Each figure on its own: a failed transaction count used to hide a balance that read
+            # perfectly well, and the screen said "illisible" about a wallet holding 0.18 ETH.
             try:
                 raw = await self.ctx.rpc.request("eth_getBalance", [eth, "latest"])
-                n = await self.ctx.rpc.request("eth_getTransactionCount", [eth, "latest"])
                 lines.append(f"Robinhood  {int(raw, 16) / 1e18:.4f} ETH")
-                lines.append(f"<code>  {eth[:10]}…{eth[-4:]} · {int(n, 16)} transactions</code>")
             except Exception:  # noqa: BLE001
                 lines.append("Robinhood  solde illisible")
+            detail = f"  {eth[:10]}…{eth[-4:]}"
+            try:
+                n = await self.ctx.rpc.request("eth_getTransactionCount", [eth, "latest"])
+                detail += f" · {int(n, 16)} transactions"
+            except Exception:  # noqa: BLE001
+                pass
+            lines.append(f"<code>{detail}</code>")
         rpc, addr = sol.rpc_url(), sol.signer_address()
         if rpc and addr:
             try:
