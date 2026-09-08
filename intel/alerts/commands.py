@@ -219,19 +219,23 @@ class TelegramCommands:
         return "Solana" if str(model_version or "").startswith("sol-") else "Robinhood"
 
     def _lien(self, p: Any) -> str:
-        """Le lien vers le graphique de la ligne, pour la voir sans quitter le telephone.
+        """Le lien vers la COURBE de la ligne, pour la voir sans quitter le telephone.
 
-        DexScreener couvre Solana et accepte l adresse du jeton : il redirige vers sa paire la plus
-        profonde, ce qui evite d avoir a retrouver le pool. Robinhood Chain n y figure pas, donc la
-        ligne pointe vers l explorateur de la chaine, seul endroit ou le jeton existe.
+        DexScreener couvre les deux chaines -- verifie le 08/09/2026, l identifiant de Robinhood
+        Chain y est `robinhood` et l API rend l URL du graphique. J avais suppose le contraire et
+        pointe vers l explorateur de la chaine, qui ne montre aucune courbe : c est le genre
+        d hypothese qui se teste en une requete.
+
+        Sur Robinhood on passe par l identifiant du pool, qui est ce que DexScreener indexe ; sur
+        Solana par l adresse du jeton, qui redirige vers la paire la plus profonde.
         """
         tok = (p["token_address"] or "").strip()
         if not tok:
             return ""
         if str(p["model_version"] or "").startswith("sol-"):
-            return f'  <a href="https://dexscreener.com/solana/{tok}">graphique</a>'
-        base = (getattr(self.ctx.settings, "blockscout_url", "") or "").rstrip("/")
-        return f'  <a href="{base}/token/{tok}">explorateur</a>' if base else ""
+            return f'  <a href="https://dexscreener.com/solana/{tok}">courbe</a>'
+        pool = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv).get("pool")
+        return f'  <a href="https://dexscreener.com/robinhood/{pool or tok}">courbe</a>'
 
     async def positions(self) -> str:
         """What is open, per chain, and separately what is only waiting to be salvaged."""
