@@ -216,7 +216,24 @@ solana:
   max_trades_first_minute: 600
   min_liquidity_usd: 0
   max_per_hour: 6
-  take_profit_multiple: 2.0
+  # Abaisse de 2,0 a 1,5 le 2026-09-08 a 18h, sur nos PROPRES releves et contre le backtest.
+  # Le suivi du sommet, ajoute le meme jour, a montre que l objectif de x2 ne s est jamais
+  # declenche : sur huit tickets, les sommets plafonnent a x1,82 et les positions redescendent
+  # jusqu a l echeance des quinze minutes. Trois lignes sont montees au-dessus de x1,4 puis ont
+  # tout rendu -- ZAPE de +57 % a -96 %, NIKEY de +50 % a -14 %.
+  #
+  # Simulation des objectifs sur ces memes huit lignes, en utilisant les sommets releves toutes
+  # les trente secondes par la valeur vendable reelle :
+  #     x1,3 -> +5,54    x1,4 -> +11,50    x1,5 -> +17,47    x1,8 -> -18,91    x2,0 -> -46,23
+  # Le plateau de x1,3 a x1,5 tient sur les memes trois lignes, ce n est pas un maximum fragile.
+  #
+  # Le backtest dit l inverse (x2 gagnant sur les quatre criteres, voir §3.22 du journal) mais il
+  # porte sur une autre journee et n a jamais vu un objectif se ne declencher jamais. Quand le
+  # backtest et le reel se contredisent, le reel gagne : c est la lecon du matin, ou un simulateur
+  # annoncait 82 % de gagnants pendant que le livre perdait avec 46 % d invendables.
+  #
+  # Reserve : huit lignes, dont deux sans sommet mesure. Remettre 2.0 annule.
+  take_profit_multiple: 1.5
   max_hold_seconds: 900
   sell_slippage_pct: 25.0
   buy_budget: 20   # 20 tickets de 20 EUR : le plafond de 4 positions borne le risque simultane

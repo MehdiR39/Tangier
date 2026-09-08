@@ -21,10 +21,10 @@ quelques minutes plus tard.
 |---|---|---|
 | Découverte | logs `Initialize` d'Uniswap v4 | DexScreener **+ flux de migrations en direct** (§3.21) |
 | Règle d'entrée | 27 à 60 échanges dans la 1re minute **puis ≥ 30 échanges dans la 2e** (§3.10) | ≥ 75 acheteurs distincts, **< 600 échanges**, ≤ 15 échanges/acheteur, hors pump.fun (§3.6, §3.13) |
-| Sortie | ×2 ou T+5 min | ×2 ou T+15 min |
+| Sortie | ×2 ou T+5 min | **×1,5** ou T+15 min (§3.23) |
 | Ticket | 5 € | 20 € |
 | Portefeuille | `0x2a33086d2fce255f61ac1a3000bf944397c9c908` | `HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL` |
-| État au 08/09 17h00 | actif, expérience bornée à 10 tickets | actif, 4 positions max, budget 20 tickets |
+| État au 08/09 18h00 | actif, expérience bornée à 10 tickets | actif, 4 positions max, budget 20 tickets |
 
 **Expériences en cours** — chacune a un critère écrit d'avance :
 
@@ -261,6 +261,55 @@ qualité de données à traiter dans `token_snapshots`.
 **Effet de bord utile** : à 24 h la médiane est de −21 % quelle que soit la note. Tenir un de ces
 jetons une journée coûte un cinquième — ce qui confirme que seuls les horizons courts sont
 jouables, et donc les sorties à T+5 et T+15.
+
+### 3.23 — L'objectif de ×2 ne se déclenchait jamais, 2026-09-08 18h
+**Ce que le suivi du sommet a révélé** (fonction ajoutée le jour même sur la remarque de
+l'opérateur) : sur huit tickets, **l'objectif de ×2 ne s'est pas déclenché une seule fois**. Les
+sommets plafonnent à ×1,82. Trois lignes sont montées au-dessus de ×1,4 puis ont tout rendu — ZAPE
+de +57 % à −96 %, NIKEY de +50 % à −14 %, BIPOLAR de +82 % à +44 %.
+
+Part du gain potentiel réellement captée, médiane sur les lignes montées : **−14 %**. On ne rate
+pas le sommet, on finit sous le prix d'entrée après avoir été à +50 %.
+
+**Simulation sur nos propres relevés** (valeur vendable réelle, toutes les 30 s) :
+
+| Objectif | Déclenché sur | Résultat de la série |
+|---|---|---|
+| ×1,3 | 3 lignes | +5,54 € |
+| ×1,4 | 3 lignes | +11,50 € |
+| **×1,5** | 3 lignes | **+17,47 €** |
+| ×1,8 | 1 ligne | −18,91 € |
+| ×2,0 *(en place)* | **0** | **−46,23 €** |
+
+Le plateau de ×1,3 à ×1,5 repose sur les mêmes trois lignes : ce n'est pas un maximum fragile.
+**Appliqué** : `solana.take_profit_multiple: 1.5`.
+**Contredit le §3.22**, qui donnait ×2 gagnant sur les quatre critères — mais ce backtest porte sur
+une autre journée et n'a jamais envisagé qu'un objectif puisse ne jamais se déclencher. Quand le
+backtest et le réel se contredisent, **le réel gagne**.
+**Réserve** : huit lignes, dont deux sans sommet mesuré (MEWZ et CPU, antérieures à la fonction) —
+et ce sont les deux gagnantes, donc la simulation les pénalise plutôt qu'elle ne les flatte.
+
+### 3.22 — Le stop suiveur est moins bon que l'objectif fixe, 2026-09-08
+**Ce qui a ouvert la question** : le suivi du sommet, ajouté sur la remarque de l'opérateur, a
+montré des positions qui montent puis retombent avant l'échéance — BIPOLAR sommet ×1,82 vendue
+×1,44, NIKEY ×1,50 vendue ×0,86, CPU ×1,80 vendue ×1,18.
+**Outil** : `intel/research/sol_trailing.py`, 47 lancements sous la règle en place.
+
+| Sortie | Gagnants | Par euro | Médiane | Robustesse |
+|---|---|---|---|---|
+| **Objectif ×2** *(en place)* | **66 %** | +0,271 | **+0,309** | **+0,186** |
+| Objectif ×3 | 62 % | +0,288 | +0,108 | +0,098 |
+| Suiveur −15 % | 57 % | +0,282 | +0,046 | +0,044 |
+| Suiveur −30 % | 47 % | +0,247 | −0,011 | +0,005 |
+| Suiveur −20 % et objectif ×2 | 55 % | +0,179 | +0,034 | +0,083 |
+
+**Résultat** : non. La moyenne se tient mais la médiane s'effondre de +0,309 à +0,046 et la
+robustesse de +0,186 à +0,044. Ces jetons bougent de 20 % en permanence : un stop suiveur sort sur
+du bruit avant le vrai mouvement, échangeant quelques sorties bien placées contre beaucoup de
+sorties prématurées.
+**Conclusion** : rien ne change. Trois observations réelles ont suggéré une piste, la mesure l'a
+écartée. Voir un sommet passer fait mal, mais la règle qui l'aurait capté aurait coupé les
+gagnantes trop tôt.
 
 ### 3.21 — Le flux de lancements en direct, 2026-09-08
 **Problème** : la découverte Solana lit deux flux **promotionnels** de DexScreener. Mesuré : 4,3

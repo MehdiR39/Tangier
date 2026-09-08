@@ -66,6 +66,22 @@ class SolanaWatcher:
         except Exception as exc:  # noqa: BLE001
             log.info("solana: decouverte refusee (%s)", str(exc)[:80])
             return {"status": "skipped", "error": str(exc)[:120]}
+        # Un jeton gradue possede plusieurs pools -- sa courbe de bonding et le nouveau -- et les
+        # juger separement donne deux verdicts contradictoires sur le meme lancement : BIPOLAR a
+        # ete mesure a 162 echanges pour 84 acheteurs sur l un et 786 pour 114 sur l autre, le
+        # premier passant la regle et le second non. On ne garde donc qu un pool par jeton, le plus
+        # profond, qui est celui ou le negoce a lieu.
+        meilleurs: dict[str, dict[str, Any]] = {}
+        for p in pairs:
+            mint = (p.get("baseToken") or {}).get("address")
+            if not mint:
+                continue
+            liq = float((p.get("liquidity") or {}).get("usd") or 0)
+            garde = meilleurs.get(mint)
+            if garde is None or liq > float((garde.get("liquidity") or {}).get("usd") or 0):
+                meilleurs[mint] = p
+        pairs = list(meilleurs.values())
+
         judged = bought = 0
         for p in pairs:
             pid = p.get("pairAddress")
