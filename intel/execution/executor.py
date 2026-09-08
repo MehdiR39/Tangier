@@ -28,10 +28,19 @@ log = logging.getLogger(__name__)
 
 
 def pending_decisions(ctx: IntelContext, *, limit: int = 20) -> list[dict[str, Any]]:
-    """Decisions with no journal entry yet, oldest first so the book stays in order."""
+    """Decisions with no journal entry yet, oldest first so the book stays in order.
+
+    Les decisions Solana sont exclues : elles portent le meme `chain_id` faute de mieux, mais elles
+    ne se traitent pas ici -- il n existe aucun pool Uniswap pour un jeton Solana. Le 08/09/2026 a
+    17h02 cet executeur a ramasse une decision Solana, l a refusee (« aucun pool utilisable ») et a
+    ecrit sa ligne de journal ; le carnet Solana avait deja envoye l ordre en chaine, et son
+    ecriture a heurte l unicite (chain_id, decision_id). Resultat : BIPOLAR achete pour 20,20 EUR,
+    aucune position pour le gerer, personne pour le revendre.
+    """
     return [dict(r) for r in ctx.db.query(
         "SELECT d.* FROM decisions d LEFT JOIN executions e ON e.chain_id=d.chain_id AND e.decision_id=d.id "
-        "WHERE d.chain_id=? AND e.id IS NULL ORDER BY d.id ASC LIMIT ?",
+        "WHERE d.chain_id=? AND e.id IS NULL AND (d.model_version IS NULL OR d.model_version NOT LIKE 'sol-%') "
+        "ORDER BY d.id ASC LIMIT ?",
         (ctx.chain_id, limit),
     )]
 
@@ -246,7 +255,10 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
     verdict = safety.check(ctx, {"kind": d["kind"], "token": token, "quote": quote_addr,
                                 "size_eur": d.get("size_eur"), "slippage_pct": q.price_impact_pct,
                                 "quote_liquidity_usd": liq_usd,
-                                "model_version": d.get("model_version")}, check_limits)
+                                "model_version": d.get("model_version"),
+                                # The daily allowance belongs to THIS wallet: it must count only
+                                # what this executor sent, never another chain's book.
+                                "journal_version": MODEL_VERSION}, check_limits)
     if is_t1:
         log.info("t1 ordre %s · profondeur %s %s · impact %.2f %% · %s", token[:10],
                  f"{liq_usd:,.0f} $" if liq_usd is not None else "inconnue", liq_source,

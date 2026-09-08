@@ -46,6 +46,7 @@ class SolanaWatcher:
         self.client = httpx.AsyncClient(headers={"User-Agent": "tangier-intel/solana"})
         self.judged: dict[str, int] = {}          # pair -> ts, so a launch is judged once
         self.sent_ts: list[int] = []
+        self.annonces: set[str] = set()           # jetons du flux deja annonces, pour ne pas repeter
 
     def _cfg(self, key: str, default: Any) -> Any:
         return self.ctx.config.get(f"solana.{key}", default)
@@ -94,6 +95,33 @@ class SolanaWatcher:
                 if x.get("chainId") == "solana" and x.get("tokenAddress"):
                     tokens.append(x["tokenAddress"])
         tokens = list(dict.fromkeys(tokens))
+        # La seconde source : les creations de pool ecoutees en direct (intel/engines/solana_stream).
+        # Elle vient EN PLUS de DexScreener, jamais a sa place, et chaque jeton garde la trace de
+        # savoir si l autre source l avait aussi. Sans cette trace on ne pourrait pas dire ce que
+        # le flux apporte vraiment -- 4,3 graduations PumpSwap par heure vues aujourd hui contre
+        # une vingtaine qui se produisent.
+        du_flux: list[str] = []
+        try:
+            connus = set(tokens)
+            for r in self.ctx.db.query(
+                    "SELECT mint FROM solana_stream_launches WHERE ts > ? ORDER BY ts DESC LIMIT 60",
+                    (now_ts() - 900,)):
+                m = r["mint"]
+                if m in connus:
+                    self.ctx.db.execute(
+                        "UPDATE solana_stream_launches SET vu_par_dexscreener=1 WHERE mint=?", (m,))
+                elif m not in du_flux:
+                    du_flux.append(m)
+        except Exception as exc:  # noqa: BLE001
+            log.info("solana: flux non consulte (%s)", str(exc)[:70])
+        # On garde le jeton dans la liste pendant un quart d heure -- le temps que DexScreener
+        # indexe sa paire, ce qui prend environ une minute -- mais on ne le dit qu une fois.
+        neufs = [m for m in du_flux if m not in self.annonces]
+        if neufs:
+            log.info("solana: %d jeton(s) que seul le flux a vus", len(neufs))
+            self.annonces.update(neufs)
+        tokens = list(dict.fromkeys(tokens + du_flux))
+
         out: list[dict[str, Any]] = []
         for i in range(0, len(tokens), 25):
             r = await self.client.get(PAIRS_URL + ",".join(tokens[i: i + 25]), timeout=25)
@@ -124,6 +152,17 @@ class SolanaWatcher:
         payers: set[str] = set()
         key = rpc.split("api-key=")[-1] if "api-key=" in rpc else ""
         if key:
+            # Buyers are counted on the first 300 transactions, trades on the whole minute, so the
+            # ratio below has a full numerator and a sampled denominator. That is a real bias --
+            # 46 % of launches exceed 300 trades and their ratio is inflated -- and it is DELIBERATE
+            # from here on: measured on the 142 observed launches, the biased ratio filters better
+            # than the unbiased one (<=15 biased: 110 lines, 62 % winners, +0.221 per euro; the
+            # unbiased ratio at equal selectivity: 60 % and +0.193). It filters better because it
+            # carries density as well as concentration, and density has an optimum of its own --
+            # 300 to 600 trades in the first minute returns +0.390 per euro, above 600 it turns
+            # negative. Raising this cap "to be correct" would quietly degrade the entry rule.
+            # The collector in intel/research/solana_watch.py samples identically on purpose: the
+            # thresholds were fitted on this quantity and must keep measuring the same thing.
             for i in range(0, min(len(window), 300), 100):
                 try:
                     r = await self.client.post(f"https://api.helius.xyz/v0/transactions/?api-key={key}",
@@ -148,12 +187,21 @@ class SolanaWatcher:
         self._observe(pid, mint, symbol, p.get("dexId"), trades, payers, liq)
         min_buyers = int(self._cfg("min_buyers", 0))
         max_ratio = float(self._cfg("max_trades_per_buyer", 0) or 0)
+        max_trades = int(self._cfg("max_trades_first_minute", 0) or 0)
         min_liq = float(self._cfg("min_liquidity_usd", 5000))
         why = None
         if not min_buyers:
             why = "regle non calibree (solana.min_buyers = 0)"
         elif payers < min_buyers:
             why = f"{payers} acheteurs distincts < {min_buyers}"
+        elif max_trades and trades >= max_trades:
+            # Density has an optimum of its own, and it is NOT the same thing as the buyer floor:
+            # at 100 buyers, keeping only the launches under 600 trades in the first minute lifts
+            # every measure at once -- 75 % winners against 69, +0.437 per euro against +0.348,
+            # median +0.630 against +0.459, and +0.371 against +0.266 once the best tenth is
+            # removed. It costs 12 % of the opportunities (1.50/h against 1.70). Measured on the
+            # 254 observed launches, 2026-09-08.
+            why = f"{trades} echanges dans la minute >= {max_trades} (trop dense)"
         elif max_ratio and ratio > max_ratio:
             why = f"{ratio:.0f} echanges par acheteur > {max_ratio:.0f} (bundle probable)"
         elif liq < min_liq:
@@ -165,6 +213,37 @@ class SolanaWatcher:
         # A ticket is worthless if the wallet cannot fund it. Impact is linear and tiny here
         # (0.37 % at 20 EUR, 1.10 % at 50), so size is not the constraint -- the balance is, and
         # nothing checked it: four concurrent tickets already exhaust a 98 EUR wallet.
+        # One mint, one line. A sale empties the WALLET, not a line: with two positions open on the
+        # same token the first SELL_ALL takes both stakes' tokens, and the second reads a zero
+        # balance. That is how RWA and ANSEMCOIN were each paid for twice and sold once on
+        # 2026-09-08 -- two stakes out, one credited back.
+        seen = self.ctx.db.scalar(
+            "SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version=? AND status='OPEN' "
+            "AND lower(token_address)=lower(?)",
+            (self.ctx.chain_id, MODEL_VERSION, mint), 0)
+        if not seen:
+            seen = self.ctx.db.scalar(
+                "SELECT COUNT(*) FROM executions WHERE chain_id=? AND model_version=? AND kind='BUY' "
+                "AND lower(token_address)=lower(?) AND status IN ('SUBMITTED','CONFIRMED') AND ts>?",
+                (self.ctx.chain_id, MODEL_VERSION, mint, now_ts() - 3600), 0)
+        if seen:
+            log.info("solana: %s passe la regle mais une ligne est deja engagee sur ce jeton", symbol)
+            return False
+        # Et la meme question posee au PORTEFEUILLE, qui ne peut pas mentir. Les deux controles
+        # ci-dessus lisent le journal, et le journal s est trompe le 08/09/2026 : un refus ecrit
+        # par l executeur de l autre chaine a masque un achat parti en chaine, la garde n a rien vu
+        # et BIPOLAR a ete paye deux fois, 40 EUR au lieu de 20. Detenir le jeton est un fait ;
+        # ce qu on a ecrit a son sujet est une opinion.
+        try:
+            deja = await sol.token_balance(self.client, rpc, sol.signer_address() or "", mint)
+        except Exception as exc:  # noqa: BLE001
+            log.info("solana: solde de %s illisible avant achat (%s), achat refuse par prudence",
+                     symbol, str(exc)[:60])
+            return False
+        if deja > 0:
+            log.warning("solana: %s passe la regle mais le portefeuille en detient deja %d "
+                        "-- le journal ne le disait pas", symbol, deja)
+            return False
         max_open = int(self._cfg("max_open_positions", 4))
         n_open = self.ctx.db.scalar(
             "SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version=? AND status='OPEN'",
@@ -246,7 +325,7 @@ class SolanaWatcher:
         after it was written.
         """
         rows = self.ctx.db.query(
-            "SELECT id, tx_hash, kind, token_address FROM executions WHERE chain_id=? AND model_version=? "
+            "SELECT id, ts, tx_hash, kind, token_address, decision_id FROM executions WHERE chain_id=? AND model_version=? "
             "AND status='SUBMITTED' AND tx_hash IS NOT NULL AND ts>?",
             (self.ctx.chain_id, MODEL_VERSION, now_ts() - 6 * 3600))
         for e in rows:
@@ -258,6 +337,15 @@ class SolanaWatcher:
             except Exception:  # noqa: BLE001
                 continue
             if not st or not st.get("confirmationStatus"):
+                # A Solana transaction is only valid while its blockhash is, about ninety seconds.
+                # Once the network has had four minutes and still shows nothing, it never landed
+                # and never will; leaving it SUBMITTED would count a position the wallet does not
+                # hold, and hold a slot under the ceiling for ever.
+                if now_ts() - int(e["ts"] or 0) > 240:
+                    self.ctx.db.execute("UPDATE executions SET status='FAILED', error=? WHERE id=?",
+                                        ("jamais confirmee : blockhash expire", e["id"]))
+                    log.warning("solana ordre %s jamais confirme, abandonne · tx %s",
+                                e["kind"], str(e["tx_hash"])[:14])
                 continue                                    # still travelling
             ok = st.get("err") is None
             self.ctx.db.execute("UPDATE executions SET status=?, error=? WHERE id=?",
@@ -265,6 +353,40 @@ class SolanaWatcher:
                                  None if ok else str(st.get("err"))[:200], e["id"]))
             log.info("solana ordre %s %s en chaine · tx %s", e["kind"],
                      "confirme" if ok else "REJETE", str(e["tx_hash"])[:14])
+            if ok and e["kind"] == "SELL_ALL" and e["token_address"]:
+                await self._settle(rpc, e["token_address"])
+
+    async def _settle(self, rpc: str, mint: str) -> None:
+        """Price a closed line from the wallet itself: SOL paid on the buy, SOL back on the sale.
+
+        Everything else is an estimate. The quote taken a second before a sale reported +5.05 EUR
+        on a line the chain paid +2.54 for, and three lines that did return money were booked at
+        zero because the balance had already emptied when they were read. The wallet is the only
+        witness that cannot drift.
+        """
+        db = self.ctx.db
+        p = db.query_one(
+            "SELECT id, label, opened_ts FROM positions WHERE chain_id=? AND model_version=? "
+            "AND lower(token_address)=lower(?) AND status='CLOSED' ORDER BY closed_ts DESC LIMIT 1",
+            (self.ctx.chain_id, MODEL_VERSION, mint))
+        if p is None:
+            return
+        owner = sol.signer_address() or ""
+        net, has_buy, has_sell = 0.0, False, False
+        for r in db.query("SELECT kind, tx_hash FROM executions WHERE chain_id=? AND model_version=? "
+                          "AND lower(token_address)=lower(?) AND status='CONFIRMED' AND tx_hash IS NOT NULL "
+                          "AND ts>=?", (self.ctx.chain_id, MODEL_VERSION, mint, int(p["opened_ts"]) - 300)):
+            d = await sol.sol_delta(self.client, rpc, r["tx_hash"], owner)
+            if d is None:
+                return                              # incomplete: better no number than a wrong one
+            net += d
+            has_buy = has_buy or r["kind"] == "BUY"
+            has_sell = has_sell or r["kind"] == "SELL_ALL"
+        if not (has_buy and has_sell):
+            return
+        eur = net * await sol.sol_eur(self.client)
+        db.execute("UPDATE positions SET realized_eur=? WHERE id=?", (eur, p["id"]))
+        log.info("solana ligne soldee sur la chaine · %s · %+.2f EUR", p["label"], eur)
 
     async def _positions(self, rpc: str, mode: str) -> None:
         """Open a line on a confirmed buy, then close it on the rule: x2, or the holding window.
@@ -314,24 +436,49 @@ class SolanaWatcher:
                     log.info("solana: solde de %s illisible (%s), vente reportee", p["label"], str(exc)[:60])
                     continue
                 if amount <= 0:
-                    db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_reason=?, realized_eur=0 WHERE id=?",
-                               (now_ts(), "aucun jeton en portefeuille", p["id"]))
+                    # An indexed RPC publishes a brand-new token account seconds after the block
+                    # that created it, and reading the balance inside that gap returns zero. The
+                    # line used to be written off at zero euros on the spot, while the tokens
+                    # landed a moment later and stayed in the wallet -- unmanaged and never sold,
+                    # because nothing looks at a CLOSED position again. Dukky, 20 EUR, 2026-09-08.
+                    settle = int(self._cfg("settle_seconds", 300))
+                    if age < settle:
+                        log.info("solana: %s pas encore visible en portefeuille (T+%d s), on attend",
+                                 p["label"], age)
+                        continue
+                    db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_reason=?, realized_eur=? WHERE id=?",
+                               (now_ts(), "jetons jamais recus", -float(p["size_eur"] or 0), p["id"]))
+                    log.warning("solana: %s achete mais aucun jeton recu apres %d s · mise perdue %.2f EUR",
+                                p["label"], age, float(p["size_eur"] or 0))
                     continue
             # What the position is worth is what selling it would RETURN, not what a price feed
             # prints. On 2026-09-08 haMSTR read x1.66 from DexScreener while the chain would pay
             # 4.31 EUR on a 5 EUR stake -- a loss shown as a gain, and a take-profit that would
             # have fired on a doubling that never existed. Impact was 0.6 %, so the gap was the
             # entry price: taken from a feed at decision time, not from the trade that happened.
+            px = None                       # bound per line: it is written to close_price below
             mult, value = await self._worth(rpc, mint, amount, float(p["size_eur"] or 5.0))
             if mult is None:
                 px = await self._price(mint)
                 mult = (px / float(p["entry_price"])) if (px and p["entry_price"]) else None
+            # Le sommet traverse, garde sous forme de prix pour rester comparable a l entree.
+            # Sans lui, impossible de dire ce qu on laisse sur la table : CPU est passee par x1,8
+            # le 08/09 et a ete vendue a x1,18 a l echeance, ce que seul l ecran Telegram a vu.
+            # C est la mesure qui permettra un jour de trancher la hauteur de l objectif sur du
+            # reel plutot que sur un backtest.
+            if mult is not None and p["entry_price"]:
+                sommet = float(p["entry_price"]) * mult
+                if p["peak_price"] is None or sommet > float(p["peak_price"]):
+                    db.execute("UPDATE positions SET peak_price=? WHERE id=?", (sommet, p["id"]))
             if not (mult is not None and mult >= tp) and age < hold:
                 continue
             res = await sol.prepare_sell(self.client, mint=mint, amount=amount or 1,
                                          slippage_pct=float(self._cfg("sell_slippage_pct", 25.0)))
             tx = res.pop("tx", None)
             res.pop("route", None)
+            # No decision id on a sale: the journal holds one execution per decision, and the
+            # purchase already occupies that pair. The line is found again by its mint, which one
+            # position at a time on a token makes unambiguous.
             row = {"ts": now_ts(), "chain_id": self.ctx.chain_id, "token_address": mint, "label": p["label"],
                    "kind": "SELL_ALL", "size_eur": p["size_eur"], "mode": mode, "status": res.pop("status"),
                    "model_version": MODEL_VERSION, **res}
@@ -345,9 +492,15 @@ class SolanaWatcher:
                 realized = (float(p["size_eur"]) * (mult - 1.0)) if (mult is not None and p["size_eur"]) else None
                 db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_price=?, close_reason=?, realized_eur=? WHERE id=?",
                            (now_ts(), px, f"vendu x{mult:.2f}" if mult is not None else "vendu", realized, p["id"]))
-                log.info("solana VENTE %s · %s · %s", p["label"],
+                # Le sommet est dit a chaque vente : c est ce qu on a laisse passer, et sans le
+                # journaliser on ne le sait qu en regardant l ecran au bon moment.
+                sommet = None
+                if p["entry_price"] and p["peak_price"]:
+                    sommet = float(p["peak_price"]) / float(p["entry_price"])
+                log.info("solana VENTE %s · %s · %s%s", p["label"],
                          f"x{mult:.2f}" if mult is not None else "multiple inconnu",
-                         "objectif atteint" if (mult is not None and mult >= tp) else f"T+{age // 60} min")
+                         "objectif atteint" if (mult is not None and mult >= tp) else f"T+{age // 60} min",
+                         f" · sommet traverse x{sommet:.2f}" if (sommet and sommet > (mult or 0) * 1.02) else "")
 
     async def _worth(self, rpc: str, mint: str, amount: int, stake_eur: float) -> tuple[float | None, float | None]:
         """(multiple, euros) the position would actually fetch, asked to the router itself."""
@@ -376,3 +529,7 @@ class SolanaWatcher:
         cutoff = now_ts() - 6 * 3600
         for pid in [k for k, v in self.judged.items() if v < cutoff]:
             del self.judged[pid]
+        # La liste des annonces ne sert qu a ne pas repeter un message ; au-dela de quelques
+        # milliers elle ne dit plus rien d utile et n a pas de raison de grossir sans fin.
+        if len(self.annonces) > 5000:
+            self.annonces.clear()

@@ -105,7 +105,19 @@ t1:
   # tient ; s il reste au-dessus de 40 %, Robinhood s arrete. Le moteur se coupe tout seul au
   # budget, sans dependre de quelqu un qui surveille l heure.
   buy_budget: 10
-  budget_since_ts: 1788855948
+  budget_since_ts: 1788869200
+  # Confirmation en deuxieme minute, ajoutee le 2026-09-08 apres cinq tickets invendables d affilee
+  # (-25,32 EUR, aucune vente aboutie). Le diagnostic : on n achetait pas des pieges mais des pools
+  # deja finis -- mediane de 12 echanges apres notre achat sur les lignes invendables, contre 296
+  # sur les lignes vendues, et rien a T+1 ne separait les deux.
+  # Mesure sur 1 365 pools suivis minute par minute : parmi ceux qui passent la barre 27-60, exiger
+  # 30 echanges pendant la DEUXIEME minute garde 257 pools dont 0 % s arretent, et ecarte 64 pools
+  # dont 72 % s arretent. C est le seul filtre teste qui vise ce defaut precis.
+  # Le prix : une minute de retard, donc une entree plus haute sur les pools qui montent. Le
+  # simulateur ne peut pas l arbitrer honnetement (il annonce 82 % de gagnants a T+1 la ou le
+  # carnet reel perdait avec 46 % d invendables), seule une serie reelle le dira.
+  # Mettre 0 pour revenir a l achat immediat a T+1.
+  confirm_minute2: 30
   # Plafond sur le compteur d entree, ajoute le 2026-09-07 apres une journee reelle perdante.
   # Au-dela de 60 echanges dans la premiere minute, le pool est un bundle qui retire sa liquidite
   # aussitot : sur 84 pools ETH que ce livre n a PAS achetes (donc sans effet de notre part),
@@ -172,12 +184,62 @@ solana:
   # soit quatre tickets simultanes, d ou le plafond de positions ouvertes.
   size_eur: 20.0
   max_open_positions: 4
-  min_buyers: 5
+  # Plancher releve de 5 a 125 le 2026-09-08, decide avec l operateur. Mesure sur les 254
+  # lancements observes : +0,45 EUR par euro engage et 73 % de gagnants au-dessus de 125 acheteurs
+  # distincts, contre +0,24 et 65 % au-dessus de 5. Trois verifications avant d y toucher :
+  #   - le plancher ameliore les SEPT regles de sortie testees, pas seulement celle en production,
+  #     donc il ne tient pas a un couple de parametres ;
+  #   - au-dessus de 125 acheteurs aucun lancement ne depasse 15 echanges par acheteur : le
+  #     plancher englobe le filtre anti-bundle, qui reste en place par prudence ;
+  #   - il laisse 1,2 occasion par heure en direct, contre 4,3 avant : reduit, jamais affame.
+  # Sur les cinq achats reels du 08/09 il aurait garde haMSTR et ANSEMCOIN et ecarte Dukky et
+  # CATECOIN, soit +3,55 EUR au lieu de -18,32. Reserve assumee : la tranche au-dessus de 125 ne
+  # compte que 22 lancements, et c est elle qui porte l avantage. Revenir a 5 annule le filtre.
+  # Abaisse de 125 a 100 le 2026-09-08 apres une heure a 125 sans une seule occasion : le plancher
+  # haut ne laissait passer que 1,2 lancement par heure, et l avantage qu il apporte (+0,45 par euro
+  # contre +0,36) repose sur 22 lignes contre 34. A 100 le rythme double, 1,9 par heure, et
+  # l esperance HORAIRE est meilleure : 1,9 x 0,36 contre 1,2 x 0,45. Le plancher exclut toujours
+  # les deux perdants reels du 08/09 (Dukky 91 acheteurs, CATECOIN 86).
+  # Ramene de 100 a 75 le 2026-09-08 a 14h : deux heures et demie a 100 pour vingt-quatre
+  # lancements juges et zero ticket. Toutes les rejections disaient « acheteurs < 100 », maximum
+  # observe 82 : c est notre plancher qui bloquait, pas le marche.
+  # Avec le plafond de densite, le plancher 75 rend +0,359 par euro et 69 % de gagnants -- soit
+  # exactement ce que donnait le plancher 100 SANS plafond -- pour 40 % de tickets en plus :
+  # 1,88 par heure au lieu de 1,38, donc les vingt tickets en onze heures au lieu de quinze.
+  min_buyers: 75
   max_trades_per_buyer: 15
+  # Plafond de densite, ajoute le 2026-09-08. La densite dit autre chose que le plancher
+  # d acheteurs : a plancher egal, garder les lancements sous 600 echanges dans la premiere minute
+  # ameliore les quatre mesures d un coup -- 75 % de gagnants contre 69, +0,437 par euro contre
+  # +0,348, mediane +0,630 contre +0,459, et +0,371 contre +0,266 une fois le meilleur dixieme
+  # retire. Cout : 12 % des occasions, 1,50 par heure au lieu de 1,70. Mettre 0 pour le retirer.
+  max_trades_first_minute: 600
   min_liquidity_usd: 0
   max_per_hour: 6
   take_profit_multiple: 2.0
   max_hold_seconds: 900
   sell_slippage_pct: 25.0
   buy_budget: 20   # 20 tickets de 20 EUR : le plafond de 4 positions borne le risque simultane
-  budget_since_ts: 1788857275
+  budget_since_ts: 1788866057   # remis a zero le 08/09 : les 20 tickets doivent mesurer la NOUVELLE regle
+
+  # Ecoute des creations de pool en direct, ajoutee le 2026-09-08 apres l abonnement Helius
+  # Developpeur. Mesure du jour : la chaine gradue une vingtaine de jetons par heure sur PumpSwap,
+  # la decouverte promotionnelle de DexScreener n en montre que 4,3. On en ratait plus des trois
+  # quarts, et le rythme est ce qui empeche de savoir si la strategie gagne.
+  #
+  # Le filtre a ete trouve en capturant quatre migrations et en croisant leurs comptes : le compte
+  # 39azUYFW... apparait dans toutes, et croise avec pump.fun il ne rend que 1,3 transaction par
+  # minute -- contre 3 780 pour pump.fun seul (45,6 M de credits/mois, hors forfait) et 26 544 pour
+  # PumpSwap seul (448 M). Le cout arrondit a zero.
+  #
+  # La source vient EN PLUS de DexScreener, jamais a sa place : chaque jeton garde la trace de
+  # savoir si l autre source l avait aussi, sans quoi on ne pourrait pas mesurer ce qu elle apporte.
+  stream:
+    enabled: true
+    accounts:
+      - "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"   # programme pump.fun
+      - "39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg"  # compte present dans toutes les migrations
+    instructions: ["Migrate", "CreatePool", "Initialize2"]
+    seconds_per_cycle: 290   # ecoute quasi continue : le volume mesure est nul, les tranches courtes ne servaient qu a pouvoir couper vite
+    pause_seconds: 5         # 5 s de trou toutes les 5 min, soit 1,7 % du temps au lieu de 8 %
+    max_mb_per_cycle: 30

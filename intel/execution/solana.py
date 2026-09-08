@@ -180,9 +180,26 @@ def sign(tx_b64: str) -> str:
 
 
 async def send(client: httpx.AsyncClient, rpc_url: str, signed_b64: str) -> str:
-    r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "sendTransaction",
-                                         "params": [signed_b64, {"encoding": "base64", "maxRetries": 3}]}, timeout=30)
-    body = r.json()
+    """Broadcast a signed transaction, surviving a sending node that lags the one that built it.
+
+    The router builds the transaction against the blockhash of whatever node it queried. Our own
+    node may be a slot or two behind, and its preflight simulation then rejects a perfectly valid
+    transaction with BlockhashNotFound -- two Solana entries were lost that way on 2026-09-08,
+    RWA and CATECOIN, both refused before ever reaching the network. The blockhash is not stale,
+    the simulator simply has not seen it, so the transaction is resent once with preflight off and
+    left to the network to judge. A blockhash that really has expired costs nothing: the
+    transaction is dropped rather than executed, and the reconciler writes the order off.
+    """
+    async def _post(skip: bool) -> dict[str, Any]:
+        r = await client.post(rpc_url, json={
+            "jsonrpc": "2.0", "id": 1, "method": "sendTransaction",
+            "params": [signed_b64, {"encoding": "base64", "maxRetries": 3, "skipPreflight": skip}]}, timeout=30)
+        return r.json() or {}
+
+    body = await _post(False)
+    err = str(body.get("error") or "")
+    if "Blockhash not found" in err or "BlockhashNotFound" in err:
+        body = await _post(True)
     if body.get("error"):
         raise SolanaRefused(f"envoi refusé: {str(body['error'])[:160]}")
     return str(body.get("result"))
@@ -197,6 +214,32 @@ async def token_balance(client: httpx.AsyncClient, rpc_url: str, owner: str, min
         info = acc["account"]["data"]["parsed"]["info"]["tokenAmount"]
         total += int(info.get("amount") or 0)
     return total
+
+
+async def sol_delta(client: httpx.AsyncClient, rpc_url: str, tx_hash: str, owner: str) -> float | None:
+    """SOL the wallet actually gained or lost in one confirmed transaction, fees included.
+
+    The book used to price a sale from the quote taken just before it: on 2026-09-08 that reported
+    +5.05 EUR on a line the chain paid +2.54 for, because the quote was right about the multiple
+    and wrong about the stake. What a position earned is not what a router promised, it is the
+    difference the wallet shows before and after -- the one number nothing can drift from.
+    """
+    try:
+        r = await client.post(rpc_url, json={
+            "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
+            "params": [tx_hash, {"maxSupportedTransactionVersion": 0, "encoding": "jsonParsed"}]}, timeout=25)
+        res = (r.json() or {}).get("result")
+        if not res or (res.get("meta") or {}).get("err"):
+            return None
+        keys = [k["pubkey"] if isinstance(k, dict) else k
+                for k in res["transaction"]["message"]["accountKeys"]]
+        if owner not in keys:
+            return None
+        i = keys.index(owner)
+        meta = res["meta"]
+        return (meta["postBalances"][i] - meta["preBalances"][i]) / LAMPORTS
+    except Exception:  # noqa: BLE001
+        return None
 
 
 async def sol_balance(client: httpx.AsyncClient, rpc_url: str, owner: str) -> int:

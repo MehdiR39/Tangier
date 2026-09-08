@@ -155,6 +155,10 @@ async def first_minute(client: httpx.AsyncClient, rpc_url: str, pair_id: str, cr
     base = rpc_url.split("?")[0].replace("https://mainnet.helius-rpc.com/", "https://api.helius.xyz/v0/transactions/")
     key = rpc_url.split("api-key=")[-1] if "api-key=" in rpc_url else ""
     if key and base.startswith("https://api.helius.xyz"):
+        # Same 300-transaction sample as the live engine, deliberately: the entry thresholds were
+        # fitted on this quantity, and the sampled ratio it produces filters BETTER than the
+        # unbiased one (see the note in intel/engines/solana_watcher.py). Changing the sample here
+        # would silently make the backtest measure something the engine does not.
         for i in range(0, min(len(window), 300), 100):
             try:
                 r = await client.post(f"{base}?api-key={key}",

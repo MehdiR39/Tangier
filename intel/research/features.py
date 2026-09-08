@@ -167,9 +167,15 @@ class PoolTape:
             n += 1
             q = abs(a1 if self.is_c0 else a0)      # quote leg, raw units
             vol += q
-            # the token leg's sign says which way it went: token leaving the pool is a buy
+            # The token leg's sign says which way the trade went, and v4 reports both legs from the
+            # CALLER's side, not the pool's: a buyer receives tokens, so the token leg is positive
+            # and the quote leg negative. Verified 2026-09-08 against our own five confirmed
+            # purchases -- token +5.7e23, quote -2.18e15 on every one of them. This test used to
+            # read `tok < 0`, which labelled every buy a sale and every sale a buy; the T+1 entry
+            # counter was untouched (it counts trades, not sides) but every buy/sell feature built
+            # on this window was inverted.
             tok = a0 if self.is_c0 else a1
-            if tok < 0:
+            if tok > 0:
                 buy += q
                 nb += 1
             else:

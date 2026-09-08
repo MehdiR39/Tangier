@@ -284,7 +284,10 @@ class TelegramCommands:
             "AND closed_ts>=? AND close_reason LIKE 'vendu%'", (cid, mv, since))
         lost = db.query_one(
             "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE ? "
-            "AND kind='PORTFOLIO' AND opened_ts>=? AND realized_eur IS NOT NULL "
+            # Dated on the day the line CLOSED, like every other bucket. Dating it on the day it
+            # opened hid a bag bought yesterday and written off today from today's total, so the
+            # headline and the lines under it disagreed.
+            "AND kind='PORTFOLIO' AND closed_ts>=? AND realized_eur IS NOT NULL "
             "AND (close_reason IS NULL OR close_reason NOT LIKE 'vendu%')", (cid, mv, since))
         rec = db.query_one(
             "SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? AND model_version LIKE ? "
@@ -292,14 +295,26 @@ class TelegramCommands:
         opn = db.query_one(
             "SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE ? "
             "AND kind='PORTFOLIO' AND status='OPEN' AND (notes IS NULL OR notes NOT LIKE '%recover:%')", (cid, mv))
+        # A bag the recovery pass has reopened is money already gone: it is only being offered to
+        # the market again in case someone takes it. Leaving it out of the total made the headline
+        # move by tens of euros between two readings a minute apart, depending on how many bags the
+        # pass happened to have reopened -- +20.39 EUR at 10:54, +5.17 EUR at 11:02, same book.
+        # It is counted as a loss until a sale proves otherwise, and the sale then re-prices it.
+        bag = db.query_one(
+            "SELECT COUNT(*) n, COALESCE(SUM(size_eur),0) s FROM positions WHERE chain_id=? AND model_version LIKE ? "
+            "AND kind='PORTFOLIO' AND status='OPEN' AND notes LIKE '%recover:%' AND opened_ts>=?", (cid, mv, since))
+        bags_eur = -float(bag["s"] or 0)
+        # Counted in the period that lost the money, but shown whatever the period: a stuck bag is
+        # a state of the book right now, not an event of the day it was bought.
         bags = db.scalar(
             "SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version LIKE ? AND kind='PORTFOLIO' "
             "AND status='OPEN' AND notes LIKE '%recover:%'", (cid, mv), 0)
         return {"sold": int(sold["n"] or 0), "wins": int(sold["w"] or 0), "sold_eur": float(sold["p"] or 0),
                 "lost": int(lost["n"] or 0), "lost_eur": float(lost["p"] or 0),
                 "rec": int(rec["n"] or 0), "rec_eur": float(rec["p"] or 0),
-                "open": int(opn["n"] or 0), "open_eur": float(opn["s"] or 0), "bags": int(bags),
-                "net": float(sold["p"] or 0) + float(lost["p"] or 0)}
+                "open": int(opn["n"] or 0), "open_eur": float(opn["s"] or 0),
+                "bags": bags, "bags_eur": bags_eur,
+                "net": float(sold["p"] or 0) + float(lost["p"] or 0) + bags_eur}
 
     async def pnl(self, full: bool = False) -> str:
         """Both chains, always, whether or not they traded -- and both periods, because a day
@@ -324,7 +339,9 @@ class TelegramCommands:
             if t["rec"]:
                 out.append(f"<code>  récupérées  {t['rec']:>3}</code>  hors règle    {self._eur(t['rec_eur'])}")
             if t["bags"]:
-                out.append(f"<code>  en reprise  {t['bags']:>3}</code>  sacs déjà perdus, valeur nulle")
+                out.append(f"<code>  en reprise  {t['bags']:>3}</code>"
+                           + (f"  {self._eur(t['bags_eur'])}" if t["bags_eur"] else "           ")
+                           + "  comptés perdus, le moteur retente")
         v = self.ctx.db.query_one("SELECT COUNT(*) n, COALESCE(SUM(realized_eur),0) p FROM positions WHERE chain_id=? "
                                   "AND kind='VIRTUAL' AND realized_eur IS NOT NULL AND opened_ts>=?",
                                   (self.ctx.chain_id, 0 if full else day0))
@@ -335,14 +352,22 @@ class TelegramCommands:
         return NL.join(out)
 
     async def _wallets(self) -> dict[str, str]:
-        """{unit: balance} for every chain the book trades on."""
+        """{unit: balance} for every chain the book trades on, in coin AND in euros.
+
+        The euro value is the one figure on this screen that cannot be wrong: it does not depend on
+        a multiple, a close reason, or which lines the recovery pass happens to have reopened this
+        minute. Against what was deposited it settles any argument the detail below might start.
+        """
         out: dict[str, str] = {}
         try:
+            from intel.execution.executor import quote_price_usd
             from intel.execution.signer import signer_address
             a = signer_address()
             if a:
                 raw = await self.ctx.rpc.request("eth_getBalance", [a, "latest"])
-                out["ETH"] = f"{int(raw, 16) / 1e18:.4f} ETH"
+                eth = int(raw, 16) / 1e18
+                usd = quote_price_usd(self.ctx, "0x" + "0" * 40)
+                out["ETH"] = f"{eth:.4f} ETH" + (f"  ≈ {eth * float(usd) / 1.08:.0f} €" if usd else "")
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -352,7 +377,9 @@ class TelegramCommands:
             rpc, a = sol.rpc_url(), sol.signer_address()
             if rpc and a:
                 async with httpx.AsyncClient() as c:
-                    out["SOL"] = f"{await sol.sol_balance(c, rpc, a) / 1e9:.4f} SOL"
+                    bal = await sol.sol_balance(c, rpc, a) / 1e9
+                    rate = await sol.sol_eur(c)
+                    out["SOL"] = f"{bal:.4f} SOL" + (f"  ≈ {bal * rate:.0f} €" if rate else "")
         except Exception:  # noqa: BLE001
             pass
         return out
@@ -394,8 +421,12 @@ class TelegramCommands:
             # Each figure on its own: a failed transaction count used to hide a balance that read
             # perfectly well, and the screen said "illisible" about a wallet holding 0.18 ETH.
             try:
+                from intel.execution.executor import quote_price_usd
                 raw = await self.ctx.rpc.request("eth_getBalance", [eth, "latest"])
-                lines.append(f"Robinhood  {int(raw, 16) / 1e18:.4f} ETH")
+                bal = int(raw, 16) / 1e18
+                usd = quote_price_usd(self.ctx, "0x" + "0" * 40)
+                lines.append(f"Robinhood  {bal:.4f} ETH"
+                             + (f"  ≈ {bal * float(usd) / 1.08:.0f} €" if usd else ""))
             except Exception:  # noqa: BLE001
                 lines.append("Robinhood  solde illisible")
             detail = f"  {eth[:10]}…{eth[-4:]}"
@@ -410,7 +441,9 @@ class TelegramCommands:
             try:
                 import httpx
                 async with httpx.AsyncClient() as c:
-                    lines.append(f"Solana     {await sol.sol_balance(c, rpc, addr) / 1e9:.4f} SOL")
+                    bal = await sol.sol_balance(c, rpc, addr) / 1e9
+                    rate = await sol.sol_eur(c)
+                    lines.append(f"Solana     {bal:.4f} SOL" + (f"  ≈ {bal * rate:.0f} €" if rate else ""))
                 lines.append(f"<code>  {addr[:10]}…{addr[-4:]}</code>")
             except Exception:  # noqa: BLE001
                 lines.append("Solana     solde illisible")

@@ -225,6 +225,15 @@ class Runtime:
             self.solana = SolanaWatcher(self.ctx)
             tasks.append(asyncio.create_task(self._loop("solana", self.solana.run_cycle,
                                                         int(self.ctx.config.get("solana.poll_seconds", 30)))))
+            if self.ctx.config.get("solana.stream.enabled", False):
+                # Ecoute des creations de pool en direct, a cote de DexScreener et non a sa place :
+                # la source promotionnelle ne montre que 4,3 des ~20 graduations horaires. Elle
+                # n achete rien, elle depose des jetons dans une table que la decouverte lit.
+                from intel.engines.solana_stream import SolanaStream
+                self.solana_stream = SolanaStream(self.ctx)
+                tasks.append(asyncio.create_task(self._loop(
+                    "solana_stream", self.solana_stream.run_cycle,
+                    int(self.ctx.config.get("solana.stream.pause_seconds", 5)))))
         if self.ctx.config.get("alerts.telegram_commands", True):
             # /positions, /closed, /pnl, /orders, /solde, /pause, /resume from the phone. Reads a
             # second bot (INTEL_TELEGRAM_COMMANDS_TOKEN): Telegram allows one reader per bot and

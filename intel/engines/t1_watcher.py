@@ -44,6 +44,7 @@ class Watched:
     swaps: list[dict[str, Any]] = field(default_factory=list)
     decided: bool = False
     decimals: int = 18
+    m1_count: int | None = None       # échanges à T+1, retenus quand la confirmation est active
 
 
 class T1Watcher:
@@ -218,16 +219,48 @@ class T1Watcher:
             paused = t1_paused(self.ctx)
         except Exception:  # noqa: BLE001
             paused = False
+        # A second minute of confirmation, off by default. Measured 2026-09-08 on 1 365 pools
+        # followed minute by minute: of the launches that clear the T+1 bar, those that keep
+        # trading through the second minute almost never die -- at 30 trades in minute two the
+        # rule keeps 257 pools of which 0 % stop, and rejects 64 of which 72 % do. That is
+        # exactly the failure that emptied the book: five real tickets on 2026-09-08, five
+        # unsellable, -25.32 EUR, all on pools that made a dozen trades after our purchase and
+        # stopped. The cost is one minute of delay, so a higher entry on the pools that climb;
+        # the simulator cannot price that honestly (it claims 82 % winners at T+1 while the live
+        # book lost on 46 % unsellable), so only a real bounded run will say.
+        confirm = int(self._cfg("confirm_minute2", 0))
         n = 0
         for pid, w in self.pools.items():
-            if w.decided or w.first_swap_block is None or head - w.first_swap_block < window:
+            if w.decided or w.first_swap_block is None:
                 continue
-            w.decided = True                          # one verdict per pool, whichever way it goes
-            count = len(w.swaps)
+            age = head - w.first_swap_block
+            if age < window:
+                continue
+            if confirm:
+                if w.m1_count is None:
+                    # T+1: the bar is judged and recorded, but the verdict waits for minute two.
+                    w.m1_count = len(w.swaps)
+                    self._observe(pid, w, w.m1_count, head, w.m1_count >= min_trades)
+                    if not (min_trades <= w.m1_count and (not max_trades or w.m1_count <= max_trades)):
+                        w.decided = True              # hors barre : inutile d'attendre la suite
+                    continue
+                if age < 2 * window:
+                    continue                          # la deuxième minute n'est pas finie
+                minute2 = len(w.swaps) - w.m1_count
+                w.decided = True
+                if minute2 < confirm:
+                    log.info("t1: %s passe la barre (%d swaps) mais s'arrête en 2e minute "
+                             "(%d < %d) : pool mourant", pid[:10], w.m1_count, minute2, confirm)
+                    continue
+                count = w.m1_count
+            else:
+                w.decided = True                      # one verdict per pool, whichever way it goes
+                count = len(w.swaps)
             # Every verdict is recorded, not only the buys. This is the continuous series the
             # regime question needs -- how busy the chain's launches are, minute by minute --
             # and it costs nothing: the watcher already saw every one of these pools.
-            self._observe(pid, w, count, head, count >= min_trades)
+            if not confirm:                            # avec confirmation, déjà enregistré à T+1
+                self._observe(pid, w, count, head, count >= min_trades)
             if count < min_trades:
                 continue
             # /pause from Telegram: no real order. With t1.shadow (default on) the decision is
@@ -274,6 +307,40 @@ class T1Watcher:
                 # trade past the ceiling, is never bought again by the real book.
                 log.info("t1: %s passe la barre (%d swaps) mais le token %s a deja ete pris en defaut", pid[:10], count, w.token[:10])
                 continue
+            # Un jeton, une seule ligne -- et la garde porte sur le JETON, pas sur le pool. Le
+            # 2026-09-08 a 14h21 et 14h25, 0x3761600a a ete achete deux fois dans deux pools
+            # differents : les deux ont passe la barre puisque ce sont des pools distincts. La
+            # vente de la premiere ligne a vide le portefeuille des DEUX mises, ce qui a credite
+            # une ligne du produit de deux et condamne l'autre a etre declaree invendable sans
+            # jetons. Meme defaut que sur Solana, corrige la le matin meme.
+            if not shadow:
+                engage = self.ctx.db.scalar(
+                    "SELECT COUNT(*) FROM positions WHERE chain_id=? AND kind='PORTFOLIO' "
+                    "AND status IN ('OPEN','HALF') AND lower(token_address)=lower(?) "
+                    "AND (notes IS NULL OR notes NOT LIKE '%recover:%')",
+                    (self.ctx.chain_id, w.token), 0)
+                if engage:
+                    log.info("t1: %s passe la barre (%d swaps) mais une ligne est deja ouverte sur %s",
+                             pid[:10], count, w.token[:10])
+                    continue
+                # La meme question posee au PORTEFEUILLE. La garde ci-dessus lit le journal, et le
+                # journal s est trompe le 08/09/2026 cote Solana : un refus ecrit par l executeur de
+                # l autre chaine a masque un achat parti en chaine, et le jeton a ete paye deux fois.
+                # Detenir le jeton est un fait, ce qu on a ecrit a son sujet est une opinion.
+                try:
+                    from intel.chain.erc20 import balance_of
+                    from intel.execution.signer import signer_address
+
+                    owner = signer_address()
+                    deja = await balance_of(self.ctx.rpc, w.token, owner) if owner else 0
+                except Exception as exc:  # noqa: BLE001
+                    log.info("t1: solde de %s illisible avant achat (%s), achat refuse par prudence",
+                             w.token[:10], str(exc)[:60])
+                    continue
+                if deja > 0:
+                    log.warning("t1: %s passe la barre mais le portefeuille detient deja ce token "
+                                "(%d) -- le journal ne le disait pas", pid[:10], deja)
+                    continue
             # A bounded experiment, agreed with the operator: twenty tickets to answer one question
             # -- with the float bug fixed, does the sale go through INSIDE the exit window? The
             # engine stops itself at the budget rather than relying on anyone watching the clock.
@@ -430,6 +497,7 @@ class T1Watcher:
         if mode == "live":
             await self._reconcile_receipts()
             await self._recover()
+            await self._settle_from_chain()
         tp = float(self._cfg("take_profit_multiple", 2.0))
         max_hold = int(self._cfg("max_hold_seconds", 300))
         retry_max = int(self._cfg("sell_retry_max", 5))
@@ -470,6 +538,10 @@ class T1Watcher:
             mult = (price / float(p["entry_price"])) if (price and p["entry_price"]) else None
             if price and (p["peak_price"] is None or price > float(p["peak_price"])):
                 db.execute("UPDATE positions SET peak_price=? WHERE id=?", (price, p["id"]))
+            # How long the line has been held, in minutes: the exit path below needs it before the
+            # sell branch computes it, and reading it there raised NameError on every cycle -- the
+            # whole Robinhood book was down from 10:23 on 2026-09-08, buying and selling nothing.
+            age_min = (now - int(p["opened_ts"])) / 60.0
             n_tries = 0
             last = db.query_one(
                 "SELECT d.id, d.ts, e.status FROM decisions d LEFT JOIN executions e ON e.chain_id=d.chain_id AND e.decision_id=d.id "
@@ -587,6 +659,84 @@ class T1Watcher:
             log.info("t1 reprise %s : le portefeuille detient encore ce token, nouvelle tentative de vente (%d/%s)",
                      p["token_address"][:10], done + 1, self._cfg("recover_max", 8))
 
+    async def _settle_from_chain(self) -> None:
+        """Re-price closed lines on what the wallet actually gained or lost, not on a quote.
+
+        A line is closed with `mise x (multiple - 1)`, the multiple taken from a price feed at the
+        moment of the sale. That is an estimate, and it drifts: measured on 2026-09-08 over the 28
+        closed lines, the book said +1.12 EUR where the chain said -1.91. It can also break
+        outright, since one bad print is enough to book a gain that never existed.
+
+        The explorer publishes, per transaction, the exact change in the wallet's balance. Adding
+        the purchase's and the sale's gives what the line cost and returned, fees included, with no
+        quote involved anywhere.
+
+        This runs BESIDE the book, never inside it: correcting the ledger must not be able to
+        delay or break an exit. A line already settled carries a marker and is never touched again.
+        """
+        now = now_ts()
+        if now - getattr(self, "_settled_at", 0) < 300:
+            return
+        self._settled_at = now
+        db = self.ctx.db
+        rows = db.query(
+            "SELECT id, token_address, notes, close_reason, realized_eur FROM positions "
+            "WHERE chain_id=? AND kind='PORTFOLIO' AND model_version LIKE 't1-%' AND status='CLOSED' "
+            "AND closed_ts>? AND close_reason NOT LIKE '%· chaîne' LIMIT 40",
+            (self.ctx.chain_id, now - 48 * 3600))
+        if not rows:
+            return
+
+        from intel.execution.executor import quote_price_usd
+        from intel.execution.signer import signer_address
+        addr = (signer_address() or "").lower()
+        if not addr:
+            return
+        moves: dict[str, float] = {}
+        params: dict[str, Any] | None = None
+        for _ in range(4):                       # 200 transactions back: far more than two days
+            try:
+                r = await self.ctx.blockscout.get_v2(f"addresses/{addr}/coin-balance-history", params)
+            except Exception as exc:  # noqa: BLE001
+                log.info("t1: historique de solde illisible (%s), solde reporte", str(exc)[:70])
+                return
+            page = (r or {}).get("items") or []
+            for it in page:
+                h = (it.get("transaction_hash") or "").lower()
+                if h:
+                    moves[h] = moves.get(h, 0.0) + int(it.get("delta") or 0) / 1e18
+            params = (r or {}).get("next_page_params")
+            if not page or not params:
+                break
+
+        n = 0
+        for p in rows:
+            meta = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv)
+            usd = quote_price_usd(self.ctx, meta.get("quote") or "")
+            if not usd:
+                continue
+            hashes: list[str] = []
+            if (meta.get("decision") or "").isdigit():
+                b = db.query_one("SELECT tx_hash FROM executions WHERE chain_id=? AND decision_id=? "
+                                 "AND status='CONFIRMED' AND tx_hash IS NOT NULL",
+                                 (self.ctx.chain_id, int(meta["decision"])))
+                if b:
+                    hashes.append(b["tx_hash"])
+            for s in db.query("SELECT e.tx_hash FROM decisions d JOIN executions e ON e.chain_id=d.chain_id "
+                              "AND e.decision_id=d.id WHERE d.chain_id=? AND d.position_id=? "
+                              "AND d.kind='SELL_ALL' AND e.status='CONFIRMED' AND e.tx_hash IS NOT NULL",
+                              (self.ctx.chain_id, p["id"])):
+                hashes.append(s["tx_hash"])
+            known = [h for h in hashes if (h or "").lower() in moves]
+            if not known:
+                continue                          # older than the history read: leave it alone
+            eur = sum(moves[h.lower()] for h in known) * float(usd) / 1.08
+            db.execute("UPDATE positions SET realized_eur=?, close_reason=? WHERE id=?",
+                       (eur, f"{p['close_reason'] or 'ferme'} · chaîne", p["id"]))
+            n += 1
+        if n:
+            log.info("t1: %d lignes fermees repricees sur le solde du portefeuille", n)
+
     async def _reconcile_receipts(self) -> None:
         """Turn SUBMITTED live orders into CONFIRMED or FAILED from their receipts; void phantom buys."""
         db = self.ctx.db
@@ -607,9 +757,15 @@ class T1Watcher:
                        ("CONFIRMED" if ok else "FAILED", None if ok else f"revert en chaine (gaz {gas})", e["id"]))
             log.info("ordre %s %s en chaine · tx %s", e["kind"], "confirme" if ok else "REVERTE", e["tx_hash"][:14])
             if not ok and e["kind"] == "BUY" and e["decision_id"]:
-                db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_reason=?, realized_eur=0 "
-                           "WHERE chain_id=? AND status='OPEN' AND notes LIKE ?",
-                           (now_ts(), "achat reverté en chaîne : aucune position (gaz perdu)", self.ctx.chain_id, f"decision:{e['decision_id']} %"))
+                # Whatever state the line is in, not just OPEN. A reverted purchase bought nothing,
+                # so every euro the book attaches to that line is invented -- and the line can very
+                # well have been written off in the meantime by the unsellable path, which is how
+                # 0x3a54341d carried a 5 EUR loss for a token it never held (2026-09-08). Only the
+                # gas was actually spent, and the settlement pass prices that from the wallet.
+                db.execute("UPDATE positions SET status='CLOSED', closed_ts=COALESCE(closed_ts, ?), "
+                           "close_reason=?, realized_eur=0 WHERE chain_id=? AND notes LIKE ?",
+                           (now_ts(), "achat reverté en chaîne : aucune position (gaz perdu)",
+                            self.ctx.chain_id, f"decision:{e['decision_id']} %"))
 
     def _mark(self, pool_id: str | None, token: str, quote: str | None) -> float | None:
         """The token's price in dollars from the pool's latest swap; None when it cannot be known."""
