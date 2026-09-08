@@ -527,8 +527,57 @@ chiffre faux ne se voit pas.
 beaucoup, le budget de pages doit monter ; s'il est rare, on ne perd rien. À relire demain dans les
 lignes « premiere minute hors de portee ».
 
----
 
+
+### 3.26 — Le plafond de capitalisation n'a ni plancher ni mémoire, 2026-09-08
+**Question de l'opérateur** : le plafond à 50 k$ est-il cohérent avec la règle d'attendre une
+minute ?
+
+**Sur le calendrier, oui.** Mesuré sur 53 lancements passant la règle (acheteurs, densité, bundle) :
+
+| | capitalisation médiane |
+|---|---|
+| à T+1 | 43 615 $ |
+| à T+2 | 43 638 $ |
+
+Variation médiane T+1 → T+2 : **×1,00** (quartiles ×1,00 / ×1,05). Trois lancements sur 53
+franchissent le plafond pendant l'attente, deux repassent dessous. Sur 11 lancements observés avant
+T+1, la variation T+0 → T+1 est ×0,94 — chiffre fragile, mais dans le même sens. **L'attente ne
+fausse pas le plafond.**
+
+**Le plafond n'est pas une redite des autres filtres.** Sous 50 k : 300 échanges / 118 acheteurs
+médians. Au-dessus : 284 / 130. Activité identique — il sépare bien une dimension propre.
+
+**Pas d'épinglage à la migration** : le mode des capitalisations au premier relevé est 30-50 k
+(47 % des 175 lancements), pas 69 k. Le plafond coupe juste après le mode principal, il ne
+sélectionne donc pas mécaniquement des jetons « retombés sous le seuil de migration ».
+
+**Mais la question en a découvert une autre, et celle-là coûte.** Le plafond ne distingue pas un
+jeton PETIT d'un jeton QUI VIENT DE S'EFFONDRER. Deux cas le même soir :
+
+| jeton | vu à | écarté pour | racheté à | écart |
+|---|---|---|---|---|
+| NASFROG | 6,194 × 10⁻⁵ (20:54) | 1 387 échanges ≥ 600 | 2,374 × 10⁻⁶ (21:00) | **26×** |
+| WTW | 2,183 × 10⁻⁵ (22:00:44) | 1 139 échanges ≥ 600 | 4,967 × 10⁻⁶ (22:00:55) | **4,4×** |
+
+WTW est le plus net : **même mint** `219jMr4PyMdj…`, deux pools différents, onze secondes d'écart.
+Le premier pool le cote à 2,183 × 10⁻⁵ et l'écarte à juste titre (+458 % sur cinq minutes). Le
+second le cote 4,4 fois moins cher, avec 291 échanges et 149 acheteurs — et il passe tous les
+filtres, capitalisation 4 968 $ comprise, très loin sous le plafond.
+
+**Cause structurelle** : le prix est une propriété du JETON, l'activité se mesure par POOL. Un mint
+écarté par un pool revient par un autre. Le plafond de capitalisation, lui, ne voit qu'un instant.
+
+**Correction** : refus d'acheter à moins de la moitié du meilleur prix vu sur le même mint dans le
+quart d'heure, tous pools confondus (`solana.collapse_memory_seconds`, `max_collapse_ratio`).
+
+**Nouvelle collecte** : `solana_judgements`, une ligne par PASSAGE et non par paire —
+`solana_observations` avait une clé primaire sur `pair_id` et un `INSERT OR IGNORE`, elle gardait le
+premier jugement et jetait celui qui déclenchait l'achat. Trois champs ajoutés, gratuits :
+`market_cap`, `chg_m5`, `age_s`. Aucun ne filtre aujourd'hui — ils sont là pour trancher demain
+sur des données, notamment : **une chute récente prédit-elle l'échec, ou est-elle au contraire un
+point d'entrée ?** NASFROG, achetée après −96 %, est ressortie à ×1,41.
+---
 
 ## 4. Pistes ouvertes, non testées
 

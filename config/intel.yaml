@@ -220,6 +220,14 @@ solana:
   # compter ce qu il a sous la main -- c est ce silence qui a fait acheter NASFROG a 4 % du prix
   # auquel la regle l avait ecarte six minutes plus tot (journal §3.25).
   signature_pages: 12
+  # Le jeton vient-il de s effondrer ? Le plafond de capitalisation ci-dessus n a ni plancher ni
+  # memoire : il laisse passer un jeton a 5 k$ sans pouvoir dire s il est petit ou s il valait 50 k
+  # une minute plus tot. Deux cas mesures le 08/09/2026 a une heure d intervalle -- NASFROG achete
+  # 26x sous le prix auquel la regle l avait ecarte, WTW achete 4,4x sous le prix d un autre pool du
+  # MEME mint onze secondes plus tot. On refuse d acheter a moins de la moitie du meilleur prix vu
+  # sur le meme jeton dans le quart d heure. Journal §3.25 et §3.26.
+  collapse_memory_seconds: 900
+  max_collapse_ratio: 2.0
   min_liquidity_usd: 0
   # Plafond de capitalisation a l entree, ajoute le 2026-09-08 a 20h40 sur une hypothese de
   # l operateur : un jeton deja gros ne bouge plus assez pour couvrir les frais. Mesure sur 174

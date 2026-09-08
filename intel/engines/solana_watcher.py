@@ -277,6 +277,7 @@ class SolanaWatcher:
             why = f"liquidite {liq:,.0f} $ < {min_liq:,.0f} $"
         elif max_mcap and mcap and mcap >= max_mcap:
             why = f"capitalisation {mcap:,.0f} $ >= {max_mcap:,.0f} $ (trop gros pour bouger)"
+        self._jugement(pid, mint, symbol, p, trades, payers, liq, why)
         if why:
             log.info("solana: %s ecarte — %s (%d echanges, %d acheteurs)", symbol, why, trades, payers)
             return False
@@ -300,6 +301,29 @@ class SolanaWatcher:
         if seen:
             log.info("solana: %s passe la regle mais une ligne est deja engagee sur ce jeton", symbol)
             return False
+        # Le jeton vient-il de s effondrer ? Le plafond de capitalisation n a ni plancher ni memoire :
+        # il laisse passer un jeton a 5 k$ sans pouvoir dire s il est petit ou s il valait 50 k il y a
+        # une minute. Deux cas mesures le 08/09/2026, a une heure d intervalle :
+        #   NASFROG : cote 6,194e-05 a 20:54 (ecarte, trop dense), achete 2,374e-06 a 21:00 -- 26x
+        #             moins cher, apres une chute de 96 %.
+        #   WTW     : meme mint 219jMr4PyMdj..., pool 89qz8256 le cote 2,183e-05 et l ecarte (1 139
+        #             echanges, +458 %), pool 7WPSkNyM le cote 4,967e-06 onze secondes plus tard et
+        #             l achete -- 4,4x moins cher, -88 % sur cinq minutes.
+        # Le prix est une propriete du JETON, l activite se mesure par POOL : c est cet ecart qui
+        # laisse un mint ecarte revenir par une autre porte. On compare donc le prix propose au
+        # meilleur prix vu recemment sur le meme mint, tous pools confondus.
+        fenetre = int(self._cfg("collapse_memory_seconds", 900) or 0)
+        chute_max = float(self._cfg("max_collapse_ratio", 2.0) or 0)
+        prix = float(p.get("priceUsd") or 0)
+        if fenetre and chute_max > 1 and prix > 0:
+            haut = self.ctx.db.scalar(
+                "SELECT MAX(price_usd) FROM solana_judgements WHERE mint=? AND pair_id<>? AND ts>? "
+                "AND price_usd IS NOT NULL", (mint, pid, now - fenetre))
+            if haut and float(haut) / prix >= chute_max:
+                log.info("solana: %s ecarte — vu a %.3e il y a moins de %d min, propose a %.3e "
+                         "(%.1fx moins cher) : le jeton s est effondre, on n achete pas la chute",
+                         symbol, float(haut), fenetre // 60, prix, float(haut) / prix)
+                return False
         # Et la meme question posee au PORTEFEUILLE, qui ne peut pas mentir. Les deux controles
         # ci-dessus lisent le journal, et le journal s est trompe le 08/09/2026 : un refus ecrit
         # par l executeur de l autre chaine a masque un achat parti en chaine, la garde n a rien vu
@@ -381,6 +405,44 @@ class SolanaWatcher:
                 (now_ts(), pid, mint, symbol, dex, trades, payers, liq, t30, p30, price))
         except Exception as exc:  # noqa: BLE001
             log.info("solana: observation non enregistree (%s)", str(exc)[:80])
+
+    def _jugement(self, pid: str, mint: str, symbol: str, p: dict[str, Any], trades: int, payers: int,
+                  liq: float, verdict: str | None) -> None:
+        """Une ligne par PASSAGE, verdict compris -- pas une par paire.
+
+        `solana_observations` a une cle primaire sur `pair_id` et un INSERT OR IGNORE : elle garde
+        le premier jugement et jette les suivants. C est ce qui a rendu NASFROG illisible le
+        08/09/2026 -- la mesure de 20:54 qui l ecartait etait enregistree, celle de 21:00 qui l a
+        fait acheter n existait nulle part, et il a fallu recouper le journal texte pour comprendre.
+        Cette table-ci ne remplace rien : elle s ajoute, pour que les series de calibration existantes
+        continuent de mesurer la meme chose.
+
+        Trois champs nouveaux, tous gratuits (deja dans la reponse DexScreener), tous la pour
+        repondre plus tard a une question qu on ne peut pas trancher aujourd hui : le plafond de
+        capitalisation ne distingue pas un jeton PETIT d un jeton QUI VIENT DE S EFFONDRER. NASFROG
+        est entre a 2,4 k$ de capitalisation apres une chute de 96 % -- tres loin sous le plafond de
+        50 k, donc accepte sans reserve. `chg_m5` dit si le prix vient de tomber, `age_s` dit avec
+        quel retard on juge. Aucun des deux ne filtre quoi que ce soit aujourd hui : on collecte
+        d abord, on tranchera sur des donnees.
+        """
+        try:
+            self.ctx.db.execute(
+                "CREATE TABLE IF NOT EXISTS solana_judgements("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, pair_id TEXT, mint TEXT,"
+                "  symbol TEXT, dex TEXT, trades INTEGER, payers INTEGER, liquidity_usd REAL,"
+                "  price_usd REAL, market_cap REAL, chg_m5 REAL, age_s INTEGER, verdict TEXT)")
+            created = p.get("pairCreatedAt") or 0
+            self.ctx.db.execute(
+                "INSERT INTO solana_judgements(ts, pair_id, mint, symbol, dex, trades, payers,"
+                " liquidity_usd, price_usd, market_cap, chg_m5, age_s, verdict) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (now_ts(), pid, mint, symbol, p.get("dexId"), trades, payers, liq,
+                 float(p.get("priceUsd") or 0) or None,
+                 float(p.get("marketCap") or p.get("fdv") or 0) or None,
+                 float((p.get("priceChange") or {}).get("m5") or 0) or None,
+                 int(now_ts() - created / 1000.0) if created else None,
+                 verdict or "achete"))
+        except Exception as exc:  # noqa: BLE001
+            log.info("solana: jugement non enregistre (%s)", str(exc)[:80])
 
     # ----------------------------------------------------------------- book
     async def _book(self, rpc: str) -> None:
