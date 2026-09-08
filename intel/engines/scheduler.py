@@ -154,8 +154,14 @@ class Runtime:
     async def retention_cycle(self) -> dict[str, Any]:
         from intel.db.retention import prune
 
-        if self.pipeline.priority_waiting > 0 or self.pipeline.ingest_lock.locked():
-            return {"status": "idle", "reason": "engine cycle active"}
+        # La purge ATTEND le verrou au lieu d abandonner. Elle abandonnait des que le scanner le
+        # tenait, or les cycles du scanner durent de 440 a 594 secondes et s enchainent : elle ne
+        # l obtenait donc quasiment jamais et rendait la main en 0,0 seconde. Resultat mesure le
+        # 08/09/2026 : la base a atteint 22,2 Go, et la verification d integrite qu elle declenche
+        # au demarrage a laisse le moteur muet vingt minutes, positions ouvertes et Telegram
+        # silencieux. Elle ne tourne que quatre fois par jour : la faire patienter ne retarde rien.
+        if self.pipeline.priority_waiting > 0:
+            return {"status": "idle", "reason": "evaluation prioritaire en attente"}
         async with self.pipeline.ingest_lock:
             return prune(self.ctx)
 

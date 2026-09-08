@@ -284,3 +284,26 @@ solana:
     seconds_per_cycle: 290   # ecoute quasi continue : le volume mesure est nul, les tranches courtes ne servaient qu a pouvoir couper vite
     pause_seconds: 5         # 5 s de trou toutes les 5 min, soit 1,7 % du temps au lieu de 8 %
     max_mb_per_cycle: 30
+
+# Purge de la base. Ajoutee le 2026-09-08 apres que la base a atteint 22,2 Go : la verification
+# d integrite qu elle declenche au demarrage a laisse le moteur muet vingt minutes, positions
+# ouvertes et Telegram silencieux.
+#
+# Deux causes, arithmetiques toutes les deux :
+#   - la purge supprimait 60 jetons par passage, quatre fois par jour, soit 240, alors que le
+#     scanner en decouvre environ 3 400 par jour. Depassee d un facteur quatorze.
+#   - elle abandonnait des que le scanner tenait le verrou d ingestion, et les cycles du scanner
+#     durent 440 a 594 secondes en s enchainant : elle ne l obtenait quasiment jamais et rendait
+#     la main en 0,0 seconde. Elle l attend desormais (voir scheduler.retention_cycle).
+#
+# Chaque jeton est supprime dans SA PROPRE transaction, donc un lot plus gros allonge le travail
+# total sans allonger la duree d un verrou -- c est ce qui rend 500 acceptable la ou 60 ne l etait
+# pas. Une purge longue qui verrouille la base avait tue une boucle le 2026-09-08 au matin.
+retention:
+  prune_interval_seconds: 7200
+  max_tokens_per_prune: 500
+  scan_tokens_per_prune: 8000
+  dead_token_days: 2
+  holder_snapshot_days: 7
+  pair_snapshot_days: 14
+  prune_budget_seconds: 180

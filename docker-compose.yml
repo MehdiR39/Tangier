@@ -30,6 +30,12 @@ services:
       - INTEL_BACKUP_DIR=/app/data/backups
       - INTEL_LOGS_DIR=/app/logs
       - INTEL_CONFIG=/app/config/intel.yaml
+      # La verification d integrite lit tout le fichier. A 22 Go elle prend des dizaines de
+      # minutes, pendant lesquelles AUCUNE boucle ne tourne -- ni le negoce ni Telegram. Le
+      # 08/09/2026 a 19h51 le moteur est reste muet et le conteneur unhealthy pour cette raison.
+      # Une fois par semaine suffit sur une base de cette taille ; la vraie reponse est de la
+      # faire maigrir (voir la retention), pas de verifier moins souvent.
+      - INTEL_DB_CHECK_HOURS=168
     volumes:
       - intel_db:/app/db
       - ./data:/app/data

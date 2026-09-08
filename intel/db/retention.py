@@ -8,6 +8,7 @@ Scores, alerts, decisions and token-level snapshots are never pruned (backtests 
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from intel.context import IntelContext
@@ -31,7 +32,42 @@ def prune(ctx: IntelContext) -> dict[str, Any]:
     # its pools for `dead_token_days`. Pruning is all-or-nothing per token because the metrics read
     # whole histories (MIN(ts) for the launch date, every transfer for wallet clusters); half a
     # history would quietly produce wrong numbers rather than missing ones.
-    candidates = [r["token_address"] for r in ctx.db.query(
+    # On part des jetons qui PESENT, pas de ceux qui existent. Mesure du 08/09/2026 : sur 400
+    # candidats tires de `pairs`, UN SEUL portait des donnees -- le scanner voit bien plus de pools
+    # qu il n en ingere, donc la purge fouillait des coquilles vides et ne liberait rien pendant que
+    # la base atteignait 22,2 Go. Les huit jetons les plus lourds totalisent a eux seuls 5,1 des
+    # 16,4 millions de transferts, dont un a 1,5 million.
+    #
+    # Le regroupement coute 23 s sur l index (chain_id, token_address) -- acceptable pour un travail
+    # qui tourne toutes les deux heures, et sans commune mesure avec ce qu il libere. Les gardes qui
+    # suivent restent les memes : rien n est supprime tant qu une ligne de portefeuille, une
+    # position ouverte, un candidat vivant ou un echange recent pointe vers le jeton.
+    lourds = [r["token_address"] for r in ctx.db.query(
+        "SELECT token_address, COUNT(*) n FROM transfers WHERE chain_id=? AND token_address IS NOT NULL "
+        "GROUP BY token_address ORDER BY n DESC LIMIT ?",
+        (ctx.chain_id, int(cfg.get("scan_tokens_per_prune", 4000))),
+    )]
+    vivants = {r["token_address"] for r in ctx.db.query(
+        "SELECT token_address FROM portfolio_positions WHERE chain_id=? AND active=1 "
+        "UNION SELECT token_address FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF') "
+        "UNION SELECT token_address FROM scanner_candidates WHERE chain_id=? "
+        "  AND status NOT IN ('REJECTED','DORMANT')",
+        (ctx.chain_id, ctx.chain_id, ctx.chain_id))}
+    candidates = []
+    for token in lourds:
+        if token in vivants:
+            continue
+        recent = ctx.db.scalar(
+            "SELECT MAX(s.ts) FROM swap_events s JOIN pairs p ON p.chain_id=s.chain_id AND p.pair_id=s.pair_id "
+            "WHERE s.chain_id=? AND p.token_address=?", (ctx.chain_id, token), 0) or 0
+        if int(recent) < dead_before:
+            candidates.append(token)
+        if len(candidates) >= int(cfg.get("max_tokens_per_prune", 60)) * 3:
+            break
+    stats["candidats_lourds"] = len(candidates)
+
+    if not candidates:
+        candidates = [r["token_address"] for r in ctx.db.query(
         # Start from `pairs` (113 k rows), never from `transfers` (13 M): a DISTINCT over the big
         # table with a correlated NOT EXISTS took over half an hour on 2026-09-07 and never
         # finished, where this answers in a tenth of a second.
@@ -56,15 +92,38 @@ def prune(ctx: IntelContext) -> dict[str, Any]:
             dead.append(token)
             if len(dead) >= limit:
                 break
+    # Par tranches, jamais d un bloc. Le jeton le plus lourd porte 1,5 million de transferts : les
+    # effacer en une transaction tiendrait le verrou d ecriture plusieurs minutes, et le carnet a
+    # besoin de ce meme verrou pour enregistrer une vente. Une tranche se valide en une fraction de
+    # seconde et rend la main entre deux. Si le processus meurt au milieu d un jeton il reste une
+    # histoire partielle -- sans consequence, puisque seul un jeton mort arrive ici et que plus rien
+    # ne le lit; la purge suivante le retrouvera en tete de liste et finira le travail.
+    # Et borne dans le temps, pas en nombre de jetons : la purge tient le verrou d ingestion pendant
+    # qu elle travaille, donc ce qui compte est la duree, pas le compte. Un budget rend le cycle
+    # previsible quel que soit le poids des jetons tires -- ce qui n est pas fini ce tour-ci le sera
+    # au suivant, les plus lourds restant en tete de liste.
+    TRANCHE = 20_000
+    budget = float(cfg.get("prune_budget_seconds", 180))
+    debut = time.monotonic()
     for token in dead:
-        with ctx.db.transaction():
-            for t in RAW_TABLES:
-                col = "token_address" if t != "swap_events" and t != "liquidity_events" else None
-                if col:
-                    n = ctx.db.execute(f"DELETE FROM {t} WHERE chain_id=? AND token_address=?", (ctx.chain_id, token)).rowcount
-                else:
-                    n = ctx.db.execute(f"DELETE FROM {t} WHERE chain_id=? AND pair_id IN (SELECT pair_id FROM pairs WHERE chain_id=? AND token_address=?)", (ctx.chain_id, ctx.chain_id, token)).rowcount
+        if time.monotonic() - debut > budget:
+            stats["budget_atteint"] = True
+            break
+        for t in RAW_TABLES:
+            if t in ("swap_events", "liquidity_events"):
+                sel = (f"SELECT rowid FROM {t} WHERE chain_id=? AND pair_id IN "
+                       f"(SELECT pair_id FROM pairs WHERE chain_id=? AND token_address=?) LIMIT {TRANCHE}")
+                args: tuple = (ctx.chain_id, ctx.chain_id, token)
+            else:
+                sel = f"SELECT rowid FROM {t} WHERE chain_id=? AND token_address=? LIMIT {TRANCHE}"
+                args = (ctx.chain_id, token)
+            while True:
+                with ctx.db.transaction():
+                    n = ctx.db.execute(f"DELETE FROM {t} WHERE rowid IN ({sel})", args).rowcount
                 stats[t] = stats.get(t, 0) + n
+                if n < TRANCHE:
+                    break
+        with ctx.db.transaction():
             for name in ("transfers", "pools", "trades", "transfers_back", "transfers_fwd_start", "transfers_rebuilt"):
                 ctx.db.execute("DELETE FROM sync_cursors WHERE name=?", (f"{name}:{token}",))
         stats["tokens"] += 1
