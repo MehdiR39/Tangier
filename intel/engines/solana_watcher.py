@@ -80,6 +80,7 @@ class SolanaWatcher:
                 bought += 1
         self._forget()
         await self._book(rpc)
+        await self._positions(rpc, str(self._cfg("mode", "dry_run")))
         return {"status": "ok", "seen": len(pairs), "judged": judged, "decisions": bought}
 
     async def _discover(self) -> list[dict[str, Any]]:
@@ -203,6 +204,7 @@ class SolanaWatcher:
                                         max_impact_pct=float(self._cfg("max_impact_pct", 10.0)))
             tx_b64 = res.pop("tx", None)
             status = res.pop("status")
+            route = res.pop("route", None)          # journal only: `executions` has no such column
             row = {"ts": now_ts(), "chain_id": self.ctx.chain_id, "decision_id": d["id"],
                    "token_address": d["token_address"], "label": d["label"], "kind": "BUY",
                    "size_eur": d["size_eur"], "mode": mode, "status": status,
@@ -217,10 +219,95 @@ class SolanaWatcher:
                     log.warning("solana ordre non envoye %s : %s", d["label"], str(exc)[:160])
             elif status == "BUILT":
                 log.info("solana ordre construit a blanc %s · %s · impact %.2f %%", d["label"],
-                         res.get("route"), float(res.get("slippage_pct") or 0))
+                         route, float(res.get("slippage_pct") or 0))
             else:
                 log.info("solana ordre refuse %s : %s", d["label"], res.get("refused_reason"))
             db.insert("executions", row)
+
+    async def _positions(self, rpc: str, mode: str) -> None:
+        """Open a line on a confirmed buy, then close it on the rule: x2, or the holding window.
+
+        Chosen on 235 launches observed over 12 h (intel/research/solana_backtest.py). The holding
+        sweep has a clear peak at a quarter of an hour, and it wins on all four counts at once:
+        +1.06 EUR per ticket, 61 % winners, near-identical on both halves of the period (+1.08 then
+        +1.04), and 80 % of the profit survives removing the five best trades. Past it the decay is
+        steady -- +0.64 at an hour, +0.37 at two, robustness down to 42 % -- which says what is left
+        to gain out there sits in a few rare trades. Below it, T+5 returns only +0.72.
+
+        The opposite of the other chain, where holding past ten minutes destroyed the book: there
+        the liquidity is pulled within minutes, here a bonding curve cannot be withdrawn and the
+        price is given time to move.
+        """
+        db = self.ctx.db
+        accepted = ("BUILT",) if mode != "live" else ("SUBMITTED", "CONFIRMED")
+        ph = ",".join("?" * len(accepted))
+        now = now_ts()
+        for r in db.query(
+                "SELECT d.id, d.token_address, d.label, d.price, d.size_eur, e.ts ets FROM decisions d "
+                "JOIN executions e ON e.chain_id=d.chain_id AND e.decision_id=d.id "
+                f"WHERE d.chain_id=? AND d.model_version=? AND d.kind='BUY' AND d.ts>? AND e.status IN ({ph}) "
+                "AND NOT EXISTS (SELECT 1 FROM positions p WHERE p.chain_id=d.chain_id AND p.notes LIKE ('sol:' || d.id || ' %'))",
+                (self.ctx.chain_id, MODEL_VERSION, now - 6 * 3600, *accepted)):
+            db.insert("positions", {
+                "chain_id": self.ctx.chain_id, "token_address": r["token_address"], "label": r["label"],
+                "kind": "VIRTUAL" if mode != "live" else "PORTFOLIO", "opened_ts": int(r["ets"] or now),
+                "entry_price": r["price"], "size_eur": r["size_eur"], "status": "OPEN", "peak_price": r["price"],
+                "model_version": MODEL_VERSION, "notes": f"sol:{r['id']} mint:{r['token_address']}",
+            })
+            log.info("solana position ouverte %s · %.0f EUR", r["label"], float(r["size_eur"] or 0))
+
+        tp = float(self._cfg("take_profit_multiple", 2.0))
+        hold = int(self._cfg("max_hold_seconds", 900))
+        for p in db.query("SELECT * FROM positions WHERE chain_id=? AND model_version=? AND status='OPEN'",
+                          (self.ctx.chain_id, MODEL_VERSION)):
+            mint = dict(kv.split(":", 1) for kv in (p["notes"] or "").split() if ":" in kv).get("mint")
+            if not mint:
+                continue
+            px = await self._price(mint)
+            mult = (px / float(p["entry_price"])) if (px and p["entry_price"]) else None
+            age = now_ts() - int(p["opened_ts"])
+            if not (mult is not None and mult >= tp) and age < hold:
+                continue
+            amount = 0
+            if mode == "live":
+                try:
+                    amount = await sol.token_balance(self.client, rpc, sol.signer_address() or "", mint)
+                except Exception as exc:  # noqa: BLE001
+                    log.info("solana: solde de %s illisible (%s), vente reportee", p["label"], str(exc)[:60])
+                    continue
+                if amount <= 0:
+                    db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_reason=?, realized_eur=0 WHERE id=?",
+                               (now_ts(), "aucun jeton en portefeuille", p["id"]))
+                    continue
+            res = await sol.prepare_sell(self.client, mint=mint, amount=amount or 1,
+                                         slippage_pct=float(self._cfg("sell_slippage_pct", 25.0)))
+            tx = res.pop("tx", None)
+            res.pop("route", None)
+            row = {"ts": now_ts(), "chain_id": self.ctx.chain_id, "token_address": mint, "label": p["label"],
+                   "kind": "SELL_ALL", "size_eur": p["size_eur"], "mode": mode, "status": res.pop("status"),
+                   "model_version": MODEL_VERSION, **res}
+            if row["status"] == "BUILT" and mode == "live" and tx:
+                try:
+                    row.update({"status": "SUBMITTED", "tx_hash": await sol.send(self.client, rpc, sol.sign(tx))})
+                except sol.SolanaRefused as exc:
+                    row.update({"status": "FAILED", "error": str(exc)[:400]})
+            db.insert("executions", row)
+            if row["status"] in ("SUBMITTED", "CONFIRMED") or (mode != "live" and row["status"] == "BUILT"):
+                realized = (float(p["size_eur"]) * (mult - 1.0)) if (mult is not None and p["size_eur"]) else None
+                db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_price=?, close_reason=?, realized_eur=? WHERE id=?",
+                           (now_ts(), px, f"vendu x{mult:.2f}" if mult is not None else "vendu", realized, p["id"]))
+                log.info("solana VENTE %s · %s · %s", p["label"],
+                         f"x{mult:.2f}" if mult is not None else "multiple inconnu",
+                         "objectif atteint" if (mult is not None and mult >= tp) else f"T+{age // 60} min")
+
+    async def _price(self, mint: str) -> float | None:
+        try:
+            r = await self.client.get(PAIRS_URL + mint, timeout=20)
+            pairs = (r.json() or {}).get("pairs") or []
+            best = max((p for p in pairs if p.get("priceUsd")), key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0), default=None)
+            return float(best["priceUsd"]) if best else None
+        except Exception:  # noqa: BLE001
+            return None
 
     def _forget(self) -> None:
         cutoff = now_ts() - 6 * 3600

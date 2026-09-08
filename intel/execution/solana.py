@@ -177,6 +177,38 @@ async def sol_balance(client: httpx.AsyncClient, rpc_url: str, owner: str) -> in
     return int(((r.json() or {}).get("result") or {}).get("value") or 0)
 
 
+async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, slippage_pct: float,
+                       max_impact_pct: float = 100.0) -> dict[str, Any]:
+    """Sell what the wallet holds, sized from the chain and never from the book.
+
+    Leaving is not entering: the impact ceiling that protects a purchase from overpaying would,
+    applied here, refuse to let go of a bag whose only alternative is zero. It stays wide open by
+    default and exists only to catch a pool with nothing left in it.
+    """
+    if amount <= 0:
+        return {"status": "REFUSED", "refused_reason": "rien a vendre"}
+    try:
+        q = await quote(client, input_mint=mint, output_mint=SOL_MINT, amount=amount,
+                        slippage_bps=int(slippage_pct * 100))
+    except SolanaRefused as exc:
+        return {"status": "REFUSED", "refused_reason": str(exc)}
+    if not q.usable:
+        return {"status": "REFUSED", "refused_reason": "la chaine ne rend rien pour cette vente"}
+    if q.price_impact_pct > max_impact_pct:
+        return {"status": "REFUSED", "refused_reason": f"impact de sortie {q.price_impact_pct:.1f} % > {max_impact_pct:.0f} %"}
+    owner = signer_address()
+    if owner is None:
+        return {"status": "BUILT", "amount_in": str(amount), "quoted_amount_out": str(q.out_amount),
+                "slippage_pct": q.price_impact_pct, "route": q.route,
+                "refused_reason": "aucune cle : transaction non assemblee (a blanc)"}
+    try:
+        tx = await build_swap(client, q, owner)
+    except SolanaRefused as exc:
+        return {"status": "REFUSED", "refused_reason": str(exc)}
+    return {"status": "BUILT", "amount_in": str(amount), "quoted_amount_out": str(q.out_amount),
+            "slippage_pct": q.price_impact_pct, "route": q.route, "tx": tx}
+
+
 async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, sol_eur: float,
                       slippage_pct: float, max_impact_pct: float) -> dict[str, Any]:
     """Everything but the signature: what the journal records, in dry run and live alike."""

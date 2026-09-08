@@ -149,9 +149,27 @@ execution:
 # SOLANA_PRIVATE_KEY, et mode: live ci-dessous. Aucun portefeuille Solana n existe a ce jour.
 solana:
   enabled: true
+  # Reglage tire de 235 lancements observes sur 12 h (intel/research/solana_backtest.py).
+  # Le signal : les echanges par acheteur dans la premiere minute. Sous 15, on gagne ; au-dessus,
+  # on perd, et c est la que se trouve la moitie des lancements. Le plateau entre 5 et 15 rend le
+  # seuil peu sensible a sa valeur exacte, ce qui vaut mieux qu un pic.
+  #   <= 5 : +0,67 EUR/ticket · <= 10 : +0,69 · <= 15 : +0,68 · <= 25 : +0,53 · <= 40 : +0,42
+  # Sortie x2 ou T+15. Le balayage des durees a un sommet net a un quart d heure, et il gagne sur
+  # les quatre criteres a la fois -- rendement +1,06 EUR/ticket, 61 % de gagnants, quasi identique
+  # sur les deux moities de la periode (+1,08 puis +1,04), et 80 % du gain subsiste apres retrait
+  # des cinq meilleures lignes. Au-dela la degradation est reguliere : +0,64 a une heure, +0,37 a
+  # deux heures, et la robustesse tombe a 42 %, signe que le gain restant tient dans quelques coups
+  # rares. En deca, T+5 ne rend que +0,72. Les donnees couvrent ces durees : 211 lignes sur 237
+  # sont suivies au moins une heure apres l entree.
+  # Ecarter pump.fun ne change rien (+0,68 dans les deux cas) : filtre inutile, on le garde.
   mode: dry_run
   size_eur: 5.0
-  min_buyers: 0
-  max_trades_per_buyer: 0
-  min_liquidity_usd: 5000
-  max_per_hour: 10
+  min_buyers: 5
+  max_trades_per_buyer: 15
+  min_liquidity_usd: 0
+  max_per_hour: 6
+  take_profit_multiple: 2.0
+  max_hold_seconds: 900
+  sell_slippage_pct: 25.0
+  buy_budget: 20
+  budget_since_ts: 1788857275
