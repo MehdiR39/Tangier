@@ -586,6 +586,23 @@ premier jugement et jetait celui qui déclenchait l'achat. Trois champs ajoutés
 sur des données, notamment : **une chute récente prédit-elle l'échec, ou est-elle au contraire un
 point d'entrée ?** NASFROG, achetée après −96 %, est ressortie à ×1,41.
 
+
+**Première lecture, 09/09 02h30 — les garde-fous ne coûtent rien.** Sur **291 jugements**
+enregistrés depuis leur mise en place :
+
+| verdict | n |
+|---|---|
+| trop peu d'acheteurs | 241 |
+| trop dense | 27 |
+| capitalisation trop grosse | 13 |
+| **acheté** | **10** |
+| première minute hors de portée | **0** |
+| jeton effondré | **0** |
+
+Les deux refus ajoutés hier soir n'ont écarté aucun lancement. Le budget de 12 pages couvre
+désormais tous les pools rencontrés, et aucun mint n'est revenu par un second pool à prix cassé.
+Ce sont des filets, pas des filtres : ils ne se déclenchent que sur le cas pathologique, et ils ne
+consomment aucune occasion. Rythme observé : 73 lancements jugés par heure, 2,5 achats.
 ### 3.27 — Bilan réel des deux carnets au 08/09 23h, et une erreur de lecture
 **Déclencheur** : contrôle de nuit. Première lecture alarmante — « Robinhood : 84 tickets, 10 % de
 gagnants, 80 % d'invendables, −339 € ». **Cette lecture était fausse.**
