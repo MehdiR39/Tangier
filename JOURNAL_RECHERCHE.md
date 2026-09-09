@@ -1348,6 +1348,29 @@ les frais de priorité (§3.40) visent précisément ce trou, et rien ici ne les
 l'appariement avec nos positions doit se faire sur le pair_id que le moteur a réellement tradé —
 il est déjà écrit dans les notes de chaque position (`pool:...`). Tant que ce n'est pas fait, aucune
 comparaison entre les courbes du collecteur et nos résultats réels n'est fiable.
+
+### 3.44 — Suivre les 58 lancements jugés par heure, pas seulement les 0,8 achetés, 2026-09-09 12h30
+**Le vrai blocage, nommé.** Le carnet juge 58 lancements par heure et n'en achète que 0,8 : on
+n'apprend donc que sur **1,4 %** de ce qu'on voit. C'est pour ça que chaque question de seuil reste
+sans réponse — 13 lignes exploitables pour trancher un plancher d'acheteurs, 20 pour une
+combinaison. Ce n'est pas le choix des seuils qui nous fait tourner en rond, c'est la taille de
+l'échantillon.
+
+**Ce qui est posé** : `solana_suivi` enregistre le prix, la liquidité et la capitalisation de **tout
+lancement jugé**, acheté ou non, à chaque cycle pendant 30 minutes après le jugement. Sur le
+**pool exact** qui a été jugé — l'appariement se fait sur `pairAddress`, et un autre pool du même
+jeton est ignoré, ce qui règle le défaut de §3.43 à la source.
+
+**Coût** : quelques appels DexScreener par cycle, l'API rendant 25 jetons à la fois. Rien de
+nouveau, on l'interroge déjà.
+
+**Ce que ça débloque** : d'ici quelques heures, plusieurs centaines de lancements avec leur courbe
+de prix réelle. On pourra rejouer n'importe quelle règle d'entrée — plancher d'acheteurs, densité,
+capitalisation, ratio, et leurs combinaisons — sur des centaines de lignes au lieu de vingt, **sans
+engager un euro**. Les trois réglages changés aujourd'hui (plancher 50, capitalisation 25-50 k,
+densité 600) pourront être jugés sur des données au lieu de l'être sur une intuition.
+
+Premier passage vérifié : 21 relevés sur 21 pools.
 ---
 
 ## 4. Pistes ouvertes, non testées

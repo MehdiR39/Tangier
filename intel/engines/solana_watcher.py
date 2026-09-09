@@ -113,7 +113,9 @@ class SolanaWatcher:
                 bought += 1
         self._forget()
         await self.run_carnet()
-        return {"status": "ok", "seen": len(pairs), "judged": judged, "decisions": bought}
+        suivis = await self._suivre()
+        return {"status": "ok", "seen": len(pairs), "judged": judged, "decisions": bought,
+                "suivis": suivis}
 
     async def run_carnet(self) -> dict[str, Any]:
         """Executer les decisions et surveiller les positions ouvertes. Boucle rapide, a part.
@@ -187,6 +189,69 @@ class SolanaWatcher:
             r = await self.client.get(PAIRS_URL + ",".join(tokens[i: i + 25]), timeout=25)
             out.extend((r.json() or {}).get("pairs") or [])
         return [p for p in out if p.get("chainId") == "solana"]
+
+    async def _suivre(self) -> int:
+        """Suivre le prix de TOUT lancement juge, achete ou non, pendant une demi-heure.
+
+        Le carnet juge 58 lancements par heure et n en achete que 0,8 : on n apprend donc que sur
+        1,4 % de ce qu on voit, et chaque question -- ce seuil est-il bon, cette tranche paie-t-elle
+        -- reste sans reponse faute d echantillon. C est la vraie raison pour laquelle on tourne en
+        rond depuis deux jours, pas le choix des seuils.
+
+        Ce suivi coute presque rien : DexScreener rend jusqu a 25 jetons par appel, et on interroge
+        les memes pools qu on vient de juger. Il donne en retour le resultat de CHAQUE lancement
+        juge, sur le POOL exact qu on a juge -- ce que le collecteur de recherche ne peut pas faire,
+        puisqu il suit un pool par jeton et pas forcement le notre (§3.43).
+
+        Une fois quelques heures accumulees, on peut rejouer n importe quelle regle d entree sur des
+        centaines de lancements au lieu de vingt, et savoir ce que chaque seuil coute et rapporte
+        sans engager un euro.
+        """
+        db = self.ctx.db
+        try:
+            db.execute("CREATE TABLE IF NOT EXISTS solana_suivi("
+                       "  pair_id TEXT NOT NULL, ts INTEGER NOT NULL, age_min REAL,"
+                       "  price_usd REAL, liquidity_usd REAL, market_cap REAL,"
+                       "  PRIMARY KEY (pair_id, ts))")
+        except Exception as exc:  # noqa: BLE001
+            log.info("solana: table de suivi indisponible (%s)", str(exc)[:80])
+            return 0
+        fenetre = int(self._cfg("suivi_minutes", 30) or 0)
+        if fenetre <= 0:
+            return 0
+        now = now_ts()
+        aviser = db.query(
+            "SELECT pair_id, mint, ts FROM solana_judgements WHERE ts > ? GROUP BY pair_id",
+            (now - fenetre * 60,))
+        if not aviser:
+            return 0
+        par_mint = {r["mint"]: r for r in aviser if r["mint"]}
+        vus = 0
+        mints = list(par_mint)
+        for i in range(0, len(mints), 25):
+            try:
+                r = await self.client.get(PAIRS_URL + ",".join(mints[i: i + 25]), timeout=25)
+                paires = (r.json() or {}).get("pairs") or []
+            except Exception:  # noqa: BLE001
+                continue
+            for p in paires:
+                pid = p.get("pairAddress")
+                ligne = next((x for x in aviser if x["pair_id"] == pid), None)
+                if ligne is None:
+                    continue                      # un autre pool du meme jeton : ce n est pas le notre
+                cree = p.get("pairCreatedAt") or 0
+                try:
+                    db.execute(
+                        "INSERT OR IGNORE INTO solana_suivi(pair_id, ts, age_min, price_usd,"
+                        " liquidity_usd, market_cap) VALUES(?,?,?,?,?,?)",
+                        (pid, now, (now - cree / 1000.0) / 60.0 if cree else None,
+                         float(p.get("priceUsd") or 0) or None,
+                         float((p.get("liquidity") or {}).get("usd") or 0) or None,
+                         float(p.get("marketCap") or p.get("fdv") or 0) or None))
+                    vus += 1
+                except Exception:  # noqa: BLE001
+                    pass
+        return vus
 
     async def _first_minute(self, rpc: str, pair_id: str, created_ms: int) -> tuple[int, int]:
         """(trades, distinct payers) in the pool's first sixty seconds."""

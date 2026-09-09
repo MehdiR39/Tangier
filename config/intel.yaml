@@ -205,6 +205,14 @@ solana:
   # un stop de perte c est une eternite : AMDuck a un sommet a x1,11 et une sortie a x0,06 avec un
   # stop cense couper a x0,7. Journal §3.34.
   book_poll_seconds: 5
+  # Suivi du prix de TOUT lancement juge, achete ou non, pendant N minutes apres le jugement.
+  # Le carnet juge 58 lancements par heure et n en achete que 0,8 : sans ce suivi on n apprend que
+  # sur 1,4 % de ce qu on voit, et chaque question de seuil reste sans reponse faute d echantillon.
+  # Avec, on rejoue n importe quelle regle d entree sur des centaines de lancements au lieu de
+  # vingt, sur le POOL exact qu on a juge -- ce que le collecteur de recherche ne peut pas faire
+  # puisqu il suit un pool par jeton et pas forcement le notre (§3.43). Coute quelques appels
+  # DexScreener par cycle, qui rend 25 jetons a la fois. 0 desactive. Journal §3.44.
+  suivi_minutes: 30
   # Plancher releve de 5 a 125 le 2026-09-08, decide avec l operateur. Mesure sur les 254
   # lancements observes : +0,45 EUR par euro engage et 73 % de gagnants au-dessus de 125 acheteurs
   # distincts, contre +0,24 et 65 % au-dessus de 5. Trois verifications avant d y toucher :
