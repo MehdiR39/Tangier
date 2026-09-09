@@ -357,6 +357,18 @@ solana:
   slippage_pct: 15.0
   max_impact_pct: 6.0
   sell_slippage_pct: 25.0
+  # Frais de priorite, en lamports (1 000 000 = 0,001 SOL, environ 0,10 EUR).
+  # Ajoute le 09/09 : les transactions partaient SANS frais de priorite, donc elles attendaient leur
+  # tour d inclusion, et pendant cette attente le prix bougeait. Jupiter comparait alors le montant
+  # recu au seuil calcule a la cotation, ne le trouvait plus, et annulait en erreur 0x1771 -- quatre
+  # ordres sur six le 09/09 (Jacob, wcat, PHOUSE deux fois) avec des cotations pourtant bonnes,
+  # entre 1,7 et 2 % d impact. Payer pour atterrir vite coute moins cher que de ne pas atterrir :
+  # 0,10 EUR contre un ticket de 20 EUR qui ne se place pas.
+  # Vaut aussi pour la VENTE, et la ca compte davantage : le stop de perte ne sert a rien si l ordre
+  # met dix secondes a etre inclus pendant que le jeton s effondre (§3.34).
+  # Critere ecrit d avance : sur les dix prochaines tentatives, le taux d echec doit tomber sous
+  # 20 %. Mettre 0 retire les frais de priorite. Journal §3.40.
+  priority_fee_lamports: 1000000
   # Plus de plafond de tickets : il arretait aussi une serie gagnante, et de toute facon aucune
   # ligne de code ne le lisait -- il ne protegeait rien. Remplace par une limite de PERTE, qui ne
   # coupe que si ca perd vraiment et laisse courir tant que ca marche. Mettre 0 pour tout enlever.

@@ -1208,6 +1208,36 @@ retour à 75.
 coût est mesuré et énorme, et le bénéfice n'est pas démontré. Et il y a un second effet qui compte
 autant : **à 0,17 ticket par heure il faut une semaine pour réunir 30 lignes, donc on ne peut rien
 apprendre.** Multiplier le rythme est aussi ce qui rend les mesures suivantes possibles.
+
+### 3.40 — Les ordres partaient sans frais de priorité, 2026-09-09 11h45
+**Suite de §3.36.** Quatre ordres sur six échouaient en erreur Jupiter `0x1771`, avec des cotations
+pourtant bonnes — impact entre 1,7 et 2 %, très loin du plafond. J'avais ouvert la tolérance de
+dérive de 5 à 15 % : **PHOUSE a échoué à nouveau juste après**, donc l'explication était incomplète.
+
+**Ce qui manquait** : `build_swap` envoyait la transaction **sans aucun frais de priorité**. Sur
+Solana, une transaction sans priorité attend son tour d'inclusion — et pendant cette attente le prix
+bouge. Jupiter compare alors le montant reçu au seuil calculé lors de la cotation, ne le trouve
+plus, et annule. Ce n'est ni le prix ni la tolérance : c'est le **temps d'atterrissage**.
+
+**Changement** : `priority_fee_lamports: 1000000`, soit 0,001 SOL ou environ 0,10 €, appliqué à
+l'achat **et à la vente**. Payer pour atterrir vite coûte moins cher que de ne pas atterrir — 0,10 €
+contre un ticket de 20 € qui ne se place pas.
+
+**Et ça compte encore plus à la vente qu'à l'achat.** Un stop de perte ne sert à rien si l'ordre met
+dix secondes à être inclus pendant que le jeton s'effondre. §3.34 montrait que tout le déficit du
+carnet vient de sept effondrements quasi totaux, dont AMDuck sortie à ×0,06 avec un stop censé
+couper à ×0,7 ; la boucle rapide à 5 secondes a réglé la moitié du problème — voir le prix plus tôt
+— et les frais de priorité règlent l'autre — sortir avant que le prix ne bouge encore.
+
+**Critère écrit d'avance** : sur les dix prochaines tentatives, le taux d'échec doit tomber sous
+20 % (il est à 67 % sur les six dernières). Si les échecs persistent, la cause est ailleurs et il
+faudra instrumenter le délai entre la cotation et le reçu, qui n'est mesuré nulle part aujourd'hui.
+
+**Ce que ça dit du reste** : trois de mes diagnostics de la matinée sur ces échecs étaient
+incomplets — d'abord la tolérance, puis le jeton qui s'effondre, enfin l'atterrissage. Les trois
+sont réels et se cumulent ; aucun n'était suffisant seul. C'est un rappel qu'un symptôme unique
+peut avoir plusieurs causes indépendantes, et qu'en corriger une ne prouve rien tant que le symptôme
+n'a pas disparu.
 ---
 
 ## 4. Pistes ouvertes, non testées

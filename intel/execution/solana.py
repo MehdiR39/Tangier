@@ -156,11 +156,25 @@ async def quote(client: httpx.AsyncClient, *, input_mint: str, output_mint: str,
                        route=" > ".join(str(x) for x in routes if x), raw=q)
 
 
-async def build_swap(client: httpx.AsyncClient, q: SolanaQuote, owner: str) -> str:
-    """The serialised transaction Jupiter has already assembled; only the signature is missing."""
-    r = await client.post(f"{JUPITER}/swap", json={"quoteResponse": q.raw, "userPublicKey": owner,
-                                                   "wrapAndUnwrapSol": True,
-                                                   "dynamicComputeUnitLimit": True}, timeout=25)
+async def build_swap(client: httpx.AsyncClient, q: SolanaQuote, owner: str,
+                     priorite_lamports: int = 0) -> str:
+    """The serialised transaction Jupiter has already assembled; only the signature is missing.
+
+    `priorite_lamports` achete une place dans les prochains blocs. Sans frais de priorite une
+    transaction Solana attend son tour, et pendant cette attente le prix bouge : Jupiter compare
+    alors le montant recu au seuil calcule lors de la cotation, ne le trouve plus, et annule en
+    erreur 0x1771. C est ce qui a fait echouer quatre ordres sur six le 09/09 -- Jacob, wcat,
+    PHOUSE deux fois -- avec des cotations pourtant bonnes, entre 1,7 et 2 % d impact (§3.36).
+    Payer pour atterrir vite est donc moins cher que ne pas atterrir : 0,001 SOL, soit environ
+    0,10 EUR, contre un ticket de 20 EUR qui ne se place pas.
+    """
+    corps: dict[str, Any] = {"quoteResponse": q.raw, "userPublicKey": owner,
+                             "wrapAndUnwrapSol": True, "dynamicComputeUnitLimit": True}
+    if priorite_lamports > 0:
+        corps["prioritizationFeeLamports"] = {
+            "priorityLevelWithMaxLamports": {"maxLamports": int(priorite_lamports),
+                                             "priorityLevel": "high", "global": False}}
+    r = await client.post(f"{JUPITER}/swap", json=corps, timeout=25)
     if r.status_code != 200:
         raise SolanaRefused(f"construction refusée ({r.status_code}): {r.text[:120]}")
     tx = (r.json() or {}).get("swapTransaction")
@@ -249,7 +263,7 @@ async def sol_balance(client: httpx.AsyncClient, rpc_url: str, owner: str) -> in
 
 
 async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, slippage_pct: float,
-                       max_impact_pct: float = 100.0) -> dict[str, Any]:
+                       max_impact_pct: float = 100.0, priorite_lamports: int = 0) -> dict[str, Any]:
     """Sell what the wallet holds, sized from the chain and never from the book.
 
     Leaving is not entering: the impact ceiling that protects a purchase from overpaying would,
@@ -273,7 +287,7 @@ async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, sli
                 "slippage_pct": q.price_impact_pct, "route": q.route,
                 "refused_reason": "aucune cle : transaction non assemblee (a blanc)"}
     try:
-        tx = await build_swap(client, q, owner)
+        tx = await build_swap(client, q, owner, priorite_lamports)
     except SolanaRefused as exc:
         return {"status": "REFUSED", "refused_reason": str(exc)}
     return {"status": "BUILT", "amount_in": str(amount), "quoted_amount_out": str(q.out_amount),
@@ -281,7 +295,7 @@ async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, sli
 
 
 async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, sol_eur: float,
-                      slippage_pct: float, max_impact_pct: float) -> dict[str, Any]:
+                      slippage_pct: float, max_impact_pct: float, priorite_lamports: int = 0) -> dict[str, Any]:
     """Everything but the signature: what the journal records, in dry run and live alike."""
     lamports = int(size_eur / max(sol_eur, 1e-9) * LAMPORTS)
     if lamports <= 0:
@@ -302,7 +316,7 @@ async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, 
                 "slippage_pct": q.price_impact_pct, "route": q.route,
                 "refused_reason": "aucune clé : transaction non assemblée (à blanc)"}
     try:
-        tx = await build_swap(client, q, owner)
+        tx = await build_swap(client, q, owner, priorite_lamports)
     except SolanaRefused as exc:
         return {"status": "REFUSED", "refused_reason": str(exc)}
     return {"status": "BUILT", "amount_in": str(lamports), "quoted_amount_out": str(q.out_amount),

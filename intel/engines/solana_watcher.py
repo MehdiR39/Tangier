@@ -522,7 +522,8 @@ class SolanaWatcher:
                 (self.ctx.chain_id, MODEL_VERSION)):
             res = await sol.prepare_buy(self.client, mint=d["token_address"], size_eur=float(d["size_eur"] or 5.0),
                                         sol_eur=sol_eur, slippage_pct=float(self._cfg("slippage_pct", 5.0)),
-                                        max_impact_pct=float(self._cfg("max_impact_pct", 10.0)))
+                                        max_impact_pct=float(self._cfg("max_impact_pct", 10.0)),
+                                        priorite_lamports=int(self._cfg("priority_fee_lamports", 0) or 0))
             tx_b64 = res.pop("tx", None)
             status = res.pop("status")
             route = res.pop("route", None)          # journal only: `executions` has no such column
@@ -712,7 +713,8 @@ class SolanaWatcher:
             if not touche_stop and not (mult is not None and mult >= tp) and age < hold:
                 continue
             res = await sol.prepare_sell(self.client, mint=mint, amount=amount or 1,
-                                         slippage_pct=float(self._cfg("sell_slippage_pct", 25.0)))
+                                         slippage_pct=float(self._cfg("sell_slippage_pct", 25.0)),
+                                         priorite_lamports=int(self._cfg("priority_fee_lamports", 0) or 0))
             tx = res.pop("tx", None)
             res.pop("route", None)
             # No decision id on a sale: the journal holds one execution per decision, and the
