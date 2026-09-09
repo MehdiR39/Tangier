@@ -97,7 +97,13 @@ decisions:
 # held out of sample). The execution section stays dry_run: nothing leaves the wallet until
 # execution.mode is deliberately set to live, separately.
 t1:
-  enabled: true
+  # ARRETE le 09/09 a 19h30. Le drapeau de pause pose a 11h42 a ete leve par une commande /resume
+  # sur Telegram a 14h13 ; l arret doit donc vivre dans la configuration, pas dans un drapeau que
+  # n importe quel message peut annuler. Ce carnet rendait -0,735 par euro sur 24 h, avec 24 tickets
+  # detruits sur 32 et 16 invendables -- la liquidite est retirable sur cette chaine, ce qui n est
+  # pas le cas des jetons Solana issus de pump.fun (0 invendable sur 30). Aucune position reelle n
+  # est ouverte au moment de l arret. Remettre true pour reprendre. Journal §3.42.
+  enabled: false
   # Experience close le 08/09/2026 : dix tickets de 5 EUR pour savoir si la confirmation en
   # deuxieme minute fait tomber le taux d invendables sous 40 %. Resultat sur les 8 tickets reels
   # joues depuis 12h06 : 3 invendables, soit 38 %, pour -15,70 EUR. Le critere est tenu de justesse
