@@ -50,7 +50,13 @@ CREATE TABLE IF NOT EXISTS sol_first_min(
     -- number separates cleanly (under 100 holders the price falls, over 100 it rises), but that
     -- reading cannot be used to filter a buy: it is not knowable when the buy is made. Only a
     -- count taken at T+1 can, and it will be far lower, so the threshold has to be learnt here.
-    holders INTEGER, top10_share REAL
+    holders INTEGER, top10_share REAL,
+    -- Budget de remontee utilise pour cette mesure, en pages de 1 000 signatures. Il vaut 6 pour
+    -- tout ce qui a ete collecte avant le 09/09/2026 et 12 depuis. Ce n est pas un detail de
+    -- reglage : a 6 pages la remontee n atteignait pas la creation des pools denses et le compte
+    -- d echanges etait trop PETIT, donc les deux lots ne sont PAS comparables. Toute calibration
+    -- qui melange les deux echelles produira un seuil faux (§3.35).
+    pages INTEGER
 );
 """
 
@@ -130,7 +136,19 @@ async def first_minute(client: httpx.AsyncClient, rpc_url: str, pair_id: str, cr
     start = created_ms // 1000
     sigs: list[dict[str, Any]] = []
     before = None
-    for _ in range(6):                                     # 6 x 1000 signatures is far past a minute
+    # « 6 x 1000 signatures is far past a minute » : c etait faux, et ca a coute cher. Un pool dense
+    # depasse 6 000 transactions bien avant qu on le mesure, la remontee n atteint alors jamais sa
+    # creation, et la fenetre retenue n est pas la premiere minute mais la fin de la periode
+    # observee -- un compte trop PETIT, donc dans le sens qui fait passer un jeton (§3.25).
+    #
+    # Le moteur a ete corrige le 08/09, pas ce collecteur, et les deux se sont mis a parler des
+    # echelles differentes : mediane de 786 echanges a 1 060 et troisieme quartile de 3 219 a 4 370
+    # sur la meme population. Le plafond de densite, calibre ici et applique la-bas, est devenu bien
+    # plus severe qu il n avait jamais ete -- 80 % des jeunes lancements a plus de 75 acheteurs
+    # ecartes, et le carnet a cesse d acheter pendant dix heures. Une calibration et une production
+    # qui ne mesurent pas la meme chose ne peuvent rien se dire (§3.35).
+    atteint = False
+    for _ in range(12):
         params: dict[str, Any] = {"limit": 1000}
         if before:
             params["before"] = before
@@ -141,12 +159,18 @@ async def first_minute(client: httpx.AsyncClient, rpc_url: str, pair_id: str, cr
         except Exception as exc:  # noqa: BLE001
             return {"err": str(exc)[:80]}
         if not got:
+            atteint = True                                 # historique epuise : on a bien tout vu
             break
         sigs.extend(got)
         oldest = got[-1].get("blockTime") or 0
         before = got[-1]["signature"]
         if oldest and oldest <= start:
+            atteint = True
             break
+    if not atteint:
+        # Une mesure qui ne sait pas ce qu elle n a pas vu ne vaut rien : on le DIT, on ne rend pas
+        # un chiffre. Une ligne d erreur s ecarte d une calibration ; un chiffre faux la fausse.
+        return {"err": "premiere minute hors de portee"}
     window = [g for g in sigs if g.get("blockTime") and start <= g["blockTime"] <= start + 60]
     if not window:
         return {"trades": 0, "uniq_payers": 0, "first_tx_ts": None, "err": None}
@@ -224,9 +248,17 @@ async def measure_pending(db: sqlite3.Connection, client: httpx.AsyncClient, rpc
         holders, share = (None, None)
         if r["token_address"]:
             holders, share = await holders_now(client, rpc_url, r["token_address"])
-        db.execute("INSERT OR REPLACE INTO sol_first_min VALUES(?,?,?,?,?,?,?,?)",
+        # Colonnes nommees, pas positionnelles : `pages` s ajoute apres coup sur les bases deja en
+        # service, et un INSERT positionnel se decalerait silencieusement.
+        try:
+            db.execute("ALTER TABLE sol_first_min ADD COLUMN pages INTEGER")
+        except Exception:  # noqa: BLE001
+            pass
+        db.execute("INSERT OR REPLACE INTO sol_first_min"
+                   "(pair_id, measured_ts, trades, uniq_payers, first_tx_ts, err, holders,"
+                   " top10_share, pages) VALUES(?,?,?,?,?,?,?,?,?)",
                    (r["pair_id"], int(time.time()), res.get("trades"), res.get("uniq_payers"),
-                    res.get("first_tx_ts"), res.get("err"), holders, share))
+                    res.get("first_tx_ts"), res.get("err"), holders, share, 12))
         n += 1
         await asyncio.sleep(0.5)
     db.commit()

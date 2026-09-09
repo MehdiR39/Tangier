@@ -1000,6 +1000,50 @@ carnet, qui sortait bien plus bas. AMDuck sortie à ×0,06 coûte −19,07 € ;
 **Angle mort assumé** : les relevés de recherche sont à la minute, donc une chute plus rapide qu'une
 minute est invisible. Deux cas sur dix-sept y tombent, et pour ceux-là la boucle à 5 s ne garantit
 rien. C'est le critère des vingt prochains tickets qui tranchera.
+
+### 3.35 — Le collecteur et le moteur ne mesuraient plus la même chose, 2026-09-09 10h
+**Symptôme** : dix heures sans un seul achat sur Solana.
+
+**Cause, et elle est de ma main.** Le 08/09 au soir j'ai corrigé la remontée d'historique dans le
+moteur (6 → 12 pages, refus si la création du pool n'est pas atteinte, §3.25). **Je ne l'ai pas
+appliquée au collecteur de recherche**, qui portait le même commentaire faux — « 6 x 1000 signatures
+is far past a minute ». Or c'est le collecteur qui produit les données sur lesquelles le plafond de
+densité a été calibré.
+
+| échanges dans la 1re minute, lancements ≥ 75 acheteurs | 6 pages | 12 pages |
+|---|---|---|
+| médiane | 786 | **1 060** |
+| 3ᵉ quartile | 3 219 | **4 370** |
+
+Un seuil réglé sur une échelle et appliqué sur l'autre : le plafond de 600 est devenu bien plus
+sévère qu'il ne l'avait jamais été. Chez les jeunes lancements (capitalisation < 50 k$) atteignant
+75 acheteurs, **80 % écartés pour densité**, et le taux de passage est tombé de 38 % à 5 %.
+
+**Corrigé** : le collecteur remonte 12 pages et rend une erreur explicite quand il n'atteint pas la
+création. Colonne `pages` ajoutée à `sol_first_min` — 6 pour tout ce qui précède le 09/09, 12
+ensuite. **Une calibration qui mélange les deux échelles produira un seuil faux.**
+
+**Recalibration, faite sur les données correctes plutôt qu'à l'estime.** En croisant les 93
+lancements mesurés par le moteur à la nouvelle échelle depuis le 08/09 22h avec les courbes de prix
+du collecteur, on obtient 50 lignes exploitables :
+
+| plafond de densité | n | gagnants | par euro | sans 10 % haut |
+|---|---|---|---|---|
+| **< 600 (production)** | 12 | 58 % | **−0,002** | −0,047 |
+| < 800 | 13 | 54 % | −0,026 | −0,069 |
+| < 1 000 | 13 | 54 % | −0,026 | −0,069 |
+| < 2 000 | 20 | 45 % | −0,029 | −0,086 |
+| < 5 000 | 33 | 36 % | −0,065 | −0,120 |
+| aucun plafond | 50 | 32 % | −0,084 | −0,148 |
+
+**Tout est négatif et desserrer aggrave à chaque cran, de façon monotone.** Le réglage en place est
+le moins mauvais. **On ne desserre pas** : le carnet n'achète pas parce qu'il n'y a rien qui vaille
+la peine, pas parce qu'il est cassé. Le prix de la correction, ce sont des occasions manquées ; le
+prix du desserrage serait du capital.
+
+**Ce que ça dit du régime** : sur cette fenêtre récente, la meilleure règle disponible est à
+l'équilibre (−0,002 par euro). C'est cohérent avec §3.34 et avec la métrique `sol_regime`. La
+question n'est plus « quel seuil » mais « le marché paie-t-il encore ».
 ---
 
 ## 4. Pistes ouvertes, non testées
