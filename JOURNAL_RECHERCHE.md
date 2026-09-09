@@ -1238,6 +1238,38 @@ incomplets — d'abord la tolérance, puis le jeton qui s'effondre, enfin l'atte
 sont réels et se cumulent ; aucun n'était suffisant seul. C'est un rappel qu'un symptôme unique
 peut avoir plusieurs causes indépendantes, et qu'en corriger une ne prouve rien tant que le symptôme
 n'a pas disparu.
+
+### 3.41 — Ce que l'abonnement Helius apporte vraiment, 2026-09-09 11h30
+**Question de l'opérateur** : « à quoi sert de payer 50 € par mois ». Mesuré sur 24 h.
+
+| | |
+|---|---|
+| lancements déposés par le flux de migrations | **806** |
+| dont aussi visibles chez DexScreener | 67 (**8 %**) |
+| lancements jugés | 649 — dont **596 venus du flux**, 53 de DexScreener seul |
+| **passages de la règle** | **10 — dont 9 du flux, et 6 que le flux SEUL a vus** |
+
+**Sans l'abonnement : 53 lancements jugés au lieu de 649, et 1 passage au lieu de 10.** Il multiplie
+les occasions par dix. Le rythme d'achat n'est donc pas limité par la découverte (§3.39) mais par ce
+qu'il y a à acheter derrière.
+
+**Et il paie une seconde chose, plus fondamentale** : le RPC indexé qui permet de compter les
+échanges et les acheteurs distincts de la première minute. Toute la règle d'entrée repose là-dessus,
+et ce comptage est hors de portée d'un nœud public à ce volume — sans lui il n'y a pas de stratégie,
+seulement des achats à l'aveugle.
+
+**Coût rapporté à l'usage** : 45 € par mois, soit 1,50 € par jour, contre environ 460 € engagés par
+jour en tickets. **0,3 %.** Ce n'est pas là que l'argent part.
+
+**Ce que la question a de juste malgré tout** : l'abonnement n'est pas le problème, mais il n'est
+utile que si les occasions rapportent. Sur la fenêtre récente elles sont à l'équilibre au mieux
+(§3.35). Si `sol_regime` confirme sur plusieurs jours que le marché ne paie plus, la décision n'est
+pas d'annuler l'abonnement — c'est d'arrêter d'acheter, et l'abonnement suivra.
+
+**Vérification du collecteur corrigé** (§3.35) : il produit désormais des mesures marquées `pages=12`
+— 19 à ce stade, dont **2 refusées** parce que la première minute reste hors de portée même à
+12 000 signatures, soit 10 %. Avant la correction, ces deux-là auraient rendu un compte trop petit
+et seraient passées sous le plafond de densité.
 ---
 
 ## 4. Pistes ouvertes, non testées
