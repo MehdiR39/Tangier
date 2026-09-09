@@ -7233,6 +7233,49 @@ pertes fonctionne ; c'est le seul progrès mesurable de la journée.
 environ 200 € viennent de défauts de ma main — BIPOLAR payé deux fois (−20 €), stop absent les
 premières heures (~−40 €), plafond relevé sur une mesure fausse (−24 €), Robinhood laissé sans
 surveillance la nuit (−119 €). Le marché explique le reste.
+
+### 3.56 — Recherche complète sur les courbes du suivi : un seul paramètre bouge, 2026-09-09 19h15
+**Exigence de l'opérateur** : chercher une stratégie gagnante, pas arrêter. Recherche refaite sur
+les **courbes du suivi** — que je n'avais jamais utilisées pour un balayage — avec **sorties
+confirmées par deux relevés** (§3.54) et le péage de 2 %.
+
+**504 combinaisons** de plancher d'acheteurs, ratio, bande de capitalisation, objectif, stop et
+durée, cherchées sur la première moitié de 159 lancements, jugées sur la seconde :
+
+| règle | moitié 1 | moitié 2 |
+|---|---|---|
+| ×2,0 / stop 0,8 / T+30 | +1,80 | **−2,42** |
+| ×2,0 / stop 0,7 / T+30 | +1,64 | −1,44 |
+| **×1,5 / stop 0,8 / T+30** | +0,52 | **+0,38** |
+| **×1,5 / stop 0,7 / T+30** | +0,36 | **+0,78** |
+| ×2,0 / stop 0,8 / T+15 | +1,16 | −2,72 |
+
+**Toutes les variantes à ×2,0 s'effondrent hors échantillon ; les deux seules positives des deux
+côtés sont à ×1,5 et T+30.** La seule différence avec la production est la durée.
+
+**Le paramètre isolé**, sur les 24 lancements à ≥ 75 acheteurs avec courbe :
+
+| durée | tout | moitié 1 | moitié 2 | sans le meilleur dixième |
+|---|---|---|---|---|
+| T+15 (production) | −0,20 | +0,22 | −0,63 | −1,08 |
+| **T+30** | **+0,53** | **+1,07** | **0,00** | **−0,27** |
+
+**T+30 fait mieux que T+15 sur les quatre colonnes.** Ce n'est pas une preuve — vingt-quatre lignes,
+et rien n'est positif au test de robustesse. Mais c'est le **seul paramètre du projet qui pointe dans
+la même direction sur toutes les mesures**, il ne coûte qu'un réglage, et il rejoint l'observation de
+l'opérateur sur les ventes prématurées.
+
+**Déployé** : `max_hold_seconds` 900 → 1800, achats rouverts (`min_buyers` 75), le reste inchangé —
+capitalisation 25-50 k, carnet toutes les 20 s.
+
+**Critère écrit d'avance** : sur les 20 prochains tickets, le résultat par euro doit être meilleur
+que les **−0,157** mesurés à T+15 cet après-midi. Sinon retour à 900.
+
+**Ce que la recherche dit aussi, et qu'il faut garder en tête** : sur 504 combinaisons testées avec
+la méthode honnête, seules deux survivent, sur dix lignes hors échantillon. Ce n'est pas un avantage
+démontré, c'est la moins mauvaise direction disponible. Le facteur limitant reste l'échantillon : le
+suivi ne tourne que depuis sept heures, et il ne compte que 24 lancements passant la règle
+d'entrée. Il en faudra dix fois plus pour trancher — et ils arrivent tout seuls, sans risquer un euro.
 ---
 - **Une sortie simulée se confirme sur deux relevés consécutifs.** 7 % des écarts entre deux points
   de prix dépassent 20 % ; un pic isolé crée un objectif atteint qui n'a jamais existé. C'est ce

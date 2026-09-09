@@ -273,7 +273,7 @@ solana:
   # trente refus de vente. Chaque tentative d achat consomme deux a trois cotations et prive les
   # ventes du quota restant. On coupe la source pour rendre les sorties possibles. Remettre 75 pour
   # rouvrir. Journal §3.55.
-  min_buyers: 99999
+  min_buyers: 75
   max_trades_per_buyer: 15
   # Plafond de densite, ajoute le 2026-09-08. La densite dit autre chose que le plancher
   # d acheteurs : a plancher egal, garder les lancements sous 600 echanges dans la premiere minute
@@ -375,7 +375,18 @@ solana:
   # +0,183 et la robustesse de +0,079 a +0,147. Seul reglage du jour sur lequel le backtest et le
   # reel concordent. Mettre 0 pour retirer le stop.
   stop_loss_multiple: 0.7
-  max_hold_seconds: 900
+  # PORTE DE 15 A 30 MINUTES le 09/09 a 19h15. C est le seul parametre du projet qui pointe dans la
+  # meme direction sur les QUATRE mesures, sur les courbes du suivi avec sorties confirmees par deux
+  # releves (§3.54) :
+  #             tout    moitie 1   moitie 2   sans le meilleur dixieme
+  #   T+15     -0,20     +0,22      -0,63          -1,08
+  #   T+30     +0,53     +1,07       0,00          -0,27
+  # Vingt-quatre lancements : ce n est pas une preuve, et rien n est positif au test de robustesse.
+  # Mais c est cohérent sur toutes les colonnes, ça ne coute qu un parametre, et ca rejoint l
+  # observation de l operateur sur les ventes trop precoces.
+  # CRITERE ECRIT D AVANCE : sur les 20 prochains tickets, le resultat par euro doit etre meilleur
+  # que les -0,157 mesures a T+15 cet apres-midi. Sinon retour a 900.
+  max_hold_seconds: 1800
   # Deux reglages distincts, et les confondre coute des achats.
   #   `max_impact_pct` refuse une COTATION trop mauvaise : c est le garde-fou de qualite.
   #   `slippage_pct` absorbe la DERIVE entre la cotation et l atterrissage de la transaction.
