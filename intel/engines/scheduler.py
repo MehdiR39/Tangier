@@ -56,7 +56,7 @@ class Runtime:
                     os._exit(0)
             except Exception as exc:  # noqa: BLE001
                 log.info("drapeau de redemarrage illisible (%s)", str(exc)[:80])
-        if name not in ("history", "digest", "backup", "retention", "t1", "telegram", "solana"):  # keep engine_runs meaningful: real cycles only (t1 and telegram poll every few seconds)
+        if name not in ("history", "digest", "backup", "retention", "t1", "telegram", "solana", "solana_carnet"):  # keep engine_runs meaningful: real cycles only (t1 and telegram poll every few seconds)
             try:
                 run_id = self.ctx.db.insert("engine_runs", {"engine": name, "started_ts": started, "finished_ts": None, "ok": None, "tokens_processed": None, "alerts_sent": None, "error": None, "stats_json": None})
             except Exception as exc:  # noqa: BLE001
@@ -91,6 +91,8 @@ class Runtime:
             or (name == "t1" and not (stats or {}).get("decisions"))     # a 5-second poll only speaks when it buys
             or (name == "telegram" and not (stats or {}).get("answered"))  # and the command loop only when it answers
             or (name == "solana" and not (stats or {}).get("judged"))      # and the solana loop only when it judges
+            or name == "solana_carnet"   # la tenue du carnet passe toutes les 5 s : elle ne parle
+                                         # que par ses propres lignes (achat, vente, reconciliation)
         )
         if not quiet:
             log.info("%s cycle done ok=%s %.1fs stats=%s", name, ok, time.monotonic() - t0, json.dumps(slim, default=str)[:600])
@@ -246,6 +248,11 @@ class Runtime:
             self.solana = SolanaWatcher(self.ctx)
             tasks.append(asyncio.create_task(self._loop("solana", self.solana.run_cycle,
                                                         int(self.ctx.config.get("solana.poll_seconds", 30)))))
+            # La tenue du carnet a sa propre boucle, bien plus rapide que la decouverte. Elle etait
+            # la queue de `run_cycle` et ne passait donc qu apres le jugement des lancements, soit
+            # toutes les 35 a 95 s -- une eternite pour un stop de perte. Voir SolanaWatcher.run_carnet.
+            tasks.append(asyncio.create_task(self._loop("solana_carnet", self.solana.run_carnet,
+                                                        int(self.ctx.config.get("solana.book_poll_seconds", 5)))))
             if self.ctx.config.get("solana.stream.enabled", False):
                 # Ecoute des creations de pool en direct, a cote de DexScreener et non a sa place :
                 # la source promotionnelle ne montre que 4,3 des ~20 graduations horaires. Elle

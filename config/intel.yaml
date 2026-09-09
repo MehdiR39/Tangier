@@ -199,6 +199,12 @@ solana:
   # soit quatre tickets simultanes, d ou le plafond de positions ouvertes.
   size_eur: 20.0
   max_open_positions: 4
+  # Cadence de la boucle qui tient le carnet : executer les decisions et surveiller les positions.
+  # SEPAREE de poll_seconds, qui regle la decouverte. Avant le 09/09 les deux etaient confondues et
+  # la surveillance ne passait qu apres le jugement des lancements, soit toutes les 35 a 95 s. Pour
+  # un stop de perte c est une eternite : AMDuck a un sommet a x1,11 et une sortie a x0,06 avec un
+  # stop cense couper a x0,7. Journal §3.34.
+  book_poll_seconds: 5
   # Plancher releve de 5 a 125 le 2026-09-08, decide avec l operateur. Mesure sur les 254
   # lancements observes : +0,45 EUR par euro engage et 73 % de gagnants au-dessus de 125 acheteurs
   # distincts, contre +0,24 et 65 % au-dessus de 5. Trois verifications avant d y toucher :

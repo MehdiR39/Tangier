@@ -905,6 +905,79 @@ d'acheter moins, pas de baisser la barre.
 - **Jacob, 04:06** — 315 échanges, 124 acheteurs, achat tenté et refusé par la chaîne : erreur
   Jupiter `0x1771`, tolérance de glissement dépassée (`solana.slippage_pct: 5`). Un seul cas :
   **on ne conclut pas**, mais c'est à compter dans la durée.
+
+### 3.34 — Consolidation sur 36 h : ce n'est ni les seuils ni la taille du ticket, 2026-09-09
+**Questions de l'opérateur** : combien de données a-t-on, les seuils sont-ils bons, 20 € suffit-il ?
+
+**Inventaire.** Collecte de recherche : **745 lancements sur 36,4 h** (07/09 19h → 09/09 08h),
+197 180 relevés de prix, 741 paires avec au moins trois points. Jugements en direct :
+688 sur 10,4 h. Carnet réel : 28 tickets soldés sur 14,6 h. C'est trois fois l'échantillon qui a
+servi à la calibration d'origine (§3.5, 254 lancements).
+
+**1. Le plancher d'acheteurs, balayé sur 624 lancements exploitables** (entrée T+2, sortie
+×1,5 / stop 0,7 / T+15) :
+
+| plancher | n | gagnants | par euro | 1re moitié | 2e moitié | sans 10 % haut |
+|---|---|---|---|---|---|---|
+| aucun | 219 | 43 % | +0,060 | +0,106 | +0,009 | +0,015 |
+| ≥ 50 | 82 | 52 % | +0,094 | +0,151 | −0,015 | +0,051 |
+| **≥ 75 (production)** | 64 | 56 % | +0,114 | +0,174 | **−0,020** | +0,075 |
+| ≥ 100 | 45 | 56 % | +0,121 | +0,211 | **−0,102** | +0,085 |
+| ≥ 125 | 31 | 58 % | +0,146 | +0,246 | **−0,100** | +0,109 |
+
+**Chaque seuil a une première moitié positive et une seconde nulle ou négative**, et d'autant plus
+négative que le seuil est haut. Un balayage qui se comporte ainsi ne désigne pas un bon réglage :
+il dit que la période a changé. Par tranches de 6 h, la part des éligibles atteignant ×1,5 fait
+44 % → 77 % → 45 % → 40 % → **18 %**, et le rendement +0,166 → +0,245 → +0,077 → +0,112 → **−0,037**.
+Chaque tranche ne porte que 10 à 16 lignes, mais la coupe en deux moitiés en porte 32 de chaque
+côté et dit la même chose. **On ne touche pas au plancher : le problème n'est pas là.**
+
+**2. Le carnet réel, par époque de règle** (§3.31 impose ce découpage) :
+
+| | lignes | gagnants | résultat | par euro |
+|---|---|---|---|---|
+| règle ancienne, avant 19h30 | 21 | 57 % | −56,03 € | −0,156 |
+| règle actuelle, depuis 19h30 | 7 | 43 % | −7,26 € | −0,052 |
+
+**3. Et voici où part tout l'argent.** Dans chaque époque, les pertes de plus de la moitié du ticket :
+
+| | lignes concernées | leur coût | le reste du carnet |
+|---|---|---|---|
+| règle ancienne | 6 sur 21 | **−91,46 €** | +35,43 € soit **+0,139 par euro** |
+| règle actuelle | 1 sur 7 | **−19,07 €** | +11,82 € soit **+0,098 par euro** |
+
+**Sept effondrements quasi totaux portent la totalité du déficit.** Les vingt et une autres lignes
+rapportent entre +0,10 et +0,14 par euro. Ce n'est ni un problème de seuil d'entrée, ni de taille
+de ticket, ni d'objectif de sortie.
+
+**4. Pourquoi le stop ne les arrête pas.** AMDuck : ouverte 23:57:56, **fermée 00:03:44** — cinq
+minutes, donc le stop a bien déclenché (la durée de détention est de quinze). Sommet ×1,11, sortie
+**×0,06**, avec un stop censé couper à ×0,7. CALVIN : fermée en **une minute**, sortie ×0,62.
+
+La cause est une cadence. La tenue du carnet était la **queue** de `run_cycle` : elle ne passait
+qu'après la découverte et le jugement des lancements, mesurés à **35 à 95 secondes** par cycle. Un
+stop qui ne regarde le prix que toutes les minutes et demie ne coupe pas à −30 %, il coupe là où le
+prix se trouve quand il ouvre les yeux.
+
+**Correctif appliqué** : la tenue du carnet a désormais sa propre boucle, à **5 secondes**
+(`solana.book_poll_seconds`), indépendante de la découverte. Un verrou (`_garde`) garantit qu'un
+passage lancé par la découverte et un passage lancé par la boucle rapide ne se chevauchent jamais —
+deux passages simultanés vendraient deux fois la même ligne, exactement la collision qui a fait
+payer BIPOLAR deux fois.
+
+**Critère écrit d'avance** : sur les vingt prochains tickets, la part des lignes perdant plus de la
+moitié du ticket doit tomber sous 10 % (elle est à 25 % sur les 28 premiers). Si elle n'y tombe
+pas, la cadence n'était pas la cause et il faudra un filtre d'entrée contre les jetons qui
+s'effondrent, pas une sortie plus rapide.
+
+**5. Faut-il monter le ticket à plus de 20 € ?** **Non, et la question ne se pose pas dans ce
+sens.** La taille ne crée aucun avantage : elle multiplie le rendement par euro, quel qu'il soit.
+Or ce rendement est de −0,052 par euro sous la règle actuelle et de −0,127 sur l'ensemble du
+carnet. Monter le ticket multiplierait la perte — et surtout multiplierait les sept effondrements,
+qui sont précisément le problème. L'ordre est donc : régler la sortie rapide, vérifier sur vingt
+tickets que les pertes totales disparaissent, et seulement si le rendement par euro devient
+franchement positif, discuter de la taille. Le coût d'impact mesuré (0,12 % à 10 €, 0,37 % à 20,
+1,10 % à 50) n'est pas le frein ; le rendement l'est.
 ---
 
 ## 4. Pistes ouvertes, non testées

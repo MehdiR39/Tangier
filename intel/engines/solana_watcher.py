@@ -20,6 +20,7 @@ It never signs unless two separate acts have been taken: a key in SOLANA_PRIVATE
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -47,6 +48,9 @@ class SolanaWatcher:
         self.judged: dict[str, int] = {}          # pair -> ts, so a launch is judged once
         self.sent_ts: list[int] = []
         self.annonces: set[str] = set()           # jetons du flux deja annonces, pour ne pas repeter
+        # Un seul passage de carnet a la fois : la boucle rapide et le cycle de decouverte appellent
+        # tous deux `run_carnet`, et deux passages simultanes vendraient deux fois la meme ligne.
+        self._garde = asyncio.Lock()
 
     def _cfg(self, key: str, default: Any) -> Any:
         return self.ctx.config.get(f"solana.{key}", default)
@@ -96,12 +100,40 @@ class SolanaWatcher:
             if await self._decide(rpc, p):
                 bought += 1
         self._forget()
-        await self._book(rpc)
-        mode = str(self._cfg("mode", "dry_run"))
-        if mode == "live":
-            await self._reconcile(rpc)
-        await self._positions(rpc, mode)
+        await self.run_carnet()
         return {"status": "ok", "seen": len(pairs), "judged": judged, "decisions": bought}
+
+    async def run_carnet(self) -> dict[str, Any]:
+        """Executer les decisions et surveiller les positions ouvertes. Boucle rapide, a part.
+
+        Ce travail etait la queue de `run_cycle`, donc il ne passait qu APRES la decouverte et le
+        jugement des lancements -- soit toutes les 35 a 95 secondes, mesure le 09/09/2026. Pour un
+        stop de perte c est une eternite : AMDuck, ouverte a 23:57:56 et fermee a 00:03:44, a un
+        sommet a x1,11 et une sortie a x0,06 alors que le stop coupe a x0,7. Le stop a bien
+        declenche -- la ligne se ferme en 5 minutes, pas en 15 -- mais le prix avait deja traverse
+        toute la chute entre deux relevés.
+
+        Ces effondrements ne sont pas un detail, ils sont TOUT le deficit : sur les 28 tickets
+        Solana, sept pertes de plus de la moitie du ticket coutent 110 EUR, et les vingt et un
+        autres rapportent entre +0,10 et +0,14 par euro (§3.34).
+
+        La surveillance tourne donc dans sa propre boucle, et le verrou garantit qu un passage lance
+        par la decouverte et un passage lance par la boucle rapide ne se chevauchent jamais : deux
+        passages simultanes vendraient deux fois la meme ligne, et c est exactement le genre de
+        collision qui a fait payer BIPOLAR deux fois le 08/09.
+        """
+        rpc = sol.rpc_url()
+        if not rpc or not self._cfg("enabled", False):
+            return {"status": "disabled"}
+        if self._garde.locked():
+            return {"status": "occupe"}
+        async with self._garde:
+            await self._book(rpc)
+            mode = str(self._cfg("mode", "dry_run"))
+            if mode == "live":
+                await self._reconcile(rpc)
+            await self._positions(rpc, mode)
+        return {"status": "ok"}
 
     async def _discover(self) -> list[dict[str, Any]]:
         tokens: list[str] = []
