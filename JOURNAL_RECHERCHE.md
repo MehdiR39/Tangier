@@ -25,7 +25,7 @@ quelques minutes plus tard.
 | Sortie | ×2 ou T+5 min | **×1,5**, **stop à −30 %**, ou T+15 min (§3.23, §3.24) |
 | Ticket | 5 € | 20 € |
 | Portefeuille | `0x2a33086d2fce255f61ac1a3000bf944397c9c908` | `HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL` |
-| État au 09/09 00h30 | actif, **aucune limite** : ni budget, ni plafond horaire, ni coupure de pertes | actif, 4 positions max (contrainte du portefeuille), **aucun plafond horaire**, coupure à 100 € de pertes **réelles** par jour |
+| État au 09/09 11h50 | **EN PAUSE** — critère d'arrêt atteint (50 % d'invendables contre 40 % écrits d'avance), −0,702 par euro sur 24 h. Carnet à blanc actif, ventes en cours poursuivies | actif, 4 positions max (contrainte du portefeuille), **aucun plafond horaire**, coupure à 100 € de pertes **réelles** par jour |
 
 **Expériences en cours** — chacune a un critère écrit d'avance :
 
@@ -1270,6 +1270,46 @@ pas d'annuler l'abonnement — c'est d'arrêter d'acheter, et l'abonnement suivr
 — 19 à ce stade, dont **2 refusées** parce que la première minute reste hors de portée même à
 12 000 signatures, soit 10 %. Avant la correction, ces deux-là auraient rendu un compte trop petit
 et seraient passées sous le plafond de densité.
+
+### 3.42 — Robinhood mis en pause : son critère d'arrêt était atteint depuis des heures, 2026-09-09 11h50
+**Ce que je n'avais pas regardé.** J'ai passé la matinée sur Solana pendant que l'autre carnet
+perdait davantage. Mesure par tranches de 6 h :
+
+| tranche | tickets | gagnants | invendables | résultat |
+|---|---|---|---|---|
+| 07/09 11h | 5 | 1 | 0 | **+67,51 €** |
+| 07/09 17h | 10 | 3 | 0 | −0,81 |
+| 07/09 23h | 2 | 0 | 2 | −10,16 |
+| 08/09 05h | 6 | 0 | 5 | −27,98 |
+| 08/09 11h | 5 | 2 | 2 | −10,99 |
+| 08/09 17h | 12 | 1 | 10 | **−50,63** |
+| 08/09 23h | 15 | 0 | 3 | **−47,52** |
+| 09/09 05h | 2 | 0 | 2 | −10,21 |
+
+**Sur 24 h : 34 tickets, −119,34 € sur 170 € engagés, soit −0,702 par euro.** Six tranches
+consécutives négatives, 50 % d'invendables. Tout le résultat positif du carnet tient dans une seule
+tranche du 07/09 au matin.
+
+**Le critère d'arrêt était écrit d'avance**, dans la configuration : « si le taux d'invendables
+tombe sous 15 %, la règle tient ; s'il reste au-dessus de 40 %, Robinhood s'arrête ». Il est à 50 %
+depuis hier soir. **Le drapeau `t1_paused` est posé.**
+
+**Ce que la pause fait exactement** : les décisions continuent d'être écrites, mais en carnet à
+blanc (`shadow`) — aucun euro ne sort. Les ventes des positions déjà ouvertes continuent
+normalement, ce qui est indispensable : il reste une ligne ouverte. Le carnet à blanc continue donc
+d'accumuler des mesures sans risquer d'argent, ce qui est exactement ce dont on a besoin pour
+savoir si la règle redevient bonne.
+
+**Pourquoi je ne l'ai pas vu plus tôt, et ce que ça coûte** : depuis hier soir ce carnet n'avait
+plus aucun garde-fou automatique — la limite de tickets, le plafond horaire et le plafond de pertes
+ont tous été retirés à la demande de l'opérateur, et j'avais écrit à ce moment-là qu'il ne restait
+« que la taille du ticket et le solde du portefeuille ». C'était exact et insuffisant : entre ce
+constat et cette pause, le carnet a joué 34 tickets et perdu 119 €. **Un garde-fou retiré doit être
+remplacé par une surveillance, pas par rien** — le bilan toutes les 30 minutes ne regardait que
+Solana.
+
+**À corriger dans la foulée** : le bilan périodique doit inclure le résultat par euro des DEUX
+carnets et vérifier les critères d'arrêt écrits, pas seulement l'état des moteurs.
 ---
 
 ## 4. Pistes ouvertes, non testées
