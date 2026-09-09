@@ -1044,6 +1044,49 @@ prix du desserrage serait du capital.
 **Ce que ça dit du régime** : sur cette fenêtre récente, la meilleure règle disponible est à
 l'équilibre (−0,002 par euro). C'est cohérent avec §3.34 et avec la métrique `sol_regime`. La
 question n'est plus « quel seuil » mais « le marché paie-t-il encore ».
+
+### 3.36 — Les achats échouaient sur la dérive, pas sur le prix, 2026-09-09 10h40
+**Déclencheur** : la surveillance signale PHOUSE, deuxième achat consécutif refusé par la chaîne
+avec l'erreur Jupiter `0x1771` — tolérance de glissement dépassée. Jacob à 04:06, PHOUSE à 10:37.
+
+**Ce que j'ai cru d'abord** : la tolérance de 5 % est trop serrée pour un jeton volatil. Vrai, mais
+ce n'est pas la bonne lecture, et la mesure la corrige.
+
+**Mesure sur 37 tentatives d'achat**, impact de prix **coté** au moment de la décision :
+
+| | n | impact coté médian | max |
+|---|---|---|---|
+| confirmées | 29 | **2,01 %** | 5,23 % |
+| échouées | 8 | **1,96 %** | 7,12 % |
+
+Les trois derniers échecs : PHOUSE 1,93 %, Jacob 1,77 %, wcat 1,72 %. **La cotation était bonne dans
+tous les cas**, largement sous le plafond de 5 %. La transaction est pourtant annulée : le prix a
+donc bougé de plus de 3 % dans les secondes séparant la cotation de l'atterrissage. **C'est de la
+latence, pas du prix.**
+
+**Deux réglages existaient déjà, et les confondre coûtait les achats** :
+- `max_impact_pct` (10 %) refuse une **cotation** trop mauvaise — garde-fou de qualité ;
+- `slippage_pct` (5 %) absorbe la **dérive** entre cotation et atterrissage.
+
+Aucun des deux n'était écrit dans la configuration : le code retombait sur ses valeurs par défaut,
+et la vente tournait à 25 % pendant que l'achat tournait à 5 %, sans que personne l'ait décidé.
+
+**Changement** : `slippage_pct` 5 → **15 %**, `max_impact_pct` 10 → **6 %**. On ouvre la dérive et on
+**resserre** la qualité : accepter plus de dérive n'est pas accepter une plus mauvaise cotation. La
+tolérance est un plafond, pas un coût — Jupiter remplit au meilleur prix disponible et ne s'en sert
+que pour décider s'il annule. Le 6 % est calé juste au-dessus du maximum observé sur les achats
+confirmés (5,23 %).
+
+**Critère écrit d'avance** : sur les dix prochaines tentatives, le taux d'échec doit tomber sous
+20 % — il est à 50 % depuis le 08/09 22h (4 sur 8) et à 100 % sur les deux dernières. Et le prix
+d'entrée réellement payé, lu sur la chaîne, doit rester à moins de 5 % de la cotation ; au-delà,
+c'est qu'on se fait prendre en sandwich et il faut redescendre.
+
+**Cause probable de l'aggravation** : ma correction du 08/09 fait remonter jusqu'à 12 pages de
+signatures au lieu de 6, soit jusqu'à six allers-retours RPC de plus entre la cotation et la
+signature. Le taux d'échec est passé de 17 % (6 sur 35) à 50 % (4 sur 8) au même moment. Huit
+tentatives ne prouvent rien, mais le mécanisme est cohérent et c'est une raison de plus d'ouvrir la
+tolérance de dérive plutôt que de chercher un meilleur prix.
 ---
 
 ## 4. Pistes ouvertes, non testées

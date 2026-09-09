@@ -295,6 +295,24 @@ solana:
   # reel concordent. Mettre 0 pour retirer le stop.
   stop_loss_multiple: 0.7
   max_hold_seconds: 900
+  # Deux reglages distincts, et les confondre coute des achats.
+  #   `max_impact_pct` refuse une COTATION trop mauvaise : c est le garde-fou de qualite.
+  #   `slippage_pct` absorbe la DERIVE entre la cotation et l atterrissage de la transaction.
+  # Mesure du 09/09 sur 37 tentatives d achat : les 29 confirmees ont un impact cote median de
+  # 2,01 % (max 5,23), et les 8 echouees un impact cote de 1,96 % en mediane -- PHOUSE 1,93 %,
+  # Jacob 1,77 %, wcat 1,72 %. La cotation etait donc BONNE dans tous les cas ; la transaction
+  # echoue en erreur Jupiter 0x1771 parce que le prix bouge de plus de 3 % dans les secondes qui
+  # separent la cotation de l atterrissage. C est de la latence, pas du prix.
+  #
+  # On ouvre donc la tolerance de derive et on RESSERRE le garde-fou de qualite : accepter plus de
+  # derive n est pas accepter une plus mauvaise cotation. La tolerance est un plafond, pas un cout :
+  # Jupiter remplit au meilleur prix disponible et ne s en sert que pour decider s il annule.
+  # Critere ecrit d avance : sur les dix prochaines tentatives, le taux d echec doit tomber sous
+  # 20 % (il est a 50 % depuis hier soir, 4 sur 8, et 2 sur 2 sur les dernieres). Et le prix
+  # d entree reellement paye, lu sur la chaine, doit rester a moins de 5 % de la cotation ; au-dela
+  # c est qu on se fait prendre en sandwich et il faut redescendre. Journal §3.36.
+  slippage_pct: 15.0
+  max_impact_pct: 6.0
   sell_slippage_pct: 25.0
   # Plus de plafond de tickets : il arretait aussi une serie gagnante, et de toute facon aucune
   # ligne de code ne le lisait -- il ne protegeait rien. Remplace par une limite de PERTE, qui ne
