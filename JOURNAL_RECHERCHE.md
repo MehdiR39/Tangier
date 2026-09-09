@@ -1650,6 +1650,64 @@ pour en tirer un signal. À revoir quand l'échantillon aura grossi.
 après la vente. Les neuf qui se sont effondrées après notre sortie, personne ne les regarde — on n'y
 pense plus. C'est vrai pour l'opérateur comme pour moi, et c'est pour ça que la seule réponse
 acceptable à « on est sorti trop tôt » est une distribution, jamais un exemple.
+
+### 3.52 — Le péage est fixe, et les deux pistes de l'après-midi sont mortes, 2026-09-09 17h
+**Remarque de l'opérateur** : « moi je gagne en regardant la capitalisation, toi avec tout
+l'algorithme tu n'y arrives pas, il y a un problème quelque part ». Fondée. Trois mesures en
+réponse, dont deux tuent la piste qu'elles ouvraient.
+
+**1. Les grosses capitalisations ne sont pas la réponse.** Sur 94 pools suivis, la tranche > 150 k$
+affichait 91 % de gagnants — spectaculaire. Vérification : leur multiple de sortie médian est
+**×1,029**, 34 sorties sur 35 se font à l'expiration, et leur capitalisation médiane est de
+**5,9 millions** — ce ne sont pas des lancements. Net par ticket de 20 € : **+0,65 € avec les frais
+de routage seuls, +0,048 € une fois le coût réel d'aller-retour déduit.** Les 3 % de dérive sont
+entièrement mangés par le péage. Piste morte.
+
+**2. Le péage est FIXE, pas de l'impact de marché.** Mesuré par cotation aller-retour à quatre
+tailles :
+
+| taille | coût réel |
+|---|---|
+| 2 € | 2,30 % |
+| 5 € | 2,07 % |
+| **20 €** | **1,55 %** |
+| 50 € | 1,64 % |
+
+Le coût ne dépend pas de la taille — il est même minimal à 20 €. C'est un prélèvement des places
+d'échange, pas un problème de profondeur. **Il n'y a donc rien à optimiser côté exécution**, ce qui
+ferme une piste sur laquelle j'allais passer l'après-midi. Et corollaire utile : **la taille du
+ticket n'est pas contrainte par le marché** — à 50 € le coût par euro est identique. Le jour où la
+stratégie sera positive par euro, la monter ne coûtera rien.
+
+**3. Le stop suiveur : spectaculaire, puis nul.** Motivé par LEPTEP, monté à ×1,25 avant de
+redescendre au stop. Sur 65 pools de moins de 150 k$, péage compris :
+
+| règle | net/ticket |
+|---|---|
+| ×1,5 / stop 0,7 (production) | −0,111 € |
+| ×1,25 / stop 0,7 | −0,971 |
+| ×1,15 / stop 0,7 | −1,444 |
+| **suiveur −15 % + stop 0,7** | **+7,573** |
+
+Baisser l'objectif aggrave : plus de gagnants, trop petits pour payer le péage. Le suiveur semblait
+magnifique. **Il tient à une seule ligne** :
+
+| suiveur −15 %, seconde moitié, 33 lignes | |
+|---|---|
+| moyenne | +7,573 € |
+| **sans la meilleure** | **−0,463** |
+| sans les trois meilleures | −2,983 |
+| **médiane** | **−4,318** |
+
+Cinq meilleures : +5, +8, +19, +56, **+265 €**. Un pool a fait ×15 et porte tout. **Ce n'est pas une
+règle, c'est un billet de loterie**, et la ligne médiane perd 4,32 €. Rien n'est déployé.
+
+**Ce qui reste, et c'est l'énoncé le plus net du problème depuis le début du projet** : le péage de
+2 % impose des mouvements très supérieurs à 2 %. Les grosses capitalisations ne bougent que de 3 % —
+elles ne le paient pas. Les petites bougent assez, mais un quart s'effondre de 90 %. **Il n'existe
+pas de zone confortable entre les deux**, et c'est pourquoi chaque réglage essayé retombe à
+l'équilibre. Le seul levier restant est de **séparer les petites capitalisations qui montent de
+celles qui s'effondrent** — ce que ni notre règle ni celle de l'opérateur ne fait.
 ---
 
 ## 4. Pistes ouvertes, non testées
