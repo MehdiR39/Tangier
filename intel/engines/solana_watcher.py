@@ -367,7 +367,21 @@ class SolanaWatcher:
                 break
         if not atteint:
             return -1, -1
-        window = [g for g in sigs if g.get("blockTime") and start <= g["blockTime"] <= start + 60]
+        # ORDRE CHRONOLOGIQUE, et ce n est pas cosmetique. `getSignaturesForAddress` rend du plus
+        # RECENT au plus ancien, donc la fenetre l etait aussi -- et l echantillon de 300
+        # transactions envoye a l enrichissement prenait les 300 DERNIERES de la minute, jamais les
+        # premieres, alors que le commentaire ci-dessous affirme le contraire depuis le debut.
+        #
+        # Consequence mesuree le 09/09 : sur 1 163 lancements ayant des echanges dans leurs trente
+        # premieres secondes, 333 rendaient ZERO acheteur a 30 s -- impossible -- et AUCUN de ces
+        # 333 n avait moins de 300 echanges dans la minute (mediane 1 788), contre 78 % des lignes
+        # saines. Les transactions des trente premieres secondes n etaient tout simplement jamais
+        # decodees des que le pool depassait 300 echanges.
+        #
+        # L abonnement n y est pour rien : l enrichissement repond correctement quand on l appelle.
+        # C etait notre echantillon qui regardait au mauvais bout de la minute.
+        window = sorted((g for g in sigs if g.get("blockTime") and start <= g["blockTime"] <= start + 60),
+                        key=lambda g: (g.get("blockTime") or 0, g.get("signature") or ""))
         if not window:
             return 0, 0
         payers: set[str] = set()

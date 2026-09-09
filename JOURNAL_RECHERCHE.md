@@ -7276,6 +7276,50 @@ la méthode honnête, seules deux survivent, sur dix lignes hors échantillon. C
 démontré, c'est la moins mauvaise direction disponible. Le facteur limitant reste l'échantillon : le
 suivi ne tourne que depuis sept heures, et il ne compte que 24 lancements passant la règle
 d'entrée. Il en faudra dix fois plus pour trancher — et ils arrivent tout seuls, sans risquer un euro.
+
+### 3.57 — Les trous ne venaient pas du service payant, mais de mon échantillon, 2026-09-09 20h
+**Question de l'opérateur** : « les trous viennent d'où ? je pensais qu'on payait un service pour
+avoir les données ». Vérifié, et la réponse est déplaisante.
+
+**L'abonnement n'y est pour rien.** Appel direct à l'endpoint d'enrichissement Helius : HTTP 200,
+transactions décodées, payeur présent sur chacune. Le service répond correctement.
+
+**Le défaut est dans notre code, et il est précis.** `getSignaturesForAddress` rend les signatures
+du plus **récent** au plus ancien. La fenêtre de la première minute héritait de cet ordre, et
+l'échantillon de 300 transactions envoyé à l'enrichissement prenait donc les **300 dernières** de la
+minute — jamais les premières — alors que le commentaire du code affirme le contraire depuis
+l'origine.
+
+**Preuve, sur 1 163 lancements ayant des échanges dans leurs trente premières secondes** :
+
+| | échanges dans la minute (médiane) | moins de 300 échanges |
+|---|---|---|
+| lignes rendant **0 acheteur à 30 s** (impossible) | **1 788** | **0 sur 333** |
+| lignes saines | 107 | 650 sur 830 (78 %) |
+
+**Aucune** des 333 lignes cassées n'a moins de 300 échanges. Dès qu'un pool dépasse le seuil de
+l'échantillon, ses trente premières secondes ne sont jamais décodées.
+
+**Ce que ça touche au-delà de la mesure à 30 secondes** : le comptage des acheteurs à 60 secondes
+utilise le même échantillon. Sur un pool à 1 788 échanges, `uniq_payers` compte les acheteurs des
+300 **dernières** transactions de la minute. Le plancher de 75 acheteurs — le filtre central de
+toute la stratégie — est donc appliqué à une quantité qui n'est pas celle que §3.7 décrit, et ce
+depuis le début.
+
+**Corrigé dans les deux programmes en même temps**, moteur et collecteur : la fenêtre est triée par
+horodatage avant l'échantillonnage. Les deux doivent mesurer la même chose, faute de quoi la
+calibration ne s'applique pas à la production (§3.35).
+
+**Ce que ça oblige à reconsidérer** : toutes les mesures d'acheteurs antérieures au 09/09 20h portent
+sur un échantillon biaisé vers la fin de la minute, et d'autant plus que le pool est dense. Le
+plancher de 75 a été calibré là-dessus. Il faudra le remesurer sur les données propres — c'est
+exactement la même erreur que §3.35, à un autre endroit du même code.
+
+**Leçon, la troisième du même genre en deux jours** : un commentaire qui affirme ce que fait le code
+n'est pas une preuve. « les 300 premières transactions », « 6 × 1 000 signatures dépassent largement
+une minute », « frais de priorité élevés » — trois affirmations écrites en toute bonne foi, trois
+faux. Ce qui coûte n'est pas l'erreur, c'est qu'elle se transmet ensuite dans chaque mesure qui s'y
+appuie.
 ---
 - **Une sortie simulée se confirme sur deux relevés consécutifs.** 7 % des écarts entre deux points
   de prix dépassent 20 % ; un pic isolé crée un objectif atteint qui n'a jamais existé. C'est ce

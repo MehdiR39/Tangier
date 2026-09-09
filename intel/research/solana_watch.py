@@ -171,7 +171,12 @@ async def first_minute(client: httpx.AsyncClient, rpc_url: str, pair_id: str, cr
         # Une mesure qui ne sait pas ce qu elle n a pas vu ne vaut rien : on le DIT, on ne rend pas
         # un chiffre. Une ligne d erreur s ecarte d une calibration ; un chiffre faux la fausse.
         return {"err": "premiere minute hors de portee"}
-    window = [g for g in sigs if g.get("blockTime") and start <= g["blockTime"] <= start + 60]
+    # Ordre chronologique : la remontee rend du plus recent au plus ancien, et l echantillon de
+    # 300 transactions envoye a l enrichissement prenait donc les 300 DERNIERES de la minute. Le
+    # moteur avait le meme defaut et il est corrige en meme temps -- les deux doivent mesurer la
+    # meme chose, sans quoi la calibration ne s applique pas a la production (§3.35).
+    window = sorted((g for g in sigs if g.get("blockTime") and start <= g["blockTime"] <= start + 60),
+                    key=lambda g: (g.get("blockTime") or 0, g.get("signature") or ""))
     if not window:
         return {"trades": 0, "uniq_payers": 0, "first_tx_ts": None, "err": None}
     # who paid: the enhanced endpoint decodes in batches of 100, one call per batch
