@@ -301,6 +301,7 @@ class SolanaWatcher:
         # (-0,005), a 50 k elle passe a +0,042, a 25 k a +0,155. C est la monotonie qui rend le
         # resultat credible, pas le meilleur chiffre du balayage.
         max_mcap = float(self._cfg("max_market_cap_usd", 0) or 0)
+        min_mcap = float(self._cfg("min_market_cap_usd", 0) or 0)
         mcap = float(p.get("marketCap") or p.get("fdv") or 0)
         why = None
         if not min_buyers:
@@ -321,6 +322,15 @@ class SolanaWatcher:
             why = f"liquidite {liq:,.0f} $ < {min_liq:,.0f} $"
         elif max_mcap and mcap and mcap >= max_mcap:
             why = f"capitalisation {mcap:,.0f} $ >= {max_mcap:,.0f} $ (trop gros pour bouger)"
+        elif min_mcap and mcap and mcap < min_mcap:
+            # La regle avait un plafond et aucun plancher, donc elle achetait en plein dans la pire
+            # tranche du marche. Mesure du 09/09 sur 129 lancements comptes a la bonne echelle :
+            # sous 25 k$ de capitalisation, 21 % de gagnants et -0,134 par euro, contre 40 % et
+            # -0,018 entre 25 et 50 k, et 48 % et +0,043 entre 50 et 150 k. La tranche basse est
+            # mauvaise dans LES DEUX moities de la periode -- c est le seul resultat du jour qui
+            # tienne le hors-echantillon, et il retire une tranche mauvaise plutot que d en choisir
+            # une bonne, ce qui demande moins de foi dans l echantillon. Voir §3.38.
+            why = f"capitalisation {mcap:,.0f} $ < {min_mcap:,.0f} $ (trop petit, pire tranche)"
         self._jugement(pid, mint, symbol, p, trades, payers, liq, why)
         if why:
             log.info("solana: %s ecarte — %s (%d echanges, %d acheteurs)", symbol, why, trades, payers)

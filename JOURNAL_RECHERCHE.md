@@ -1126,6 +1126,48 @@ reste en place avec son critère écrit, mais il n'est plus le sujet.
 **Leçon de méthode** : un état en mémoire qui garantit « une seule fois » n'en garantit rien dès que
 le processus peut redémarrer — et sur un système qu'on corrige plusieurs fois par jour, il redémarre
 souvent. Tout garde-fou d'unicité doit s'appuyer sur la base, pas sur la RAM.
+
+### 3.38 — La règle achetait dans la pire tranche : ajout d'un plancher, 2026-09-09 11h
+**Reproche de l'opérateur, justifié** : « hier c'était toi qui avais trouvé 50 k ». Exact. Le plafond
+de capitalisation a été posé le 08/09 sur une mesure du **collecteur**, à l'ancienne échelle de
+comptage et sur une autre période, avec la capitalisation lue dans `sol_obs`. La mesure d'aujourd'hui
+part des données du **moteur**, à la bonne échelle, sur une fenêtre récente, avec la capitalisation
+lue chez DexScreener. Deux sources, deux périodes, deux conclusions — **c'est un avertissement sur la
+méthode autant qu'un résultat.**
+
+**Mesure, 129 lancements comptés à la bonne échelle, croisés avec les courbes de prix** :
+
+| tranche | n | gagnants | par euro | 1re moitié | 2e moitié |
+|---|---|---|---|---|---|
+| **< 25 k$** | **58** | **21 %** | **−0,134** | **−0,163** | **−0,112** |
+| 25-50 k$ | 50 | 40 % | −0,018 | +0,019 | −0,091 |
+| 50-150 k$ | 21 | 48 % | +0,043 | +0,055 | +0,037 |
+
+La règle avait un plafond et **aucun plancher** : elle achetait donc en plein dans la tranche la plus
+mauvaise. `min_market_cap_usd: 25000` ajouté.
+
+**Pourquoi celui-ci et pas les autres** : c'est le seul résultat de la journée positif au test
+hors-échantillon — mauvais dans **les deux** moitiés, sur le plus gros des trois échantillons, avec
+un écart de taux de gagnants massif (21 % contre 40-48). Et il **retire une tranche mauvaise** au
+lieu d'en choisir une bonne, ce qui demande beaucoup moins de foi dans l'échantillon.
+
+**Ce qui a été testé et écarté le même jour, faute de tenir hors échantillon** :
+
+| candidat | n | par euro | 1re moitié | 2e moitié |
+|---|---|---|---|---|
+| ratio ≤ 3 | 25 | +0,011 | −0,045 | +0,049 |
+| ratio ≤ 3 et cap 25-150 k | 20 | +0,040 | **−0,100** | +0,132 |
+| ratio ≤ 6 et cap 25-150 k | 24 | +0,008 | −0,078 | +0,070 |
+
+Tous positifs en global, tous négatifs sur une moitié. **On n'y touche pas.** Le plancher d'acheteurs
+va d'ailleurs dans le mauvais sens sur ces données (−0,061 sans plancher, −0,092 à 75, −0,113 à 100)
+— autre raison de ne rien changer d'autre tant que l'échantillon est de cette taille.
+
+**Le vrai enseignement, plus important que le réglage** : ce paramètre a changé deux fois en deux
+jours, chaque fois sur quelques dizaines de lancements, chaque fois avec une mesure qui semblait
+propre. **L'échantillon ne porte pas ces réglages.** La discipline pour la suite : plus aucun
+changement de seuil tant que `sol_regime` n'a pas plusieurs jours, sauf pour retirer une tranche
+mauvaise dans les deux moitiés — ce qui est le seul cas où l'on ne surajuste pas.
 ---
 
 ## 4. Pistes ouvertes, non testées
