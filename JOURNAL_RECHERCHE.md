@@ -849,6 +849,62 @@ au-delà la priorité des appels d'exécution sur ceux du scanner.
 **Leçon de méthode** : sans le critère écrit d'avance, ce réglage serait resté à 10 en croyant
 avoir amélioré quelque chose. Un changement qui ne bouge pas la mesure qu'il visait doit être
 défait, pas conservé « au cas où ».
+
+### 3.33 — Pourquoi Solana n'a rien acheté de la nuit, 2026-09-09
+**Question de l'opérateur** au réveil. Deux réponses possibles très différentes : le marché était
+calme, ou j'avais cassé quelque chose la veille au soir.
+
+**Le comptage n'est pas cassé.** Zéro acheteur nul sur 678 jugements, et la médiane d'acheteurs est
+identique avant et après mes modifications (26 puis 27).
+
+| | soirée 22h-01h | nuit 01h-08h |
+|---|---|---|
+| lancements jugés | 243 | **435** |
+| échanges, médiane | 367 | 178 |
+| acheteurs, **9ᵉ décile** | **109** | **72** |
+| passent la règle | 10 | **2** |
+
+Le moteur a tourné plus que le soir. C'est le **haut de la distribution** qui est descendu : la nuit,
+moins de 10 % des lancements atteignent 75 acheteurs. **Le plancher absolu est passé au-dessus du
+marché** — exactement ce que §3.6 décrit quand il notait que « le plancher, et non le marché, était
+le facteur limitant ».
+
+**Correctif envisagé, testé, et rejeté** : un plancher *relatif* — garder le haut X % des soixante
+derniers lancements vus, pour que le seuil suive l'heure au lieu d'être figé.
+
+| règle d'entrée | n | gagnants | par euro | sans 10 % haut |
+|---|---|---|---|---|
+| plancher absolu 50 | 82 | 52 % | +0,094 | +0,051 |
+| **plancher absolu 75 (production)** | 64 | 56 % | **+0,114** | +0,075 |
+| plancher absolu 100 | 45 | 56 % | +0,121 | +0,085 |
+| relatif, haut 10 % | 17 | 53 % | +0,131 | +0,108 |
+| relatif, haut 20 % | 35 | 57 % | +0,127 | +0,093 |
+| relatif, haut 25 % | 43 | 51 % | +0,085 | +0,043 |
+
+À nombre d'occasions comparable (43 contre 64), le relatif est **moins bon** : +0,085 contre +0,114.
+Et le plancher absolu est monotone croissant — 50 → 75 → 100 donne +0,094 → +0,114 → +0,121, dans
+la même direction sur la colonne de robustesse. **Baisser le plancher pour négocier la nuit
+dégraderait le résultat.** On ne change rien.
+
+**Ce qui rend la réponse moins confortable** : les lancements de nuit qui *passent* la règle ne sont
+pas mauvais, au contraire.
+
+| création (UTC) | n | gagnants | par euro |
+|---|---|---|---|
+| nuit 00h-08h | 19 | 63 % | **+0,190** |
+| journée 08h-16h | 15 | 53 % | +0,122 |
+| soirée 16h-24h | 30 | 53 % | +0,061 |
+
+Dix-neuf lignes : **on ne conclut pas** sur le classement. Mais rien n'indique que la nuit soit un
+mauvais moment — il y a simplement moins de foules assez grandes, et le bon comportement est
+d'acheter moins, pas de baisser la barre.
+
+**Ce qui a réellement bloqué les deux seuls lancements éligibles de la nuit** :
+- **CORGI, 06:54** — écarté par le garde-fou de §3.26, « vu à 4,105 × 10⁻⁵ il y a moins de 15 min,
+  proposé à 1,921 × 10⁻⁵ ». **Premier déclenchement réel**, sur exactement le cas qu'il vise.
+- **Jacob, 04:06** — 315 échanges, 124 acheteurs, achat tenté et refusé par la chaîne : erreur
+  Jupiter `0x1771`, tolérance de glissement dépassée (`solana.slippage_pct: 5`). Un seul cas :
+  **on ne conclut pas**, mais c'est à compter dans la durée.
 ---
 
 ## 4. Pistes ouvertes, non testées
