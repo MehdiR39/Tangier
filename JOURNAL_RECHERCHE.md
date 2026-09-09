@@ -1537,6 +1537,43 @@ capitalisation, plancher de capitalisation, plancher d'acheteurs — sans jamais
 COMBINAISON laissait passer. Chacun paraissait raisonnable isolément ; ensemble ils ramenaient le
 carnet à un ticket toutes les treize heures, c'est-à-dire à l'impossibilité d'apprendre quoi que ce
 soit. **Un filtre doit être jugé sur l'entonnoir complet, pas sur sa propre justification.**
+
+### 3.49 — Mes frais de priorité RÉDUISAIENT la priorité, 2026-09-09 15h
+**Déclencheur** : BODEN, refusé en erreur `0x1771` alors que les frais de priorité de §3.40 étaient
+déployés. Avant de conclure quoi que ce soit sur le taux d'échec, j'ai vérifié que le correctif
+était réellement appliqué. Il ne l'était pas — il faisait l'inverse.
+
+**Mesure directe contre l'API Jupiter**, même cotation, quatre formes de demande :
+
+| forme envoyée | frais réellement appliqués |
+|---|---|
+| aucun paramètre (défaut de Jupiter) | **99 999 lamports** |
+| `priorityLevelWithMaxLamports`, niveau « high », plafond 1 000 000 | **59 431** |
+| niveau « veryHigh », plafond 1 000 000 | 128 218 |
+| entier `300000` | 299 999 |
+| entier `1000000` | 999 999 |
+
+**Demander le niveau « high » plafonné à un million fait appliquer 59 431 lamports, soit 40 % de
+MOINS que le défaut.** Le paramètre n'est pas un montant : c'est une estimation par niveau, et
+l'estimation de Jupiter pour « high » était en dessous de son propre défaut. J'ai donc réduit la
+priorité pendant deux heures en croyant l'avoir multipliée par dix.
+
+**Corrigé** : un entier est appliqué tel quel. `priority_fee_lamports: 500000`, soit 0,048 € par
+ordre — cinq fois le défaut, 0,24 % d'un ticket de 20 €.
+
+**Ce que ça invalide** : la conclusion de §3.40 n'a jamais été testée. Le taux d'échec des ordres
+depuis son déploiement (1 confirmé sur 2) ne dit rien, puisque la priorité était plus basse
+qu'avant. Le compteur repart de zéro.
+
+**Leçon, et c'est la deuxième fois aujourd'hui** : un réglage envoyé à une API tierce doit être
+vérifié dans la RÉPONSE de l'API, pas supposé depuis la documentation. Deux appels de quinze
+secondes auraient évité deux heures de fausse confiance — et je ne l'ai fait que parce qu'un ordre
+a échoué. Sans cet échec, je serais resté persuadé d'avoir corrigé quelque chose.
+
+**Vérifié aussi, et écarté** : BODEN et HAMSTERUNITE sont tous deux des jetons Token-2022 avec les
+mêmes extensions (`metadataPointer`, `tokenMetadata`) et **aucune taxe de transfert**. L'hypothèse
+d'un jeton taxé à la vente ne tient pas ; la différence entre les deux est le mouvement de prix
+pendant l'atterrissage, pas la structure du jeton.
 ---
 
 ## 4. Pistes ouvertes, non testées
@@ -1686,6 +1723,10 @@ se serait déclenché sur 223,86 € de pertes fictives. Corrigé dans les deux 
   posés en deux jours, chacun raisonnable isolément, ramenaient ensemble le carnet à un ticket
   toutes les treize heures — donc à l'impossibilité d'apprendre (§3.48). Après chaque ajout,
   mesurer combien de passages il reste par heure.
+- **Un réglage envoyé à une API tierce se vérifie dans sa RÉPONSE, jamais dans sa documentation.**
+  Les frais de priorité demandés au niveau « high » faisaient appliquer 40 % de moins que le défaut
+  de Jupiter (§3.49). Deux appels de quinze secondes l'auraient montré ; je ne l'ai découvert que
+  parce qu'un ordre a échoué.
 - **Toute requête de résultat filtre sur `kind='PORTFOLIO'`.** La table `positions` mélange carnet
   réel et carnet à blanc ; sans le filtre on annonce −339 € au lieu de −115 € (§5.11).
 - **Un chiffre s'annonce avec la taille de son échantillon**, et quand elle est mince la conclusion

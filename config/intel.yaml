@@ -407,7 +407,11 @@ solana:
   # met dix secondes a etre inclus pendant que le jeton s effondre (§3.34).
   # Critere ecrit d avance : sur les dix prochaines tentatives, le taux d echec doit tomber sous
   # 20 %. Mettre 0 retire les frais de priorite. Journal §3.40.
-  priority_fee_lamports: 1000000
+  # 500 000 lamports = 0,048 EUR par ordre, cinq fois le defaut de Jupiter (99 999), soit 0,24 %
+  # d un ticket de 20 EUR. Verifie contre l API : un ENTIER est applique tel quel, alors qu un
+  # niveau nomme (« high ») fait appliquer 59 431, MOINS que le defaut -- la premiere version de ce
+  # reglage reduisait donc la priorite en croyant l augmenter (§3.49).
+  priority_fee_lamports: 500000
   # Plus de plafond de tickets : il arretait aussi une serie gagnante, et de toute facon aucune
   # ligne de code ne le lisait -- il ne protegeait rien. Remplace par une limite de PERTE, qui ne
   # coupe que si ca perd vraiment et laisse courir tant que ca marche. Mettre 0 pour tout enlever.

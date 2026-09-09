@@ -170,10 +170,13 @@ async def build_swap(client: httpx.AsyncClient, q: SolanaQuote, owner: str,
     """
     corps: dict[str, Any] = {"quoteResponse": q.raw, "userPublicKey": owner,
                              "wrapAndUnwrapSol": True, "dynamicComputeUnitLimit": True}
+    # MONTANT FIXE, pas un niveau. Verifie contre l API le 09/09 : sans parametre Jupiter applique
+    # deja 99 999 lamports ; demander le niveau « high » plafonne a 1 000 000 en fait appliquer
+    # 59 431, soit MOINS que son propre defaut -- ma premiere version reduisait donc la priorite en
+    # croyant l augmenter. « veryHigh » ne monte qu a 128 218. Un entier passe tel quel est applique
+    # tel quel : 300 000 donne 299 999, 1 000 000 donne 999 999.
     if priorite_lamports > 0:
-        corps["prioritizationFeeLamports"] = {
-            "priorityLevelWithMaxLamports": {"maxLamports": int(priorite_lamports),
-                                             "priorityLevel": "high", "global": False}}
+        corps["prioritizationFeeLamports"] = int(priorite_lamports)
     r = await client.post(f"{JUPITER}/swap", json=corps, timeout=25)
     if r.status_code != 200:
         raise SolanaRefused(f"construction refusée ({r.status_code}): {r.text[:120]}")
