@@ -1418,6 +1418,44 @@ pas et qu'un ordre réel n'atteint pas forcément. On ne change donc pas l'objec
 de vérification, à 40 € de perte par jour. Le suivi posé une heure plus tôt (§3.44) mesure 58
 lancements par heure **sans engager un euro**. Continuer à acheter, c'est payer pour apprendre vingt
 fois moins vite.
+
+### 3.46 — La sortie, elle, a un candidat — mais il repose sur un ×2 que notre carnet n'a jamais vu, 2026-09-09 13h30
+**Après §3.45** (aucun avantage dans l'entrée sur 72 000 combinaisons), la piste restante était celle
+que §3.34 désignait sans que je l'exploite : **21 tickets sur 28 rapportent +0,10 à +0,14 par euro,
+7 effondrements emportent tout.** Le problème est la queue, donc la sortie.
+
+**`intel/research/sol_sortie.py`**, même discipline qu'en §3.45 — 323 règles cherchées sur la
+première moitié, jugées sur la seconde jamais regardée. Quatre formes, dont trois jamais testées :
+sortie partielle, stop suiveur, stop qui se resserre.
+
+| règle de sortie | moitié 1 | **moitié 2 (verdict)** | queue 2 |
+|---|---|---|---|
+| **30 % à ×1,5 puis ×2,0 / stop 0,7 / T+30** | +0,317 | **+0,126** | **0 %** |
+| ×2,0 / stop 0,8 / T+15 | +0,332 | +0,108 | 0 % |
+| ×2,0 / stop 0,7 / T+15 | +0,321 | +0,100 | 0 % |
+| **production ×1,5 / stop 0,7 / T+15** | +0,151 | **+0,067** | 0 % |
+| ×2,0 **sans stop** / T+10 | +0,350 | **−0,098** | 23 % |
+
+**Deux enseignements solides** : toutes les règles avec stop tiennent hors échantillon, toutes celles
+sans stop s'effondrent (−0,098, −0,114, avec 23 % de queue) — le stop est confirmé une troisième
+fois. Et la sortie partielle rapporte presque le double de la production.
+
+**Mais tout le tableau repose sur un objectif à ×2, et nos 25 positions réelles n'ont JAMAIS atteint
+×2** (§3.34, sommet médian ×1,02). L'un des deux se trompe, et il faut le savoir avant de toucher à
+quoi que ce soit.
+
+**Première réponse du suivi posé une heure plus tôt** (§3.44), en 18 minutes : 726 relevés sur
+43 pools, dont 33 assez suivis. **24 % atteignent ×1,5, 12 % atteignent ×2,0.** Donc ×2 arrive — au
+prix DexScreener.
+
+**L'explication que je retiens, et qui est testable** : DexScreener publie un prix moyen de marché ;
+notre suivi de position interroge le routeur pour **notre taille réelle**. Sur un pool mince, ×2 au
+prix moyen peut valoir ×1,3 à la vente. Si c'est le cas, **tout rejeu bâti sur des prix DexScreener
+est optimiste**, y compris celui-ci, et la production a raison de rester à ×1,5.
+
+**Rien n'est déployé sur cette base.** Le test : comparer, sur une position ouverte, notre cotation
+routeur et le prix DexScreener au même instant. Quelques positions suffisent, et le suivi les
+fournira aujourd'hui.
 ---
 
 ## 4. Pistes ouvertes, non testées
