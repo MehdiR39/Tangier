@@ -495,3 +495,14 @@ retention:
   holder_snapshot_days: 7
   pair_snapshot_days: 14
   prune_budget_seconds: 180
+
+# Achats et ventes a la main depuis Telegram (/achat, /vente, /manuel). Ces lignes portent leur
+# propre model_version et n entrent dans aucune mesure de strategie : le bot ne les vend jamais,
+# et le resultat manuel se lit separement de celui des robots.
+manuel:
+  # Plafond par ordre, en euros. Un message Telegram declenche ici une depense reelle : le plafond
+  # est la seule chose qui separe une faute de frappe d une perte. 0 interdirait tout achat.
+  max_ordre_eur: 100
+  # Refus d acheter un pool dont on ne peut pas ressortir, comme le carnet automatique (§3.47).
+  # 0 desactive la verification -- a la main on peut vouloir entrer quand meme.
+  max_aller_retour_pct: 15

@@ -135,6 +135,15 @@ class TelegramCommands:
         if cmd == "/resume":
             self.ctx.db.cursor_set(PAUSE_FLAG, 0, now_ts())
             return "achats T+1 repris."
+        if cmd in ("/achat", "/buy"):
+            from intel.alerts.manuel import Manuel
+            return await Manuel(self.ctx, self._client).acheter(arg)
+        if cmd in ("/vente", "/sell"):
+            from intel.alerts.manuel import Manuel
+            return await Manuel(self.ctx, self._client).vendre(arg)
+        if cmd in ("/manuel", "/manual"):
+            from intel.alerts.manuel import Manuel
+            return Manuel(self.ctx, self._client).suivi()
         if cmd == "/restart":
             self.ctx.db.cursor_set("engine_restart_request", 1, now_ts())
             return "redémarrage du moteur dans quelques secondes (code et config du disque). /help pour vérifier ensuite."
@@ -150,6 +159,11 @@ class TelegramCommands:
             "<code>/pause     </code> arreter d acheter (Robinhood)",
             "<code>/resume    </code> reprendre les achats",
             "<code>/restart   </code> redemarrer le moteur",
+            "",
+            "<b>A la main</b>",
+            "<code>/achat  &lt;adresse&gt; &lt;euros&gt;</code> acheter (chaine reconnue seule)",
+            "<code>/vente  &lt;adresse&gt; [%]   </code> vendre, 100 % par defaut",
+            "<code>/manuel               </code> lignes manuelles et resultat",
             "", "<i>/pnl all pour le cumul · /closed 20 pour plus de lignes</i>",
             "", f"Robinhood {rh} · Solana {so}"
             + (" · achats Robinhood en pause" if t1_paused(self.ctx) else ""),
