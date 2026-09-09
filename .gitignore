@@ -41,3 +41,7 @@ notebooks/*.csv
 notebooks/*.png
 notebooks/*.log
 notebooks/*.ipynb
+
+# Cle du portefeuille de remplacement, apres la fuite du 09/09 : ne doit jamais partir au depot.
+data/nouveau_portefeuille.txt
+.env.compromis
