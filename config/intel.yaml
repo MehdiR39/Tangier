@@ -369,6 +369,24 @@ solana:
   # c est qu on se fait prendre en sandwich et il faut redescendre. Journal §3.36.
   slippage_pct: 15.0
   max_impact_pct: 6.0
+  # Plafond du cout d un ALLER-RETOUR a notre taille, en pourcent. Avant d acheter, on cote la
+  # revente immediate de ce qu on recevrait : si ressortir coute plus que ce plafond, on n entre pas.
+  #
+  # Mesure du 09/09 sur 25 pools suivis, cotation seule, aucun ordre : un aller-retour de 20 EUR
+  # coute 2,9 % en mediane (1er quartile 1,1 %, 3e quartile 4,5 %). Mais SIX pools sur vingt-cinq
+  # coutent plus de 10 %, CINQ plus de 25 %, et le pire ne rend que 1,3 % de la mise. Sur ceux-la on
+  # peut acheter et pas ressortir.
+  #
+  # Ce chiffre colle a ce qui detruit le carnet : sept tickets sur vingt-huit anaeantis (25 %) contre
+  # cinq pools sur vingt-cinq invendables (20 %). Aucune regle de SORTIE ne repare ca -- ni le stop,
+  # ni la boucle a 5 s, ni les frais de priorite -- parce que la contrepartie n existe pas. La seule
+  # reponse est de ne pas entrer, et ca se sait avant, pour une cotation de plus.
+  #
+  # 8 % laisse passer les trois quarts des pools (3e quartile a 4,5 %) et ecarte toute la queue.
+  # CRITERE ECRIT D AVANCE : sur les 20 prochains tickets, la part des lignes perdant plus de la
+  # moitie de la mise doit tomber sous 10 % (elle est a 22 %). Sinon la thinness n etait pas la
+  # cause. Mettre 0 retire le filtre. Journal §3.47.
+  max_aller_retour_pct: 8.0
   sell_slippage_pct: 25.0
   # Frais de priorite, en lamports (1 000 000 = 0,001 SOL, environ 0,10 EUR).
   # Ajoute le 09/09 : les transactions partaient SANS frais de priorite, donc elles attendaient leur

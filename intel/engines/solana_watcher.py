@@ -588,7 +588,8 @@ class SolanaWatcher:
             res = await sol.prepare_buy(self.client, mint=d["token_address"], size_eur=float(d["size_eur"] or 5.0),
                                         sol_eur=sol_eur, slippage_pct=float(self._cfg("slippage_pct", 5.0)),
                                         max_impact_pct=float(self._cfg("max_impact_pct", 10.0)),
-                                        priorite_lamports=int(self._cfg("priority_fee_lamports", 0) or 0))
+                                        priorite_lamports=int(self._cfg("priority_fee_lamports", 0) or 0),
+                                        max_aller_retour_pct=float(self._cfg("max_aller_retour_pct", 0) or 0))
             tx_b64 = res.pop("tx", None)
             status = res.pop("status")
             route = res.pop("route", None)          # journal only: `executions` has no such column

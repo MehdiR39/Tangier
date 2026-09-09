@@ -1456,6 +1456,53 @@ est optimiste**, y compris celui-ci, et la production a raison de rester à ×1,
 **Rien n'est déployé sur cette base.** Le test : comparer, sur une position ouverte, notre cotation
 routeur et le prix DexScreener au même instant. Quelques positions suffisent, et le suivi les
 fournira aujourd'hui.
+
+### 3.47 — Un pool sur cinq est invendable à notre taille : le filtre qui manquait, 2026-09-09 14h
+**La question posée en §3.46** : les règles de sortie qui battent la production reposent toutes sur
+un objectif à ×2 que nos 25 positions réelles n'ont jamais atteint. DexScreener publie un prix moyen
+de marché ; notre carnet demande au routeur ce que la position vaut **à la vente, pour notre taille**.
+Les deux sont-ils comparables ?
+
+**Mesure, `intel/research/sol_aller_retour.py`** — pour 25 pools suivis, on cote un achat de 20 €
+puis la revente immédiate de ce qu'on recevrait. Deux cotations, aucun ordre, aucun euro engagé.
+
+| ce qui manque au retour | |
+|---|---|
+| médiane | **2,9 %** |
+| 1er quartile | 1,1 % |
+| 3e quartile | 4,5 % |
+| **pire** | **98,7 %** |
+| pools coûtant plus de 10 % | **6 sur 25** |
+| pools coûtant plus de 25 % | **5 sur 25** |
+
+**Première conclusion : les rejeux ne sont pas faussés d'un facteur deux.** Pour le pool médian,
+l'aller-retour coûte 2,9 % — l'écart avec le rejeu ne vient donc pas d'un handicap général
+d'exécution.
+
+**Seconde conclusion, bien plus importante : un pool sur cinq est structurellement invendable à
+notre taille.** On peut y entrer, on ne peut pas en sortir. Le pire rend 1,3 % de la mise.
+
+**Et ce chiffre colle à ce qui détruit le carnet** : sept tickets sur vingt-huit anéantis (25 %),
+contre cinq pools sur vingt-cinq invendables (20 %). Ce n'est donc pas le prix qui s'effondre après
+notre achat — **c'est qu'on n'aurait jamais dû entrer.**
+
+**Ce que ça change dans la hiérarchie des correctifs.** Aucune règle de SORTIE ne répare ça : ni le
+stop, ni la boucle à 5 secondes (§3.34), ni les frais de priorité (§3.40). Tous supposent qu'il
+existe une contrepartie à un prix. Quand elle n'existe pas, ils ne servent à rien. Les trois restent
+utiles pour les pools normaux, mais **ils ne visaient pas la bonne cause.**
+
+**Filtre déployé** : `max_aller_retour_pct: 8`. Avant chaque achat, on cote la revente de ce qu'on
+recevrait ; au-dessus de 8 % on n'entre pas. Le seuil laisse passer les trois quarts des pools (3e
+quartile à 4,5 %) et écarte toute la queue. Coût : une cotation supplémentaire par tentative.
+
+**L'impact affiché à l'achat ne suffisait pas**, et c'est pour ça que ce défaut a survécu à
+`max_impact_pct` : 1,11 % en médiane à l'achat contre 1,15 % à la vente, donc symétrique **en
+moyenne** — et parfaitement muet sur les pools asymétriques, ceux qui coûtent 25 % ou 98 %. Il faut
+coter le retour, pas déduire.
+
+**Critère écrit d'avance** : sur les 20 prochains tickets, la part des lignes perdant plus de la
+moitié de la mise doit tomber sous 10 % — elle est à 22 %. Si elle n'y tombe pas, l'invendabilité
+n'était pas la cause et il faudra chercher ailleurs.
 ---
 
 ## 4. Pistes ouvertes, non testées

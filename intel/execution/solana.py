@@ -295,7 +295,8 @@ async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, sli
 
 
 async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, sol_eur: float,
-                      slippage_pct: float, max_impact_pct: float, priorite_lamports: int = 0) -> dict[str, Any]:
+                      slippage_pct: float, max_impact_pct: float, priorite_lamports: int = 0,
+                      max_aller_retour_pct: float = 0.0) -> dict[str, Any]:
     """Everything but the signature: what the journal records, in dry run and live alike."""
     lamports = int(size_eur / max(sol_eur, 1e-9) * LAMPORTS)
     if lamports <= 0:
@@ -310,6 +311,33 @@ async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, 
     if q.price_impact_pct > max_impact_pct:
         return {"status": "REFUSED", "amount_in": str(lamports),
                 "refused_reason": f"impact {q.price_impact_pct:.1f} % > plafond {max_impact_pct:.1f} %"}
+    # PEUT-ON RESSORTIR ? On cote la revente immediate de ce qu on recevrait, avant d acheter.
+    #
+    # Mesure du 09/09 sur 25 pools suivis : un aller-retour de 20 EUR coute 2,9 % en mediane -- mais
+    # SIX pools sur vingt-cinq coutent plus de 10 %, CINQ plus de 25 %, et le pire ne rend que 1,3 %
+    # de la mise. Sur ces pools-la on peut acheter et pas ressortir, a notre taille.
+    #
+    # Ce chiffre colle a ce qui detruit le carnet : sept tickets sur vingt-huit anaeantis (25 %),
+    # contre cinq pools sur vingt-cinq (20 %) invendables. Ce n est donc pas le prix qui s effondre,
+    # c est qu on n aurait jamais du entrer. Aucune regle de SORTIE ne repare ca -- le stop, la
+    # boucle rapide et les frais de priorite ne servent a rien quand la contrepartie n existe pas.
+    # La seule reponse est de ne pas entrer, et ca se sait avant, pour une cotation de plus.
+    #
+    # L impact affiche a l achat ne suffit pas : il est de 1,11 % en mediane a l achat contre 1,15 %
+    # a la vente, donc symetrique EN MOYENNE -- et c est precisement sur les pools asymetriques,
+    # ceux qui coutent 25 % ou 98 %, qu il ne dit rien. Il faut coter le retour.
+    if max_aller_retour_pct > 0:
+        try:
+            retour = await quote(client, input_mint=mint, output_mint=SOL_MINT,
+                                 amount=q.out_amount, slippage_bps=int(slippage_pct * 100))
+            perte = (1 - retour.out_amount / lamports) * 100 if retour.usable else 100.0
+        except SolanaRefused as exc:
+            return {"status": "REFUSED", "amount_in": str(lamports),
+                    "refused_reason": f"revente non cotable ({str(exc)[:50]})"}
+        if perte > max_aller_retour_pct:
+            return {"status": "REFUSED", "amount_in": str(lamports),
+                    "refused_reason": f"aller-retour {perte:.1f} % > plafond {max_aller_retour_pct:.1f} % "
+                                      f"(on entrerait sans pouvoir ressortir)"}
     owner = signer_address()
     if owner is None:
         return {"status": "BUILT", "amount_in": str(lamports), "quoted_amount_out": str(q.out_amount),
