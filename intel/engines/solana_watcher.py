@@ -114,8 +114,9 @@ class SolanaWatcher:
         self._forget()
         await self.run_carnet()
         suivis = await self._suivre()
+        crea = await self._createurs(rpc)
         return {"status": "ok", "seen": len(pairs), "judged": judged, "decisions": bought,
-                "suivis": suivis}
+                "suivis": suivis, "createurs": crea}
 
     async def run_carnet(self) -> dict[str, Any]:
         """Executer les decisions et surveiller les positions ouvertes. Boucle rapide, a part.
@@ -252,6 +253,70 @@ class SolanaWatcher:
                 except Exception:  # noqa: BLE001
                     pass
         return vus
+
+    async def _createurs(self, rpc: str, limite: int = 15) -> int:
+        """Resoudre qui a cree chaque jeton juge. EN TACHE DE FOND, jamais dans la decision.
+
+        Signal le plus prometteur mesure a ce jour (09/09, 113 lancements suivis) : les jetons dont
+        le createur en a lance PLUSIEURS rendent +2,995 EUR par ticket de 20, contre -0,838 pour
+        ceux d un createur a jeton unique. L ecart survit au retrait du meilleur dixieme (+2,386),
+        ce qui l a distingue du stop suiveur, spectaculaire mais porte par une seule ligne (§3.52).
+
+        Le mecanisme est plausible : un portefeuille qui lance plusieurs jetons est une operation
+        organisee, avec une distribution et une communaute, la ou un createur a coup unique n a
+        aucune raison de faire vivre son jeton apres la migration.
+
+        Vingt-trois lignes ne suffisent pas pour en faire une regle. Ce travail sert a constituer
+        l echantillon : le createur se lit en remontant a la premiere transaction du mint, environ
+        0,2 s par jeton. Il est resolu APRES coup et jamais avant un achat -- ajouter des
+        allers-retours RPC entre la cotation et la signature est precisement ce qui fait echouer les
+        ordres en erreur 0x1771 (§3.40, §3.49).
+        """
+        db = self.ctx.db
+        try:
+            db.execute("CREATE TABLE IF NOT EXISTS sol_createur("
+                       "  mint TEXT PRIMARY KEY, createur TEXT, ts INTEGER)")
+        except Exception:  # noqa: BLE001
+            return 0
+        todo = db.query(
+            "SELECT DISTINCT j.mint FROM solana_judgements j "
+            "LEFT JOIN sol_createur c ON c.mint=j.mint "
+            "WHERE j.mint IS NOT NULL AND c.mint IS NULL ORDER BY j.ts DESC LIMIT ?", (limite,))
+        n = 0
+        for r in todo:
+            mint = r["mint"]
+            try:
+                before, plus_vieux = None, None
+                for _ in range(6):
+                    params: dict[str, Any] = {"limit": 1000}
+                    if before:
+                        params["before"] = before
+                    rep = await self.client.post(rpc, json={
+                        "jsonrpc": "2.0", "id": 1, "method": "getSignaturesForAddress",
+                        "params": [mint, params]}, timeout=30)
+                    got = (rep.json() or {}).get("result") or []
+                    if not got:
+                        break
+                    plus_vieux = got[-1]
+                    before = plus_vieux["signature"]
+                    if len(got) < 1000:
+                        break
+                if not plus_vieux:
+                    continue
+                rep = await self.client.post(rpc, json={
+                    "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
+                    "params": [plus_vieux["signature"],
+                               {"maxSupportedTransactionVersion": 0, "encoding": "jsonParsed"}]}, timeout=30)
+                keys = ((((rep.json() or {}).get("result") or {}).get("transaction") or {})
+                        .get("message") or {}).get("accountKeys") or []
+                payeur = next((k.get("pubkey") for k in keys if k.get("signer")), None)
+                if payeur:
+                    db.execute("INSERT OR REPLACE INTO sol_createur VALUES(?,?,?)",
+                               (mint, payeur, now_ts()))
+                    n += 1
+            except Exception:  # noqa: BLE001
+                continue
+        return n
 
     async def _first_minute(self, rpc: str, pair_id: str, created_ms: int) -> tuple[int, int]:
         """(trades, distinct payers) in the pool's first sixty seconds."""

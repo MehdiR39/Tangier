@@ -1708,6 +1708,45 @@ elles ne le paient pas. Les petites bougent assez, mais un quart s'effondre de 9
 pas de zone confortable entre les deux**, et c'est pourquoi chaque réglage essayé retombe à
 l'équilibre. Le seul levier restant est de **séparer les petites capitalisations qui montent de
 celles qui s'effondrent** — ce que ni notre règle ni celle de l'opérateur ne fait.
+
+### 3.53 — L'historique du créateur : le premier signal qui sépare vraiment, 2026-09-09 18h
+**Point de départ, §3.52** : avec l'information disponible au moment du jugement, l'effondrement
+d'une petite capitalisation n'est **pas** prévisible. Taux d'effondrement autour de 50 % dans toutes
+les tranches d'acheteurs, de ratio, de liquidité, d'âge et de variation à 5 minutes. Il fallait donc
+une information qu'on n'avait pas.
+
+**Le créateur est récupérable, et pour rien.** Les autorités de frappe et de métadonnées sont
+révoquées à la migration, mais remonter à la **première transaction du mint** et lire qui l'a payée
+donne le créateur en **0,2 seconde par jeton** — 110 jetons résolus en 36 secondes.
+
+**Sur 113 lancements suivis, avec la règle de production et le péage de 2 %** :
+
+| | lignes | net par ticket de 20 € | gagnants | sans le meilleur dixième |
+|---|---|---|---|---|
+| créateur à **un seul** jeton | 90 | **−0,838 €** | 48 % | −1,976 |
+| créateur **récidiviste** | 23 | **+2,995 €** | 52 % | **+2,386** |
+| ensemble | 113 | −0,058 | | |
+
+Et sur la forme des mouvements : les jetons de créateurs récidivistes montent au-dessus de ×1,3
+**49 % du temps contre 17 %** pour les créateurs à jeton unique — trois fois plus.
+
+**Ce qui distingue ce résultat de tous ceux de la journée** : il survit au retrait du meilleur
+dixième (+2,386). C'est exactement le test qui a tué le stop suiveur, spectaculaire à +7,57 € mais
+porté par une seule ligne à +265 €.
+
+**Le mécanisme est plausible**, ce qui compte quand l'échantillon est mince : un portefeuille qui
+lance plusieurs jetons est une opération organisée, avec une distribution et une communauté qui
+survivent à la migration. Un créateur à coup unique n'a aucune raison de faire vivre son jeton après
+avoir encaissé.
+
+**Rien n'est déployé** — 23 lignes ne font pas une règle. Ce qui est posé : `SolanaWatcher._createurs`
+résout le créateur de chaque lancement jugé **en tâche de fond**, quinze par cycle. Jamais dans le
+chemin de décision : ajouter des allers-retours RPC entre la cotation et la signature est
+précisément ce qui fait échouer les ordres (§3.40, §3.49).
+
+**Critère écrit d'avance** : quand `sol_createur` couvrira 300 lancements suivis, refaire la mesure
+en choisissant sur la première moitié et en jugeant sur la seconde. Si l'écart tient, c'est le
+premier filtre d'entrée fondé de tout le projet — et il vise précisément ce qui détruit le carnet.
 ---
 
 ## 4. Pistes ouvertes, non testées
