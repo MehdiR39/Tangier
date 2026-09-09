@@ -1503,6 +1503,40 @@ coter le retour, pas déduire.
 **Critère écrit d'avance** : sur les 20 prochains tickets, la part des lignes perdant plus de la
 moitié de la mise doit tomber sous 10 % — elle est à 22 %. Si elle n'y tombe pas, l'invendabilité
 n'était pas la cause et il faudra chercher ailleurs.
+
+### 3.48 — Le rythme d'achat, chiffré étape par étape, 2026-09-09 14h30
+**Question de l'opérateur** : « depuis hier 23 h on n'a pas acheté un seul jeton, le rythme devient
+combien ? » Entonnoir rejoué sur 24 h de jugements réels :
+
+| filtre | passages | par heure |
+|---|---|---|
+| lancements jugés | 908 | 37,8 |
+| ≥ 75 acheteurs | 125 | 5,21 |
+| et < 600 échanges | 66 | 2,75 |
+| et ratio ≤ 15 | 66 | **2,75** — ce filtre n'écarte rien |
+| **et capitalisation 25-50 k$** | **7** | **0,29** |
+
+**La bande de capitalisation éliminait 59 des 66 passages à elle seule** — un facteur dix. Et le
+filtre de ratio, hérité de la calibration d'origine, n'écarte plus rien du tout.
+
+**Correction** : plafond relevé de 50 k$ à **150 k$**. Le 50 k datait du 08/09, mesuré sur le
+collecteur à l'ancienne échelle, et **je ne l'avais jamais revalidé**. Les données du moteur, à la
+bonne échelle, disent l'inverse : la tranche **50-150 k est la seule positive dans les deux moitiés**
+(+0,043 par euro, 48 % de gagnants), quand 25-50 k fait −0,018 et < 25 k fait −0,134. Mon plafond
+coupait exactement la meilleure tranche.
+
+On ne va pas au-delà de 150 k : aucune mesure ne le justifie, et 34 des 59 lancements écartés sont
+au-dessus de 500 k — la population « trop grosse pour bouger » que la mesure d'origine condamnait.
+
+**Rythme attendu après correction** : 0,71 passage par heure, soit ~0,57 après le filtre
+d'aller-retour, et une position toutes les deux heures environ si les frais de priorité portent le
+taux d'exécution à 80 %. Contre une toutes les cinq à treize heures avant.
+
+**Ce que cet épisode dit de ma méthode** : j'ai posé trois filtres en deux jours — plafond de
+capitalisation, plancher de capitalisation, plancher d'acheteurs — sans jamais mesurer ce que leur
+COMBINAISON laissait passer. Chacun paraissait raisonnable isolément ; ensemble ils ramenaient le
+carnet à un ticket toutes les treize heures, c'est-à-dire à l'impossibilité d'apprendre quoi que ce
+soit. **Un filtre doit être jugé sur l'entonnoir complet, pas sur sa propre justification.**
 ---
 
 ## 4. Pistes ouvertes, non testées
@@ -1648,6 +1682,10 @@ se serait déclenché sur 223,86 € de pertes fictives. Corrigé dans les deux 
   suit un, le moteur en trade un autre. Trois grosses pertes ont semblé se produire « pendant que
   le marché montait » à cause de cet appariement, et deux positions apparaissaient achetées hors
   de la fenêtre d'achat (§3.43). Le pair_id réellement tradé est dans les notes de la position.
+- **Un filtre se juge sur l'entonnoir complet, pas sur sa propre justification.** Trois filtres
+  posés en deux jours, chacun raisonnable isolément, ramenaient ensemble le carnet à un ticket
+  toutes les treize heures — donc à l'impossibilité d'apprendre (§3.48). Après chaque ajout,
+  mesurer combien de passages il reste par heure.
 - **Toute requête de résultat filtre sur `kind='PORTFOLIO'`.** La table `positions` mélange carnet
   réel et carnet à blanc ; sans le filtre on annonce −339 € au lieu de −115 € (§5.11).
 - **Un chiffre s'annonce avec la taille de son échantillon**, et quand elle est mince la conclusion

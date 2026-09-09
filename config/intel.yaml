@@ -298,7 +298,15 @@ solana:
   # repose que sur 27 lancements, et retenir le meilleur chiffre d un balayage est l erreur du matin.
   # Nos achats du jour avaient des liquidites de 118 k, 223 k, 227 k et jusqu a 1 043 k pour LAPTOP.
   # Mettre 0 pour retirer le plafond.
-  max_market_cap_usd: 50000
+  # RELEVE DE 50 000 A 150 000 le 09/09 a 14h30. Le plafond de 50 k datait du 08/09, mesure sur le
+  # collecteur a l ancienne echelle, et n avait jamais ete revalide. Les donnees du moteur, a la
+  # bonne echelle, disent l inverse : la tranche 50-150 k est la SEULE positive dans les deux
+  # moities de la periode (+0,043 par euro, 48 % de gagnants), quand 25-50 k fait -0,018 et
+  # < 25 k fait -0,134. Mon plafond coupait donc exactement la meilleure tranche.
+  # Effet mesure sur 24 h de jugements : le rythme passe de 0,29 a 0,71 passage par heure.
+  # On ne va pas au-dela de 150 k : il n y a aucune mesure pour le justifier, et 34 des 59
+  # lancements ecartes sont au-dessus de 500 k, la population « trop grosse pour bouger ».
+  max_market_cap_usd: 150000
   # PLANCHER de capitalisation, ajoute le 09/09. La regle avait un plafond et aucun plancher : elle
   # achetait donc en plein dans la pire tranche du marche. Mesure sur 129 lancements du moteur, a la
   # bonne echelle de comptage, croises avec les courbes de prix du collecteur :
