@@ -115,8 +115,18 @@ class SolanaWatcher:
         await self.run_carnet()
         suivis = await self._suivre()
         crea = await self._createurs(rpc)
+        # Douze strategies jouees en parallele sur le meme flux, en argent fictif. C est la reponse
+        # au reproche de l operateur : « il faut des strategies multiples qui tournent en continu ».
+        # Regler une seule regle coute une mesure par heure et des tickets reels ; ici dix hypotheses
+        # coutent le meme temps qu une et zero euro. Voir intel/engines/solana_strategies.py.
+        strat = {}
+        try:
+            from intel.engines.solana_strategies import evaluer
+            strat = evaluer(self.ctx)
+        except Exception as exc:  # noqa: BLE001
+            log.info("solana: strategies non evaluees (%s)", str(exc)[:80])
         return {"status": "ok", "seen": len(pairs), "judged": judged, "decisions": bought,
-                "suivis": suivis, "createurs": crea}
+                "suivis": suivis, "createurs": crea, "strategies": strat.get("lignes", 0)}
 
     async def run_carnet(self) -> dict[str, Any]:
         """Executer les decisions et surveiller les positions ouvertes. Boucle rapide, a part.
