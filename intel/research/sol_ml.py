@@ -76,7 +76,25 @@ def jeu(db: str) -> list[dict[str, Any]]:
         if mult is None:
             mult = fen[-1][1]
         d = dict(j)
-        p30 = d.get("uniq_payers_30s") or 0
+        # Deux champs melangent une vraie valeur et une panne de mesure, et il faut les separer
+        # avant tout apprentissage (audit du 09/09) :
+        #   - `uniq_payers_30s` vaut 0 sur 684 lignes, dont 332 qui declarent PLUS DE DIX echanges
+        #     dans les memes trente secondes. Zero acheteur pour cent echanges est impossible :
+        #     l enrichissement Helius a echoue et le code a ecrit 0 au lieu d inconnu. Les 352
+        #     autres zeros sont legitimes -- zero echange, donc zero acheteur.
+        #   - `liquidity_usd` vaut exactement 0,00 sur 201 lignes qui affichent 181 echanges en
+        #     mediane : le champ est absent, pas nul.
+        # Un jeu d apprentissage avec des trous non declares est pire qu un petit jeu propre : le
+        # modele apprend a reconnaitre la panne. C est exactement ce qui a fait sortir
+        # « liquidity_usd < 8,83 » comme meilleure regle, alors qu elle ne selectionnait que les
+        # lignes ou la donnee manque.
+        t30 = d.get("trades_30s") or 0
+        p30 = d.get("uniq_payers_30s")
+        if p30 == 0 and t30 > 0:
+            p30 = None                      # mesure ratee, pas une vraie absence d acheteurs
+            d["uniq_payers_30s"] = None
+        if not d.get("liquidity_usd"):
+            d["liquidity_usd"] = None
         d["ratio"] = (d.get("trades") or 0) / max(d.get("payers") or 1, 1)
         d["accel"] = (float(d.get("payers") or 0) / p30) if p30 else None
         d["gain"] = (mult * PEAGE - 1) * TICKET

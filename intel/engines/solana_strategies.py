@@ -149,8 +149,12 @@ def evaluer(ctx: IntelContext, fenetre_h: int = 48) -> dict[str, Any]:
             " j.age_s, o.trades_30s, o.uniq_payers_30s FROM solana_judgements j"
             " LEFT JOIN solana_observations o ON o.pair_id=j.pair_id WHERE j.ts > ?", (depuis,)):
         d = dict(r)
-        p30 = d.get("uniq_payers_30s") or 0
-        d["accel"] = (float(d.get("payers") or 0) / p30) if p30 else None
+        #  a 0 alors que des echanges ont eu lieu = enrichissement rate, pas une
+        # absence d acheteurs (332 cas sur 1 512, audit du 09/09). L acceleration est alors inconnue
+        # et les strategies qui s en servent doivent ecarter la ligne, pas la juger sur un faux zero.
+        t30 = d.get("trades_30s") or 0
+        p30 = d.get("uniq_payers_30s")
+        d["accel"] = (float(d.get("payers") or 0) / p30) if (p30 and not (p30 == 0 and t30 > 0)) else None
         juges[d["pair_id"]] = d
 
     ecrits = 0
