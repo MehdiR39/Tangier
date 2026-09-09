@@ -59,6 +59,17 @@ class Manuel:
     def _cfg(self, cle: str, defaut: Any) -> Any:
         return self.ctx.config.get(f"manuel.{cle}", defaut)
 
+    def _cle(self) -> str | None:
+        """Le portefeuille du trading manuel, separe de celui du robot.
+
+        Les deux n ont aucune raison de partager une cle : ce qu on met dans le portefeuille manuel
+        est ce qu on accepte de risquer a la main, et une erreur du robot ne peut pas y toucher.
+        Si le fichier n existe pas, le manuel utilise le portefeuille du robot -- comportement
+        d avant, conserve pour ne rien casser."""
+        import os
+        f = str(self._cfg("cle_fichier", "/app/data/.solana_key_manuel"))
+        return f if f and os.path.exists(f) else None
+
     # ------------------------------------------------------------------ achat
     async def acheter(self, arg: str) -> str:
         parts = arg.split()
@@ -94,7 +105,7 @@ class Manuel:
         try:
             taux = await sol.sol_eur(self.client)
             res = await sol.prepare_buy(
-                self.client, mint=mint, size_eur=eur, sol_eur=taux,
+                self.client, mint=mint, size_eur=eur, sol_eur=taux, proprietaire=sol.signer_address(self._cle()),
                 slippage_pct=float(self.ctx.config.get("solana.slippage_pct", 15.0)),
                 max_impact_pct=float(self.ctx.config.get("solana.max_impact_pct", 6.0)),
                 priorite_lamports=int(self.ctx.config.get("solana.priority_fee_lamports", 0) or 0),
@@ -107,7 +118,7 @@ class Manuel:
         if not tx_b64:
             return f"Transaction non assemblee : {res.get('refused_reason') or 'aucune cle'}"
         try:
-            signee = sol.sign(tx_b64)
+            signee = sol.sign(tx_b64, self._cle())
             h = await sol.send(self.client, rpc, signee)
         except Exception as exc:  # noqa: BLE001
             return f"Envoi refuse : {str(exc)[:140]}"
@@ -174,7 +185,7 @@ class Manuel:
         from intel.execution import solana as sol
 
         rpc = sol.rpc_url()
-        proprio = sol.signer_address()
+        proprio = sol.signer_address(self._cle())
         if not rpc or not proprio:
             return "Solana indisponible : point d acces ou cle absent."
         # Le solde REEL, jamais ce que le livre croit detenir (§5.1).
@@ -198,7 +209,7 @@ class Manuel:
         if not tx_b64:
             return "Transaction non assemblee (aucune cle ?)."
         try:
-            h = await sol.send(self.client, rpc, sol.sign(tx_b64))
+            h = await sol.send(self.client, rpc, sol.sign(tx_b64, self._cle()))
         except Exception as exc:  # noqa: BLE001
             return f"Envoi refuse : {str(exc)[:140]}"
         self.ctx.db.insert("executions", {

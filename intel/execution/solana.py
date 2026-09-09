@@ -105,16 +105,32 @@ async def sol_eur(client: httpx.AsyncClient, fallback: float = 96.0, max_age_s: 
     return px or fallback
 
 
-def signer_address() -> str | None:
+def signer_address(fichier: str | None = None) -> str | None:
     """The address that would sign, or None when no key is configured. Public information."""
     try:
-        return str(_keypair().pubkey())
+        return str(_keypair(fichier).pubkey())
     except SolanaRefused:
         return None
 
 
-def _keypair() -> Any:
-    """Derive the keypair from the environment. The key never leaves this function."""
+def _keypair(fichier: str | None = None) -> Any:
+    """Derive the keypair. The key never leaves this function.
+
+     designe un portefeuille SEPARE -- celui du trading manuel. Le carnet automatique et
+    les ordres passes a la main n ont aucune raison de partager une cle : ce qui est mis dans le
+    portefeuille manuel est ce que l operateur accepte de risquer a la main, et une erreur du robot
+    ne peut pas y toucher. C est la meme raison qui fait que le bot a son propre portefeuille plutot
+    que celui de l operateur.
+    """
+    if fichier:
+        try:
+            with open(fichier) as fh:
+                raw = fh.read().strip()
+        except OSError as exc:
+            raise SolanaRefused(f"portefeuille manuel illisible : {exc.__class__.__name__}") from exc
+        if not raw:
+            raise SolanaRefused("portefeuille manuel vide")
+        return _depuis_texte(raw)
     raw = (os.environ.get(KEY_ENV) or "").strip()
     if not raw:
         # A container reads its environment once, at creation, so a key added to .env while a live
@@ -131,6 +147,10 @@ def _keypair() -> Any:
                     break
     if not raw:
         raise SolanaRefused(f"aucune clé dans {KEY_ENV} : rien n'est signé")
+    return _depuis_texte(raw)
+
+
+def _depuis_texte(raw: str) -> Any:
     try:
         import base58
         from solders.keypair import Keypair
@@ -186,11 +206,11 @@ async def build_swap(client: httpx.AsyncClient, q: SolanaQuote, owner: str,
     return tx
 
 
-def sign(tx_b64: str) -> str:
+def sign(tx_b64: str, fichier: str | None = None) -> str:
     """Sign the transaction Jupiter built. Returns it serialised, ready to broadcast."""
     from solders.transaction import VersionedTransaction
 
-    kp = _keypair()
+    kp = _keypair(fichier)
     unsigned = VersionedTransaction.from_bytes(base64.b64decode(tx_b64))
     signed = VersionedTransaction(unsigned.message, [kp])
     return base64.b64encode(bytes(signed)).decode()
@@ -284,7 +304,7 @@ async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, sli
         return {"status": "REFUSED", "refused_reason": "la chaine ne rend rien pour cette vente"}
     if q.price_impact_pct > max_impact_pct:
         return {"status": "REFUSED", "refused_reason": f"impact de sortie {q.price_impact_pct:.1f} % > {max_impact_pct:.0f} %"}
-    owner = signer_address()
+    owner = proprietaire or signer_address()
     if owner is None:
         return {"status": "BUILT", "amount_in": str(amount), "quoted_amount_out": str(q.out_amount),
                 "slippage_pct": q.price_impact_pct, "route": q.route,
@@ -299,7 +319,8 @@ async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, sli
 
 async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, sol_eur: float,
                       slippage_pct: float, max_impact_pct: float, priorite_lamports: int = 0,
-                      max_aller_retour_pct: float = 0.0) -> dict[str, Any]:
+                      max_aller_retour_pct: float = 0.0,
+                      proprietaire: str | None = None) -> dict[str, Any]:
     """Everything but the signature: what the journal records, in dry run and live alike."""
     lamports = int(size_eur / max(sol_eur, 1e-9) * LAMPORTS)
     if lamports <= 0:
@@ -341,7 +362,7 @@ async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, 
             return {"status": "REFUSED", "amount_in": str(lamports),
                     "refused_reason": f"aller-retour {perte:.1f} % > plafond {max_aller_retour_pct:.1f} % "
                                       f"(on entrerait sans pouvoir ressortir)"}
-    owner = signer_address()
+    owner = proprietaire or signer_address()
     if owner is None:
         return {"status": "BUILT", "amount_in": str(lamports), "quoted_amount_out": str(q.out_amount),
                 "slippage_pct": q.price_impact_pct, "route": q.route,

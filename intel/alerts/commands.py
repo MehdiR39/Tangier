@@ -481,6 +481,26 @@ class TelegramCommands:
                 lines.append(f"<code>  {addr[:10]}…{addr[-4:]}</code>")
             except Exception:  # noqa: BLE001
                 lines.append("Solana     solde illisible")
+        # Le portefeuille du trading manuel, quand il existe. Il est SEPARE de celui du robot :
+        # ce qu on y met est ce qu on accepte de risquer a la main, et une erreur du robot ne peut
+        # pas y toucher. Sans cette ligne on ne pourrait pas suivre son solde depuis Telegram.
+        import os as _os
+        fichier = str(self.ctx.config.get("manuel.cle_fichier", "/app/data/.solana_key_manuel"))
+        if rpc and _os.path.exists(fichier):
+            man = sol.signer_address(fichier)
+            if man:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient() as c:
+                        bal = await sol.sol_balance(c, rpc, man) / 1e9
+                        rate = await sol.sol_eur(c)
+                    lines.append("")
+                    lines.append(f"Manuel     {bal:.4f} SOL" + (f"  ≈ {bal * rate:.0f} €" if rate else ""))
+                    lines.append(f"<code>  {man}</code>")
+                    if bal <= 0:
+                        lines.append("<i>  vide : envoyer des SOL a cette adresse pour utiliser /achat</i>")
+                except Exception:  # noqa: BLE001
+                    lines.append("Manuel     solde illisible")
         return NL.join(lines)
 
     async def close(self) -> None:
