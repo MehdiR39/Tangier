@@ -1574,6 +1574,43 @@ a échoué. Sans cet échec, je serais resté persuadé d'avoir corrigé quelque
 mêmes extensions (`metadataPointer`, `tokenMetadata`) et **aucune taxe de transfert**. L'hypothèse
 d'un jeton taxé à la vente ne tient pas ; la différence entre les deux est le mouvement de prix
 pendant l'atterrissage, pas la structure du jeton.
+
+### 3.50 — « Tu as vendu trop tôt » : vrai sur ce ticket, faux comme règle, 2026-09-09 15h30
+**Reproche de l'opérateur** devant une courbe. Vérifié, et il a raison sur le cas :
+
+| jeton | notre sortie | prix ~40 min plus tard | écart |
+|---|---|---|---|
+| **HAMSTERUNITE** | ×1,14 (T+15) | **×1,71** | **+50 %** |
+| AMDuck | ×0,06 (stop) | ×0,05 | −22 % — vendre était juste |
+
+On a encaissé 2,73 € là où tenir en aurait donné ~14.
+
+**Mais la règle se juge sur la distribution, pas sur un cas.** Le suivi posé trois heures plus tôt
+(§3.44) permet de trancher : sur **51 pools** suivis de T+2 à T+30, prix maximum après T+15 rapporté
+au prix à T+15 :
+
+| | |
+|---|---|
+| médiane | **×1,01** |
+| 3e quartile | ×1,05 |
+| font mieux de plus de 20 % | 7 sur 51 (**14 %**) |
+| font **pire** | 15 sur 51 (**29 %**) |
+
+**Tenir au-delà de T+15 ne rapporte rien en moyenne, et deux fois plus de pools se dégradent qu'ils
+ne progressent nettement.** HAMSTERUNITE appartient aux 14 % favorables. Tenir systématiquement
+aurait gagné 50 % sur lui et perdu davantage sur quinze autres.
+
+**On ne touche pas à la durée de détention.**
+
+**Ce que cet épisode démontre surtout** : la question a été tranchée en deux minutes sur 51 pools,
+là où il aurait fallu des semaines de tickets réels. C'est exactement ce que le suivi devait
+apporter, et c'est la première fois qu'une intuition de l'opérateur est vérifiée le jour même sur un
+échantillon suffisant.
+
+**Sur le stop, en revanche, prudence.** ZDOG est sorti à ×0,62 pour un seuil à 0,70, soit 11 % de
+dépassement, avec la boucle à 5 secondes. Tentant d'y voir la preuve que la boucle marche — sauf que
+CALVIN faisait déjà 11 % **avant** elle, et qu'AMDuck en faisait 91 %. Un bon cas après un correctif
+ne prouve rien quand un cas aussi bon existait avant. Il faut la série.
 ---
 
 ## 4. Pistes ouvertes, non testées
