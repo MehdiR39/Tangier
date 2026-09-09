@@ -204,7 +204,12 @@ solana:
   # la surveillance ne passait qu apres le jugement des lancements, soit toutes les 35 a 95 s. Pour
   # un stop de perte c est une eternite : AMDuck a un sommet a x1,11 et une sortie a x0,06 avec un
   # stop cense couper a x0,7. Journal §3.34.
-  book_poll_seconds: 5
+  # PORTE DE 5 A 20 SECONDES le 09/09 a 18h50, en urgence. A 5 s la boucle cotait chaque position
+  # ouverte douze fois par minute et, avec les deux cotations du filtre d aller-retour a chaque
+  # achat, saturait l API Jupiter : USELESSLAPTOP, montee a x1,53, a essuye VINGT-SIX refus de vente
+  # consecutifs en erreur 429 « Rate limit exceeded » et n a pas pu sortir a son sommet. Un stop plus
+  # reactif qui empeche de vendre est pire que pas de stop du tout. Journal §3.55.
+  book_poll_seconds: 20
   # Suivi du prix de TOUT lancement juge, achete ou non, pendant N minutes apres le jugement.
   # Le carnet juge 58 lancements par heure et n en achete que 0,8 : sans ce suivi on n apprend que
   # sur 1,4 % de ce qu on voit, et chaque question de seuil reste sans reponse faute d echantillon.
@@ -263,7 +268,12 @@ solana:
   # variante a 50 est NEGATIVE hors echantillon, -0,134 par euro. Je l avais baissee trois heures
   # plus tot sur une base bien plus faible -- une tendance monotone sur 134 lancements, sans
   # validation hors echantillon. Journal §3.45.
-  min_buyers: 75
+  # PORTE A 99999 EN URGENCE le 09/09 a 18h55 : aucun achat, le carnet continue de vendre.
+  # Jupiter nous plafonne (429) et USELESSLAPTOP, montee a x1,54, ne peut pas sortir apres plus de
+  # trente refus de vente. Chaque tentative d achat consomme deux a trois cotations et prive les
+  # ventes du quota restant. On coupe la source pour rendre les sorties possibles. Remettre 75 pour
+  # rouvrir. Journal §3.55.
+  min_buyers: 99999
   max_trades_per_buyer: 15
   # Plafond de densite, ajoute le 2026-09-08. La densite dit autre chose que le plancher
   # d acheteurs : a plancher egal, garder les lancements sous 600 echanges dans la premiere minute
@@ -306,7 +316,14 @@ solana:
   # Effet mesure sur 24 h de jugements : le rythme passe de 0,29 a 0,71 passage par heure.
   # On ne va pas au-dela de 150 k : il n y a aucune mesure pour le justifier, et 34 des 59
   # lancements ecartes sont au-dessus de 500 k, la population « trop grosse pour bouger ».
-  max_market_cap_usd: 150000
+  # REMIS A 50 000 le 09/09 a 18h45. Je l avais releve a 150 k trois heures plus tot en m appuyant
+  # sur une mesure de la tranche 50-150 k faite AVANT de decouvrir que les sorties simulees doivent
+  # etre confirmees par deux releves (§3.54) : elle etait donc possiblement un artefact du bruit de
+  # prix. Effet mesure du relevement : 5 tickets en 2,5 h pour -24,17 EUR, soit -0,242 par euro et
+  # un rythme de 2,8 tickets par heure -- ce qui projette -233 EUR par jour. Multiplier le rythme
+  # d une strategie negative, c est perdre plus vite. On revient au reglage anterieur en attendant
+  # une mesure refaite proprement.
+  max_market_cap_usd: 50000
   # PLANCHER de capitalisation, ajoute le 09/09. La regle avait un plafond et aucun plancher : elle
   # achetait donc en plein dans la pire tranche du marche. Mesure sur 129 lancements du moteur, a la
   # bonne echelle de comptage, croises avec les courbes de prix du collecteur :

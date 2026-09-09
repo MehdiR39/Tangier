@@ -7198,6 +7198,41 @@ de 2 % est fixe, et il n'y a rien à gagner côté exécution.
 - **Une sortie simulée se confirme sur deux relevés consécutifs.** 7 % des écarts entre deux points
   de prix dépassent 20 % ; un pic isolé crée un objectif atteint qui n'a jamais existé. C'est ce
   qui a fait annoncer +2,995 € par ticket pour un signal qui valait −0,292 (§3.54).
+
+### 3.55 — Le stop à 5 secondes a empêché de vendre, 2026-09-09 19h
+**L'incident.** USELESSLAPTOP, achetée à 13:57, monte à **×1,58**. La règle veut vendre à T+15. Elle
+n'y arrive pas : **plus de trente refus consécutifs de Jupiter en erreur 429 « Rate limit
+exceeded »**, de 14:12 à 14:17. La position est restée bloquée à son sommet pendant cinq minutes.
+
+**La cause est un correctif que j'ai déployé ce midi.** `book_poll_seconds: 5` faisait coter chaque
+position ouverte douze fois par minute ; s'y ajoutaient les deux cotations du filtre d'aller-retour à
+chaque tentative d'achat, à un rythme de 2,8 achats par heure. Le quota de l'API gratuite a sauté, et
+les VENTES ont été les premières victimes puisqu'elles passent par le même endpoint.
+
+**Un garde-fou qui bloque la sortie est pire que pas de garde-fou.** J'avais construit un stop plus
+réactif qui, dans les faits, empêchait de vendre.
+
+**Ce qui a débloqué** : couper les achats (`min_buyers: 99999`) pour rendre le quota aux ventes. La
+position est sortie dans les vingt secondes, à ×1,44, **+8,54 €**. Puis `book_poll_seconds` porté de
+5 à 20.
+
+**Comment je l'ai vu** : parce que l'opérateur a demandé pourquoi USELESSLAPTOP était encore ouverte.
+**Pas** parce que la surveillance l'a détecté — le bilan des 30 minutes vérifie les positions Solana
+bloquées au-delà de 20 minutes, et celle-ci en était à 17. Le seuil était trop lâche et la
+vérification ne regardait pas les échecs d'exécution répétés.
+
+**Bilan de la période où le rythme était élevé** (12h50 → 19h, plafond de capitalisation à 150 k) :
+7 tickets, **−21,98 €**, −0,157 par euro, à 2,8 tickets/heure — soit **−233 € par jour** au même
+régime. Le plafond a été remis à 50 k, puis les achats coupés entièrement.
+
+**Acquis quand même** : **0 perte supérieure à la moitié de la mise sur ces 7 tickets**, contre 22 %
+avant les correctifs. Les stops coupent désormais à ×0,62-0,69 au lieu de ×0,06. La limitation des
+pertes fonctionne ; c'est le seul progrès mesurable de la journée.
+
+**Part de responsabilité, demandée par l'opérateur et due** : sur ~290 € perdus depuis le début,
+environ 200 € viennent de défauts de ma main — BIPOLAR payé deux fois (−20 €), stop absent les
+premières heures (~−40 €), plafond relevé sur une mesure fausse (−24 €), Robinhood laissé sans
+surveillance la nuit (−119 €). Le marché explique le reste.
 ---
 - **Une sortie simulée se confirme sur deux relevés consécutifs.** 7 % des écarts entre deux points
   de prix dépassent 20 % ; un pic isolé crée un objectif atteint qui n'a jamais existé. C'est ce
