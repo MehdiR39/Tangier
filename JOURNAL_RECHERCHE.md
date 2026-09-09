@@ -1310,6 +1310,44 @@ Solana.
 
 **À corriger dans la foulée** : le bilan périodique doit inclure le résultat par euro des DEUX
 carnets et vérifier les critères d'arrêt écrits, pas seulement l'état des moteurs.
+
+### 3.43 — Le collecteur ne suit pas le pool qu'on trade, 2026-09-09 12h
+**Point de départ** : les cinq grosses pertes Solana portent tout le déficit. En traçant leur chemin
+de prix, trois d'entre elles semblaient avoir été perdues **pendant que le marché montait** —
+CATECOIN à ×2,34, Dukky à ×1,90, AMDuck à ×1,21. De quoi soupçonner un défaut grave de notre
+exécution.
+
+**Vérification sur la chaîne, qui tranche** :
+
+| | acheté | vendu | rapport |
+|---|---|---|---|
+| AMDuck | 0,2091 SOL → 485,1 Md jetons | 485,0 Md → **0,0121 SOL** | **×0,058** |
+| DLSS5 | 0,2077 SOL → 617,9 Md | 617,8 Md → 0,0222 SOL | ×0,107 |
+| CATECOIN (matin) | 0,0278 SOL → 40,3 Md | 39,9 Md → 0,0009 SOL | ×0,033 |
+| CATECOIN (soir) | 0,2090 SOL → 418,6 Md | 416,1 Md → **0,3185 SOL** | ×1,52 |
+
+Les ventes ont bien eu lieu, sur la quasi-totalité des jetons détenus, à des prix catastrophiques.
+**Il n'y a pas de défaut d'exécution.**
+
+**L'erreur était dans ma lecture.** Le collecteur de recherche (`sol_pair`) enregistre **un** pool
+par jeton, et ce n'est pas nécessairement celui que le moteur trade — un jeton gradué en a plusieurs.
+Le signe qui aurait dû m'alerter : alignés sur le pool du collecteur, AMDuck et Dukky apparaissent
+achetés à T+12,3 et T+19,1 minutes, alors que la fenêtre d'achat s'arrête à 10 minutes. Deux pools,
+deux horloges.
+
+**Ce que ça invalide** : la comparaison rejeu/réel de §3.31 appariait les lignes **par jeton**, pas
+par pool. Sa conclusion — « le rejeu est fiable dès lors qu'il simule la règle qui tournait » —
+repose donc sur des chemins de prix qui ne sont pas forcément ceux qu'on a subis. Les cinq lignes
+d'après le stop restent cohérentes, mais **la démonstration est plus faible que je ne l'ai écrite**.
+
+**Ce que ça ne change pas** : entre notre dernier relevé de prix (×1,11 pour AMDuck) et la vente, la
+valeur a chuté de 94 %, en un seul intervalle de la boucle lente. La boucle à 5 secondes (§3.34) et
+les frais de priorité (§3.40) visent précisément ce trou, et rien ici ne les remet en cause.
+
+**À corriger dans la collecte** : `sol_pair` doit enregistrer le pool **par pair_id**, et
+l'appariement avec nos positions doit se faire sur le pair_id que le moteur a réellement tradé —
+il est déjà écrit dans les notes de chaque position (`pool:...`). Tant que ce n'est pas fait, aucune
+comparaison entre les courbes du collecteur et nos résultats réels n'est fiable.
 ---
 
 ## 4. Pistes ouvertes, non testées
@@ -1451,6 +1489,10 @@ se serait déclenché sur 223,86 € de pertes fictives. Corrigé dans les deux 
   ne se comparent pas à un rejeu qui l'applique : l'écart apparent était de +0,412 par euro, il
   devient −0,090 une fois les époques séparées (§3.31). Les dates de changement de règle sont
   consignées ici exactement pour ça.
+- **Apparier par POOL, jamais par jeton.** Un jeton gradué a plusieurs pools ; le collecteur en
+  suit un, le moteur en trade un autre. Trois grosses pertes ont semblé se produire « pendant que
+  le marché montait » à cause de cet appariement, et deux positions apparaissaient achetées hors
+  de la fenêtre d'achat (§3.43). Le pair_id réellement tradé est dans les notes de la position.
 - **Toute requête de résultat filtre sur `kind='PORTFOLIO'`.** La table `positions` mélange carnet
   réel et carnet à blanc ; sans le filtre on annonce −339 € au lieu de −115 € (§5.11).
 - **Un chiffre s'annonce avec la taille de son échantillon**, et quand elle est mince la conclusion
