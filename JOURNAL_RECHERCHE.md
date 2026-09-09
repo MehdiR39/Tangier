@@ -833,6 +833,22 @@ arrière est une seule ligne dans `docker-compose.yml`.
 la vraie réponse — quelques appels critiques ne devraient jamais attendre derrière des centaines
 d'appels sans valeur — mais c'est un changement d'architecture qu'on ne fait pas à 2 h du matin sur
 un carnet en position.
+
+**Résultat de l'expérience, 09/09 08h — l'hypothèse est fausse.** À 10 req/s : **3,57 %** d'appels
+bridés sur 51 005, contre 3,60 % à 15 req/s. **Diviser notre débit par deux laisse le taux de
+bridage identique.** Le nœud ne bride donc pas sur le nombre d'appels. Le délai décision → ordre
+Robinhood est passé de 6 s à 5 s sur 5 achats — non mesurable.
+
+Retour à 15 req/s, appliqué par le critère écrit d'avance : plus rapide, et pas davantage bridé.
+
+**Ce que ça apprend** : le bridage est proportionnel au **coût** des appels, pas à leur nombre.
+Les 85 % de bridages sur `eth_getLogs` et `eth_call` pointent vers les plages de blocs demandées
+par l'ingestion. La piste à suivre n'est donc pas le débit mais la **taille des plages**, et
+au-delà la priorité des appels d'exécution sur ceux du scanner.
+
+**Leçon de méthode** : sans le critère écrit d'avance, ce réglage serait resté à 10 en croyant
+avoir amélioré quelque chose. Un changement qui ne bouge pas la mesure qu'il visait doit être
+défait, pas conservé « au cas où ».
 ---
 
 ## 4. Pistes ouvertes, non testées
