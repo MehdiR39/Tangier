@@ -774,6 +774,48 @@ règle. Les changements de règle sont datés dans ce journal — ils servent ex
 **Ce que ça dit du stop, accessoirement** : les 9 lignes jouées sans stop ont rendu −0,204 par euro
 en réel. Ce n'est pas une contrefactuelle rigoureuse — notre propre achat pèse sur le marché — mais
 c'est cohérent avec le balayage de §3.29 qui donne au stop +78 % de rendement.
+
+### 3.32 — Le nœud Robinhood nous bride, et ça coûte six secondes par achat, 2026-09-09 02h
+**Déclencheur** : le moniteur de nuit signale une exception. C'est un `rpc 429` attrapé par le
+scanner — pas un crash. Mais la question suivante valait le détour.
+
+**Hypothèse testée et écartée** : les ventes « invendables » sont-elles causées par notre propre
+bridage ? **Non.** Les ventes échouent sur `rpc error 3` (revert du contrat) et sur des cotations à
+zéro ; seulement **9 des 978 bridages** de trois heures touchent `eth_estimateGas`. Les invendables
+sont réels.
+
+**Ce que le bridage coûte vraiment** :
+
+| | |
+|---|---|
+| appels RPC | 28 998 |
+| bridés (429) | **1 049, soit 3,6 %** |
+| coût d'un bridage | 2,6 à 4 s d'attente avant réessai |
+| délai décision → ordre, Robinhood | **médian 6 s, max 101 s** |
+| délai décision → ordre, Solana | médian 0 s, max 10 s |
+
+Répartition des bridages sur 3 h : `eth_getLogs` 482, `eth_call` 363, `eth_getBlockByNumber` 96 —
+c'est-à-dire l'ingestion du scanner, dont §3.15 dit qu'il n'a aucun avantage. Le carnet paie le
+scanner.
+
+Sur une stratégie qui achète dans la deuxième minute d'un pool dont la liquidité est retirée
+8 minutes après notre entrée en médiane (§3.4), 6 secondes est tolérable et 101 secondes ne l'est
+pas : c'est un tiers de la fenêtre de sortie consommé avant même d'avoir acheté.
+
+**Changement** : `INTEL_RPC_RPS` de 15 à 10. La rafale suit le débit dans le code
+(`burst = int(rpc_rps)`), donc c'est aussi la rafale de 15 appels instantanés qu'on abaisse — et
+c'est probablement elle qui déclenchait le bridage. Le commentaire du code affirmait que le nœud
+tenait 55 req/s sans erreur, mesure du 04/09 ; il ne les tient manifestement plus.
+
+**Critère écrit d'avance** : si la part d'appels bridés ne tombe pas sous 1 % d'ici une heure,
+descendre à 7. Si elle y tombe, vérifier que le délai décision → ordre Robinhood a baissé. Si le
+délai ne baisse pas, le bridage n'était pas la cause et il faudra chercher ailleurs — le retour en
+arrière est une seule ligne dans `docker-compose.yml`.
+
+**Piste ouverte, non faite** : donner la priorité aux appels d'exécution sur ceux du scanner. C'est
+la vraie réponse — quelques appels critiques ne devraient jamais attendre derrière des centaines
+d'appels sans valeur — mais c'est un changement d'architecture qu'on ne fait pas à 2 h du matin sur
+un carnet en position.
 ---
 
 ## 4. Pistes ouvertes, non testées

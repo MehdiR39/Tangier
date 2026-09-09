@@ -36,6 +36,16 @@ services:
       # Une fois par semaine suffit sur une base de cette taille ; la vraie reponse est de la
       # faire maigrir (voir la retention), pas de verifier moins souvent.
       - INTEL_DB_CHECK_HOURS=168
+      # Le noeud Robinhood bridait 3,6 % de nos appels (1 049 sur 28 998) le 09/09 vers 2 h, et
+      # chaque bridage coute 2,6 a 4 s d attente avant reessai. Cout mesure : 6 s en mediane entre
+      # la decision et l ordre sur Robinhood, jusqu a 101 s -- contre 0 s sur Solana. Le limiteur
+      # etait a 15 req/s avec des rafales de 15, sur la foi d une mesure du 04/09 disant que le
+      # noeud tenait 55 req/s sans erreur ; il ne les tient manifestement plus.
+      # Descendu a 10 : la rafale suit le debit, donc c est aussi la rafale qu on abaisse.
+      # Critere ecrit d avance : si la part d appels brides ne tombe pas sous 1 % d ici une heure,
+      # descendre a 7 ; si elle y tombe, verifier que le delai decision->ordre Robinhood a baisse.
+      # Journal §3.32.
+      - INTEL_RPC_RPS=10
     volumes:
       - intel_db:/app/db
       - ./data:/app/data
