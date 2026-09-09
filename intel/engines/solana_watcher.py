@@ -636,16 +636,28 @@ class SolanaWatcher:
         ph = ",".join("?" * len(accepted))
         now = now_ts()
         for r in db.query(
-                "SELECT d.id, d.token_address, d.label, d.price, d.size_eur, e.ts ets FROM decisions d "
+                "SELECT d.id, d.token_address, d.label, d.price, d.size_eur, d.metrics_json, e.ts ets FROM decisions d "
                 "JOIN executions e ON e.chain_id=d.chain_id AND e.decision_id=d.id "
                 f"WHERE d.chain_id=? AND d.model_version=? AND d.kind='BUY' AND d.ts>? AND e.status IN ({ph}) "
                 "AND NOT EXISTS (SELECT 1 FROM positions p WHERE p.chain_id=d.chain_id AND p.notes LIKE ('sol:' || d.id || ' %'))",
                 (self.ctx.chain_id, MODEL_VERSION, now - 6 * 3600, *accepted)):
+            try:
+                pool = (json.loads(r["metrics_json"] or "{}") or {}).get("pair")
+            except Exception:  # noqa: BLE001
+                pool = None
             db.insert("positions", {
                 "chain_id": self.ctx.chain_id, "token_address": r["token_address"], "label": r["label"],
                 "kind": "VIRTUAL" if mode != "live" else "PORTFOLIO", "opened_ts": int(r["ets"] or now),
                 "entry_price": r["price"], "size_eur": r["size_eur"], "status": "OPEN", "peak_price": r["price"],
-                "model_version": MODEL_VERSION, "notes": f"sol:{r['id']} mint:{r['token_address']}",
+                # Le POOL trade est enregistre, pas seulement le jeton. Un jeton gradue a plusieurs
+                # pools -- 159 des 524 jetons observes en ont au moins deux -- et sans cette trace on
+                # ne peut apparier une position ni a une courbe de prix ni a un rejeu : trois grosses
+                # pertes ont semble se produire « pendant que le marche montait » a cause de cet
+                # appariement approximatif, et deux positions apparaissaient achetees hors de la
+                # fenetre d achat (§3.43). Les positions Robinhood le faisaient deja.
+                "model_version": MODEL_VERSION,
+                "notes": f"sol:{r['id']} mint:{r['token_address']} pool:{pool}" if pool
+                         else f"sol:{r['id']} mint:{r['token_address']}",
             })
             log.info("solana position ouverte %s · %.0f EUR", r["label"], float(r["size_eur"] or 0))
 
