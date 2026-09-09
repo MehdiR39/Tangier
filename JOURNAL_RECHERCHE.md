@@ -1087,6 +1087,45 @@ signatures au lieu de 6, soit jusqu'à six allers-retours RPC de plus entre la c
 signature. Le taux d'échec est passé de 17 % (6 sur 35) à 50 % (4 sur 8) au même moment. Huit
 tentatives ne prouvent rien, mais le mécanisme est cohérent et c'est une raison de plus d'ouvrir la
 tolérance de dérive plutôt que de chercher un meilleur prix.
+
+### 3.37 — La mémoire « déjà jugé » ne survivait pas au redémarrage, 2026-09-09 10h45
+**Déclencheur** : PHOUSE, deux achats refusés à quatre minutes d'intervalle. En cherchant pourquoi
+la chaîne refusait, j'ai trouvé bien pire — **pourquoi on essayait d'acheter.**
+
+| | 10:37:38 | 10:41:45 |
+|---|---|---|
+| pool | `Bqux4KF1Mt…` | **le même** |
+| prix | 3,953 × 10⁻⁵ | **1,107 × 10⁻⁵** (−72 %) |
+| mesure | 317 échanges, 109 acheteurs | **exactement la même** |
+| verdict | acheté | acheté |
+
+Le moteur garde en mémoire les pools déjà jugés (`self.judged`), pour ne juger un lancement qu'une
+fois. **Cette mémoire est en RAM.** J'avais redémarré le conteneur à 10:40 pour appliquer un
+réglage : le redémarrage l'a vidée, et le même pool a été rejugé comme s'il était neuf, à 72 % de
+son prix, avec la même mesure de première minute.
+
+**C'est le troisième visage du même défaut.** NASFROG (§3.25) revenait par une mesure tronquée, WTW
+(§3.26) par un second pool du même jeton, PHOUSE par un redémarrage. À chaque fois la règle « T+1 »
+se transforme en « acheter ce qui vient de s'effondrer ». Et j'ai redémarré ce conteneur une
+douzaine de fois en deux jours.
+
+**Deux corrections** :
+1. La mémoire est lue dans `solana_judgements`, qui est persistante : un pool jugé dans les six
+   dernières heures n'est jamais rejugé, quel que soit le nombre de redémarrages.
+2. Le garde-fou « jeton effondré » ne s'applique plus seulement aux **autres** pools du même jeton
+   mais aussi au **même** pool. La première version excluait le pool courant en supposant qu'il ne
+   pouvait pas être jugé deux fois — supposition fausse dès qu'on redémarre.
+
+**Ce que ça change pour §3.36.** J'y avais attribué les refus de la chaîne à la latence et ouvert la
+tolérance de dérive de 5 à 15 %. La mesure qui la justifiait tient toujours — cotation à 1,7-2 %,
+transaction annulée, donc le prix bouge de plus de 3 % entre la cotation et l'atterrissage. Mais
+l'**urgence** était mal attribuée : ces transactions portaient sur un jeton en train de s'effondrer,
+qu'on n'aurait pas dû chercher à acheter. Le refus de la chaîne nous protégeait. Le réglage à 15 %
+reste en place avec son critère écrit, mais il n'est plus le sujet.
+
+**Leçon de méthode** : un état en mémoire qui garantit « une seule fois » n'en garantit rien dès que
+le processus peut redémarrer — et sur un système qu'on corrige plusieurs fois par jour, il redémarre
+souvent. Tout garde-fou d'unicité doit s'appuyer sur la base, pas sur la RAM.
 ---
 
 ## 4. Pistes ouvertes, non testées
@@ -1220,6 +1259,10 @@ se serait déclenché sur 223,86 € de pertes fictives. Corrigé dans les deux 
   notre propre achat. Sur Robinhood, un backtest à +3 €/ticket a donné un carnet réel à −1,72.
 - **Corriger le fichier, pas seulement la base.** Une réparation ponctuelle sans le correctif de
   code revient le lendemain.
+- **Un garde-fou d'unicité en mémoire n'en est pas un.** `self.judged` garantissait qu'un pool
+  n'est jugé qu'une fois — jusqu'au redémarrage suivant, qui le rouvrait au prix effondré du
+  moment (§3.37). Sur un système corrigé plusieurs fois par jour, l'unicité doit s'appuyer sur la
+  base de données.
 - **Comparer rejeu et réel se fait par époque de règle.** Les lignes jouées avant l'ajout du stop
   ne se comparent pas à un rejeu qui l'applique : l'écart apparent était de +0,412 par euro, il
   devient −0,090 une fois les époques séparées (§3.31). Les dates de changement de règle sont

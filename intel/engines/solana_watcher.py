@@ -92,6 +92,18 @@ class SolanaWatcher:
             created = p.get("pairCreatedAt")
             if not pid or not created or pid in self.judged:
                 continue
+            # `self.judged` vit en MEMOIRE : chaque redemarrage rouvre tous les pools au
+            # rejugement, a leur prix du moment. PHOUSE en a fait les frais le 09/09 -- juge a
+            # 10:37:38 au prix de 3,953e-05, le conteneur redemarre a 10:40, et le meme pool est
+            # rejuge a 10:41:45 a 1,107e-05, soit 72 % plus bas, avec exactement les memes
+            # 317 echanges et 109 acheteurs. La regle T+1 se transforme alors en « acheter ce qui
+            # vient de s effondrer ». La memoire doit donc survivre au processus : elle est deja
+            # ecrite dans `solana_judgements`, il suffit de la lire.
+            if self.ctx.db.scalar(
+                    "SELECT 1 FROM solana_judgements WHERE pair_id=? AND ts>? LIMIT 1",
+                    (pid, now_ts() - 6 * 3600)):
+                self.judged[pid] = now_ts()
+                continue
             age_s = time.time() - created / 1000.0
             if age_s < 75 or age_s > float(self._cfg("max_age_seconds", 600)):
                 continue                                   # judged once its first minute is complete
@@ -348,9 +360,14 @@ class SolanaWatcher:
         chute_max = float(self._cfg("max_collapse_ratio", 2.0) or 0)
         prix = float(p.get("priceUsd") or 0)
         if fenetre and chute_max > 1 and prix > 0:
+            # Tous pools confondus, le MEME COMPRIS. La premiere version excluait le pool courant
+            # (`pair_id <> ?`), en supposant qu un pool n est juge qu une fois ; c est faux des que
+            # le processus redemarre, et PHOUSE a ete rejuge sur son propre pool a 72 % du prix
+            # (§3.37). Un jeton qui s effondre doit etre refuse quel que soit le chemin par lequel
+            # il revient.
             haut = self.ctx.db.scalar(
-                "SELECT MAX(price_usd) FROM solana_judgements WHERE mint=? AND pair_id<>? AND ts>? "
-                "AND price_usd IS NOT NULL", (mint, pid, now - fenetre))
+                "SELECT MAX(price_usd) FROM solana_judgements WHERE mint=? AND ts>? "
+                "AND price_usd IS NOT NULL", (mint, now - fenetre))
             if haut and float(haut) / prix >= chute_max:
                 log.info("solana: %s ecarte — vu a %.3e il y a moins de %d min, propose a %.3e "
                          "(%.1fx moins cher) : le jeton s est effondre, on n achete pas la chute",
