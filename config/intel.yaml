@@ -227,7 +227,30 @@ solana:
   # Avec le plafond de densite, le plancher 75 rend +0,359 par euro et 69 % de gagnants -- soit
   # exactement ce que donnait le plancher 100 SANS plafond -- pour 40 % de tickets en plus :
   # 1,88 par heure au lieu de 1,38, donc les vingt tickets en onze heures au lieu de quinze.
-  min_buyers: 75
+  # ABAISSE DE 75 A 50 le 09/09, decide avec l operateur devant le rythme d achat reel.
+  #
+  # L entonnoir mesure sur 12 h : le flux de migrations livre 43,8 lancements par heure -- dont
+  # seulement 38 sur 526 etaient aussi visibles chez DexScreener, donc l abonnement fait bien son
+  # travail -- 58 sont juges par heure, et le PLANCHER D ACHETEURS en ecarte 88,5 % a lui seul.
+  # Restent 0,58 passage par heure, dont la moitie echoue a l execution : 0,17 position ouverte par
+  # heure, la ou l estimation faite au moment de prendre l abonnement annoncait 4 a 6.
+  #
+  # Ce que le plancher rapporte n est PAS demontre, et ce qu il coute l est. Sur les 134 lancements
+  # mesures a la bonne echelle de comptage, il va meme dans le mauvais sens : aucun plancher
+  # -0,061 par euro, a 75 -0,092, a 100 -0,113 -- monotone, donc pas un accident de grille. En le
+  # restreignant aux lancements qui passent aussi densite et capitalisation il ne reste que 13
+  # lignes, 2 a 5 par tranche : impossible de trancher, et c est justement pour ca qu il faut plus
+  # de tickets.
+  #
+  # CRITERE ECRIT D AVANCE, a verifier sur les 30 prochains tickets reels :
+  #   - le resultat par euro ne doit pas etre pire que -0,10 ;
+  #   - la part des lignes perdant plus de la moitie du ticket ne doit pas depasser 25 %.
+  # Si l un des deux echoue, on remonte a 75 et on l ecrit. Bascule : remettre 75 ici.
+  #
+  # Effet secondaire qui compte autant que le premier : a 0,17 ticket par heure il faut une semaine
+  # pour reunir 30 lignes, donc on ne peut RIEN apprendre. Multiplier le rythme par trois ou quatre
+  # est aussi ce qui rend les mesures suivantes possibles.
+  min_buyers: 50
   max_trades_per_buyer: 15
   # Plafond de densite, ajoute le 2026-09-08. La densite dit autre chose que le plancher
   # d acheteurs : a plancher egal, garder les lancements sous 600 echanges dans la premiere minute

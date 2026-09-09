@@ -1168,6 +1168,46 @@ jours, chaque fois sur quelques dizaines de lancements, chaque fois avec une mes
 propre. **L'échantillon ne porte pas ces réglages.** La discipline pour la suite : plus aucun
 changement de seuil tant que `sol_regime` n'a pas plusieurs jours, sauf pour retirer une tranche
 mauvaise dans les deux moitiés — ce qui est le seul cas où l'on ne surajuste pas.
+
+### 3.39 — Le rythme d'achat : 0,17/h contre 4-6 annoncés, 2026-09-09 11h30
+**Reproche de l'opérateur** : « avec l'abonnement on achèterait 4 par heure, voire 6 ; je ne vois
+rien de tout ça ». Vérifié, et il a raison — d'un facteur trente.
+
+**Entonnoir mesuré sur 12 h** :
+
+| étape | n | par heure |
+|---|---|---|
+| flux de migrations en direct | 526 | **43,8** |
+| dont aussi visibles chez DexScreener | 38 | |
+| lancements jugés | 696 | 58,0 |
+| **écartés faute d'acheteurs** | **616** | **88,5 % du total** |
+| écartés pour densité | 42 | |
+| écartés pour capitalisation | 31 | |
+| passent tous les filtres | 7 | 0,58 |
+| ordres envoyés | 6 | dont **4 échouent** |
+| **positions ouvertes** | **2** | **0,17** |
+
+**L'abonnement n'est pas en cause** : 43,8 lancements par heure, dont 38 seulement sur 526 étaient
+aussi visibles chez DexScreener. Sans lui on ne verrait presque rien. C'est mesuré, et ça règle la
+question de savoir s'il valait ses 49 $.
+
+**Le goulot est le plancher d'acheteurs**, qui écarte à lui seul 88,5 % de tout. Les échecs
+d'exécution mangent ensuite la moitié du reste.
+
+**Ce que le plancher coûte est mesuré ; ce qu'il rapporte ne l'est pas.** Sur les 134 lancements
+comptés à la bonne échelle il va même dans le mauvais sens — aucun plancher −0,061 par euro, à 75
+−0,092, à 100 −0,113, de façon monotone. Restreint aux lancements qui passent aussi densité et
+capitalisation, il ne reste que **13 lignes**, 2 à 5 par tranche : impossible de trancher.
+
+**Décision, avec l'opérateur : plancher ramené de 75 à 50.** Critère écrit d'avance, à vérifier sur
+les 30 prochains tickets réels — le résultat par euro ne doit pas être pire que −0,10, et la part
+des lignes perdant plus de la moitié du ticket ne doit pas dépasser 25 %. Si l'un des deux échoue,
+retour à 75.
+
+**Ce qui justifie de déroger à la règle « plus de changement de seuil » posée en §3.38** : là, le
+coût est mesuré et énorme, et le bénéfice n'est pas démontré. Et il y a un second effet qui compte
+autant : **à 0,17 ticket par heure il faut une semaine pour réunir 30 lignes, donc on ne peut rien
+apprendre.** Multiplier le rythme est aussi ce qui rend les mesures suivantes possibles.
 ---
 
 ## 4. Pistes ouvertes, non testées
