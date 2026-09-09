@@ -978,6 +978,28 @@ qui sont précisément le problème. L'ordre est donc : régler la sortie rapide
 tickets que les pertes totales disparaissent, et seulement si le rendement par euro devient
 franchement positif, discuter de la taille. Le coût d'impact mesuré (0,12 % à 10 €, 0,37 % à 20,
 1,10 % à 50) n'est pas le frein ; le rendement l'est.
+
+**Vérification de la prémisse du correctif** — « les effondrements durent-ils assez longtemps pour
+qu'une surveillance plus rapide serve à quelque chose ? » Sur les 64 lancements éligibles, **29
+passent sous le stop de 0,7 dans les quinze minutes** (45 %). Parmi les 17 dont la chute complète
+de ×0,9 à ×0,5 est chronométrable :
+
+| | |
+|---|---|
+| durée médiane de la chute | **5,0 min** |
+| quartiles | 2,0 / 6,0 min |
+| plus rapide qu'une minute | 2 sur 17 |
+| plus rapide que deux minutes | 5 sur 17 |
+
+**Les effondrements prennent des minutes, pas des secondes.** À l'ancienne cadence on avait 3 à 8
+relevés pendant la chute, à 5 s on en a une soixantaine. Ces lignes touchent un point bas médian de
+**×0,34**, et 9 sur 29 descendent sous ×0,2 — d'où l'écart entre le rejeu, qui sort à 0,7, et le
+carnet, qui sortait bien plus bas. AMDuck sortie à ×0,06 coûte −19,07 € ; à ×0,7 elle coûterait
+−6,10 €.
+
+**Angle mort assumé** : les relevés de recherche sont à la minute, donc une chute plus rapide qu'une
+minute est invisible. Deux cas sur dix-sept y tombent, et pour ceux-là la boucle à 5 s ne garantit
+rien. C'est le critère des vingt prochains tickets qui tranchera.
 ---
 
 ## 4. Pistes ouvertes, non testées
