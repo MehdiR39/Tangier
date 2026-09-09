@@ -1371,6 +1371,53 @@ engager un euro**. Les trois réglages changés aujourd'hui (plancher 50, capita
 densité 600) pourront être jugés sur des données au lieu de l'être sur une intuition.
 
 Premier passage vérifié : 21 relevés sur 21 pools.
+
+### 3.45 — Recherche systématique : aucun avantage démontrable, 2026-09-09 13h
+**Reproche de l'opérateur, fondé** : « tu récupères des données depuis trois jours et tu es toujours
+incapable d'en profiter ». Exact. J'avais 745 lancements et 197 000 relevés de prix, et je m'en
+servais pour répondre à des questions une par une au lieu de chercher une règle.
+
+**Et ma méthode était fausse.** Je regardais les deux moitiés de la période **puis** je retenais ce
+qui était positif dans les deux. C'est du peeking : en essayant assez de combinaisons on en trouve
+toujours une qui passe les deux, et elle ne vaut rien. La bonne méthode — appliquée ici pour la
+première fois — est de **chercher sur la première moitié uniquement**, puis de juger la gagnante sur
+une seconde moitié jamais regardée.
+
+**`intel/research/sol_recherche.py`** : 654 lancements exploitables, 328 dans la première moitié,
+326 dans la seconde. **72 000 combinaisons** de plancher d'acheteurs, plafond de densité, ratio,
+bande de capitalisation, objectif, stop et durée.
+
+**Premier passage, sans contrainte de largeur** — la recherche choisit une règle ultra-sélective :
+
+| | 1re moitié | 2e moitié |
+|---|---|---|
+| ≥75 ach, <600 éch, cap >50 k, ×2,0/stop 0,7/T+30 | 18 lignes, **+0,508** | 8 lignes, **−0,201** |
+
+C'est la signature du surajustement dans sa forme la plus pure : +0,508 devient −0,201.
+
+**Second passage, en exigeant au moins 40 lignes retenues** pour que le verdict ait un sens :
+
+| | 1re moitié | **2e moitié (verdict)** |
+|---|---|---|
+| ≥75 ach, <450 éch, ×2,0/stop 0,7/T+30 | 43 lignes, **+0,314**, 63 % gagnants | 20 lignes, **+0,022**, 40 % gagnants |
+
+**+0,022 par euro sur 20 lignes, c'est zéro.** Après une semaine, 745 lancements et 72 000
+combinaisons : **aucun avantage démontrable.** Ce n'est pas un réglage qui manque.
+
+**Ce que la recherche dit de mes changements du matin** : elle retient **≥ 75 acheteurs**. La
+variante à 50 — que j'avais déployée trois heures plus tôt sur une tendance monotone observée sur
+134 lancements, **sans validation hors échantillon** — est **négative hors échantillon** à −0,134
+par euro. `min_buyers` remis à 75.
+
+**Réserve honnête sur l'objectif ×2,0** que la recherche préfère : §3.23 et §3.34 montrent qu'en
+réel **aucune** de nos 25 positions n'a atteint ×2. La recherche travaille sur des courbes
+DexScreener échantillonnées à la minute, qui contiennent des sommets que notre propre relevé ne voit
+pas et qu'un ordre réel n'atteint pas forcément. On ne change donc pas l'objectif sur cette base.
+
+**La conclusion qui compte** : à 0,6 ticket par heure il faut deux semaines pour accumuler 20 lignes
+de vérification, à 40 € de perte par jour. Le suivi posé une heure plus tôt (§3.44) mesure 58
+lancements par heure **sans engager un euro**. Continuer à acheter, c'est payer pour apprendre vingt
+fois moins vite.
 ---
 
 ## 4. Pistes ouvertes, non testées

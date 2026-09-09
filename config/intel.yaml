@@ -258,7 +258,12 @@ solana:
   # Effet secondaire qui compte autant que le premier : a 0,17 ticket par heure il faut une semaine
   # pour reunir 30 lignes, donc on ne peut RIEN apprendre. Multiplier le rythme par trois ou quatre
   # est aussi ce qui rend les mesures suivantes possibles.
-  min_buyers: 50
+  # REMIS A 75 le 09/09 a 13h. La recherche systematique (72 000 combinaisons choisies sur la
+  # premiere moitie de la periode et jugees sur la seconde, jamais regardee) retient >= 75 : la
+  # variante a 50 est NEGATIVE hors echantillon, -0,134 par euro. Je l avais baissee trois heures
+  # plus tot sur une base bien plus faible -- une tendance monotone sur 134 lancements, sans
+  # validation hors echantillon. Journal §3.45.
+  min_buyers: 75
   max_trades_per_buyer: 15
   # Plafond de densite, ajoute le 2026-09-08. La densite dit autre chose que le plancher
   # d acheteurs : a plancher egal, garder les lancements sous 600 echanges dans la premiere minute
