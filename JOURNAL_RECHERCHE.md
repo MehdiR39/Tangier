@@ -1611,6 +1611,45 @@ apporter, et c'est la première fois qu'une intuition de l'opérateur est vérif
 dépassement, avec la boucle à 5 secondes. Tentant d'y voir la preuve que la boucle marche — sauf que
 CALVIN faisait déjà 11 % **avant** elle, et qu'AMDuck en faisait 91 %. Un bon cas après un correctif
 ne prouve rien quand un cas aussi bon existait avant. Il faut la série.
+
+### 3.51 — Le stop coûte deux positions sur douze, et en épargne trente-cinq euros, 2026-09-09 16h
+**Reproche de l'opérateur** : « ces deux positions m'ont fait perdre de l'argent ». Fondé — RSTR
+sortie à ×1,00 vaut ×1,81 aujourd'hui, ZDOG sortie au stop vaut ×1,08. Environ **25 € manqués sur
+ces deux lignes**.
+
+**Ce que la règle coûte et rapporte, sur les 14 lignes perdantes encore cotables** :
+
+| | |
+|---|---|
+| perdu réellement en vendant | **−144,97 €** |
+| si on tenait encore aujourd'hui | **−180,09 €** |
+| **épargné par le stop** | **+35,12 €** |
+
+Neuf lignes sur onze valent **moins** cher aujourd'hui qu'à notre sortie, et pas de peu : NIKEY
+×0,02, ZAPE ×0,04, AMDuck ×0,05, CALVIN ×0,06, Propaganda ×0,08, ETF ×0,11, BIPOLAR ×0,13. Le stop
+a coupé à ×0,86, ×0,80, ×0,76 avant que ça tombe à deux ou quatre pour cent.
+
+**Pouvait-on distinguer les deux qui remontent ?** Mesuré sur **30 pools** du suivi qui passent sous
+×0,70 :
+
+| après le passage sous le seuil | |
+|---|---|
+| remontent au-dessus de ×1,00 | 5 sur 30 (**17 %**) |
+| remontent au-dessus de ×1,20 | 4 sur 30 (13 %) |
+| **sommet médian atteint ensuite** | **×0,38** |
+| 3e quartile | ×0,70 |
+
+**Trois pools sur quatre ne repassent jamais au-dessus du seuil.** Retirer le stop ferait sortir à
+×0,52 en moyenne au lieu de ×0,70 — soit **26 % de plus perdus sur chaque ligne stoppée**, pour en
+récupérer une sur six.
+
+**On garde le stop, et on ne cherche pas de discriminateur** : cinq cas de remontée, c'est trop peu
+pour en tirer un signal. À revoir quand l'échantillon aura grossi.
+
+**Le biais à nommer, parce qu'il revient sans cesse** : la ligne visible est toujours celle qui monte
+après la vente. Les neuf qui se sont effondrées après notre sortie, personne ne les regarde — on n'y
+pense plus. C'est vrai pour l'opérateur comme pour moi, et c'est pour ça que la seule réponse
+acceptable à « on est sorti trop tôt » est une distribution, jamais un exemple.
 ---
 
 ## 4. Pistes ouvertes, non testées
