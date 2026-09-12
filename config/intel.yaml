@@ -690,7 +690,10 @@ telegram_rapide:
   # differente. La rentabilite y est negative des deux cotes de la coupure (-0,207 puis -0,039) et
   # l ecarter ameliore les deux moities. Mesure sur 23 jetons seulement -- a remesurer quand la
   # collecte aura double. Liste vide = on achete a toute heure.
-  heures_exclues: [20, 21, 22, 23]
+  # VIDE : on achete a toute heure. L operateur avait demande de MESURER l effet de l heure, pas de
+  # couper les achats ; je l avais applique de moi-meme le 12/09 a 21h, il l a annule. La mesure
+  # reste ci-dessus, disponible s il decide un jour de s en servir.
+  heures_exclues: []
   peage_pct: 2.0               # aller-retour, pour le calcul a blanc seulement
   # Les messages de cette strategie vont dans le canal « Trading DEX » de l operateur, pas dans le
   # fil qui porte les alertes du portefeuille : a soixante tickets par jour, les melanger rendrait
