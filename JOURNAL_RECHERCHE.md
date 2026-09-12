@@ -3044,6 +3044,30 @@ S'ajoute le flux : 211 jetons par jour sur Robinhood contre 1 122 sur Solana.
 **Le seul chemin honnête** serait de collecter les réseaux À LA PREMIÈRE VUE, horodatés, pendant
 plusieurs semaines, puis de tester sur cette donnée propre. Rien d'autre ne vaut.
 
+**QUELLE AUTRE CHAÎNE ? 13/09.** Question de l'opérateur : « il y a pas une autre chaîne où c'est
+bien fait comme Solana, avec beaucoup de génération et Telegram ? ». Deux critères : du volume, et
+une métadonnée **gelée à la création** qui porte le lien.
+
+    chaîne / rampe        créations/jour   métadonnée sociale         verdict
+    Solana / pump.fun         ~1 100       dans le jeton, gelée       la référence
+    BNB / four.meme         >20 000        exposée par leur API       À VÉRIFIER
+    Robinhood Chain             211        fiche DexScreener, tardive mort (voir ci-dessus)
+    Base / Clanker                ?        créé depuis Farcaster      non mesuré
+    TON                           ?        Jetton TEP-64, possible    non mesuré
+
+**four.meme est le seul candidat sérieux sur le volume** : plus de 20 000 jetons par jour, davantage
+que pump.fun, et un revenu quotidien supérieur (1,4 M$ contre 885 k$). Son API expose bien Telegram
+et Twitter.
+
+**Ce que je n'ai PAS pu établir**, et c'est tout ce qui compte : ces liens vivent-ils dans
+l'événement de création (donc gelés et horodatés) ou dans leur base de données (donc modifiables,
+comme Robinhood) ? L'adresse de contrat citée par la documentation Bitquery ne renvoie aucun
+événement sur un nœud public, et les nœuds BSC publics plafonnent la portée des requêtes.
+
+**Le test qui tranche** tient en une journée : un accès BSC correct, lire un événement `TokenCreate`,
+regarder si le lien Telegram est dedans. Si oui la règle se transporte presque telle quelle, avec
+vingt fois le flux. Si c'est dans leur base, c'est la situation Robinhood et ça ne vaut rien.
+
 **LE PÉAGE RÉEL, deux tickets.** C'est désormais le chiffre à surveiller avant tous les autres.
 
     ticket        prix     encaissé   péage
