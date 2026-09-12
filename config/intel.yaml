@@ -78,6 +78,12 @@ scanner:
     backfill_blocks: 300000
 
 alerts:
+  # DEBRAYE le 10/09 a 07h40. Le resume quotidien se declenche a 7 h UTC et interroge
+  # token_snapshots par jeton avec ORDER BY ts DESC LIMIT 1 ; sur une base de 22,5 Go cette lecture
+  # n en finit pas et BLOQUE LA BOUCLE de l ordonnanceur -- le moteur est reste muet de 07h00 a
+  # 07h40, Telegram compris, et chaque redemarrage relancait le meme resume toujours du.
+  # A rallumer quand token_snapshots aura l index (chain_id, token_address, ts) (S5.28).
+  daily_digest_enabled: false
   enabled: true
   min_severity: WATCH
   lp_drop_pct: 0.15
@@ -155,6 +161,19 @@ execution:
   # live depuis le 2026-09-07 sur ordre de l'operateur ("lance tout"), portefeuille 0x2a33086d...c908
   # verifie (0.186 ETH). Plafonds inchanges: 25 EUR/ordre, 40 ordres et 200 EUR/jour, 5 % slippage.
   mode: live
+  # ARRET DE L EXECUTEUR EVM, pose le 09/09 a 21h10.
+  #
+  # Contexte : un plafond de positions comptait le papier (§5.18, §5.21). Le carnet du scanner
+  # comptait ses quatorze lignes VIRTUAL contre son plafond de quinze et refusait donc TOUT achat
+  # depuis le 07/09 -- 91 refus « 20 positions ouvertes >= plafond 15 ». En corrigeant le compte
+  # j ai retire, sans le vouloir, le seul frein d un carnet en mode live sur Robinhood Chain, la ou
+  # le resultat mesure est de -0,72 par euro et ou l operateur avait arrete l autre carnet le matin
+  # meme.
+  #
+  # Ce drapeau retablit l etat EFFECTIF (aucun achat EVM) avec du code juste plutot qu avec un bug.
+  # Il ne touche PAS au carnet Solana : `solana_watcher` n emprunte pas ce chemin.
+  # Le retirer est la decision de l operateur, pas la mienne.
+  kill_switch: true
   cycle_seconds: 5          # une decision T+1 vaut des secondes: 30 s d attente coutait le debut de la pompe
   # Il y a DEUX deploiements Uniswap v4 sur cette chaine. Le routeur par defaut (0xf8b30c1b...) sert le
   # PoolManager 0xe5a881e6..., pas le notre (0x8366a39c...): les 5 premiers achats reels du 2026-09-07
@@ -198,13 +217,41 @@ solana:
   # live depuis le 2026-09-08. Portefeuille dedie HY4wrwep...ZfyL, alimente a 0,5 SOL : MetaMask
   # n exporte pas la cle privee Solana, seulement celle des chaines EVM, donc le bot ne peut pas
   # travailler sur le compte de l operateur et dispose du sien. Il ne risque que ce qu on y met.
-  mode: live
+  # ARRET DES ACHATS REELS, pose le 10/09 a 00h05.
+  #
+  # La raison n est pas un reglage, c est une mesure faite sur la chaine de l operateur. Son trading
+  # MANUEL sur Solana rend +102 EUR sur trois jours (un jeton a x3,13, un autre a -21 %). Le 08/09 a
+  # 10h07 il a vire 1,98 SOL -- 188 EUR -- de son portefeuille Trust vers celui de ce moteur. Ce
+  # portefeuille en vaut 72 aujourd hui.
+  #
+  # Le carnet rend -0,157 par euro sur 44 tickets et sept jours ; une part importante de cette perte
+  # vient de defauts que j ai introduits : le stop simule rendant le seuil au lieu du prix (§3.59),
+  # `prepare_sell` bloquant toute vente 35 minutes (§5.12), un plafond comptant le papier (§5.18,
+  # §5.21). Ce ne sont pas des accidents de marche.
+  #
+  # LA COLLECTE CONTINUE INCHANGEE : `solana_prix_chaine`, `solana_suivi`, `solana_judgements` et
+  # les vingt strategies a blanc tournent a l identique. On n apprend rien de moins en n achetant
+  # plus -- 527 courbes ont ete collectees pour 44 tickets. On cesse seulement de payer.
+  #
+  # A remettre a `live` quand le filtre « trop propre » (§3.66) aura ete confirme en avant, ou quand
+  # l operateur le decide. Une ligne suffit.
+  mode: paper
   # Ticket porte a 20 EUR le 2026-09-08. Le cout de la taille, mesure en cotant toutes les tailles
   # au meme instant sur les pools reellement achetes, est lineaire et minuscule : 0,12 % a 10 EUR,
   # 0,37 % a 20, 1,10 % a 50. La taille n est donc pas le frein, le portefeuille l est -- 98 EUR,
   # soit quatre tickets simultanes, d ou le plafond de positions ouvertes.
-  size_eur: 20.0
+  # RAMENE A 5 EUR le 09/09 a 21h50. Le carnet rend -0,157 par euro sur 44 tickets et sept jours ;
+  # a 20 EUR le ticket cela fait -65 EUR par jour pour 111 EUR en caisse, soit moins de deux jours
+  # d autonomie. A 5 EUR la collecte est IDENTIQUE -- meme flux de lancements juges, meme courbes
+  # dans `solana_prix_chaine`, meme apprentissage -- pour quatre fois plus de temps devant nous.
+  # C est la seule variable qui achete du temps sans rien couter en information.
+  # A remonter le jour ou le filtre « trop propre » (§3.66) aura ete confirme en avant, pas avant.
+  size_eur: 5.0
   max_open_positions: 4
+  # Le filtre des quatre-vingt-dix premieres secondes (§3.66, intel/engines/trop_propre.py).
+  # 2 = ecarter des deux signes sur trois ; 3 = seulement les cas extremes ; false pour desactiver.
+  filtre_trop_propre: true
+  trop_propre_seuil: 2
   # Cadence de la boucle qui tient le carnet : executer les decisions et surveiller les positions.
   # SEPAREE de poll_seconds, qui regle la decouverte. Avant le 09/09 les deux etaient confondues et
   # la surveillance ne passait qu apres le jugement des lancements, soit toutes les 35 a 95 s. Pour
@@ -216,6 +263,22 @@ solana:
   # consecutifs en erreur 429 « Rate limit exceeded » et n a pas pu sortir a son sommet. Un stop plus
   # reactif qui empeche de vendre est pire que pas de stop du tout. Journal §3.55.
   book_poll_seconds: 20
+  # Le prix lu dans les reserves du pool, des la creation (intel/engines/prix_chaine.py).
+  # DexScreener n indexe pas ces pools avant ~T+1,5 min et se rafraichit toutes les 30 a 60 s : la
+  # zone ou agit l argent informe n a jamais ete observee, et toute rejouee de sortie batie dessus
+  # est deux fois trop pessimiste (§3.61, §3.65). Ce collecteur n achete rien.
+  prix_chaine:
+    enabled: true
+    pas_secondes: 10        # cadence de lecture ; le moteur decide toutes les 20 s
+    fenetre_minutes: 15     # on suit un lancement pendant ce temps apres sa creation
+    tentatives: 6           # le pool peut n etre visible qu au bloc suivant la migration
+  # Le suivi de LONGUE duree (intel/engines/suivi_long.py) : 24 h par lancement au lieu de 30 min,
+  # cadence relachee avec l age (60 s puis 300 s puis 900 s), source DexScreener. Ne coute que des
+  # lectures. Sert a tester « acheter la survie a T+1 h et tenir des heures » (§3.68).
+  suivi_long:
+    enabled: true
+    heures: 24
+    pas_secondes: 30        # cadence de la boucle ; chaque jeton n est relu qu a sa propre cadence
   # Suivi du prix de TOUT lancement juge, achete ou non, pendant N minutes apres le jugement.
   # Le carnet juge 58 lancements par heure et n en achete que 0,8 : sans ce suivi on n apprend que
   # sur 1,4 % de ce qu on voit, et chaque question de seuil reste sans reponse faute d echantillon.
@@ -469,8 +532,12 @@ solana:
       - "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"   # programme pump.fun
       - "39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg"  # compte present dans toutes les migrations
     instructions: ["Migrate", "CreatePool", "Initialize2"]
-    seconds_per_cycle: 290   # ecoute quasi continue : le volume mesure est nul, les tranches courtes ne servaient qu a pouvoir couper vite
-    pause_seconds: 5         # 5 s de trou toutes les 5 min, soit 1,7 % du temps au lieu de 8 %
+    # Mesure du 12/09 : 0,2 Mo par tranche de 290 s, soit 25 a 40 k credits par mois sur un forfait
+    # de 10 millions. Le garde-fou de volume ne sert donc plus a rien, et la pause coutait 1,7 % du
+    # temps d ecoute -- c est-a-dire des graduations ratees, la seule ressource rare de ce projet.
+    # Verifie le meme jour : 17 jetons gradues sur 17 sont captes, on ne rate rien.
+    seconds_per_cycle: 590   # ecoute quasi continue
+    pause_seconds: 1         # 1 s de trou toutes les 10 min, soit 0,17 % du temps
     max_mb_per_cycle: 30
 
 # Purge de la base. Ajoutee le 2026-09-08 apres que la base a atteint 22,2 Go : la verification
@@ -488,6 +555,10 @@ solana:
 # total sans allonger la duree d un verrou -- c est ce qui rend 500 acceptable la ou 60 ne l etait
 # pas. Une purge longue qui verrouille la base avait tue une boucle le 2026-09-08 au matin.
 retention:
+  # ETEINTE le 10/09 a 07h20. Sa selection lit les 22,4 Go de la base a chaque passe, et elle
+  # passait toutes les 30 minutes : le moteur restait muet, Telegram compris. A rallumer quand la
+  # selection sera bornee (§5.28). La base ne grossit plus beaucoup : le carnet Solana est a blanc.
+  enabled: false
   prune_interval_seconds: 1800
   max_tokens_per_prune: 500
   scan_tokens_per_prune: 8000
@@ -502,7 +573,133 @@ retention:
 manuel:
   # Plafond par ordre, en euros. Un message Telegram declenche ici une depense reelle : le plafond
   # est la seule chose qui separe une faute de frappe d une perte. 0 interdirait tout achat.
-  max_ordre_eur: 100
+  # Plafond d impact de prix a l achat, propre au manuel. Celui du robot est a 6 % : il achete sans
+  # regarder, donc il doit etre prudent. A la main c est l operateur qui decide, d ou 25 % ici.
+  # Un impact de 100 % n est pas un arbitrage : il signifie qu il n y a aucune contrepartie et que
+  # la mise est perdue a l instant de l achat. Mettre 100 pour tout autoriser malgre tout.
+  max_impact_pct: 100
+  # 0 = aucun plafond, retire le 09/09 a la demande de l operateur (« enleve-moi le seuil sur le
+  # manuel, je suis bloque a 100 »). La limite reelle devient le solde du portefeuille manuel, qui
+  # est de toute facon la perte maximale possible : ce qui n y est pas ne peut pas etre depense.
+  max_ordre_eur: 0
   # Refus d acheter un pool dont on ne peut pas ressortir, comme le carnet automatique (§3.47).
   # 0 desactive la verification -- a la main on peut vouloir entrer quand meme.
-  max_aller_retour_pct: 15
+  max_aller_retour_pct: 0
+  paliers: [1.5, 2.0, 3.0, 5.0]
+  palier_bas: 0.5
+  # VENTE AUTOMATIQUE des lignes manuelles EVM, demandee le 09/09 au soir pour DOGSHIT : « tu vends
+  # cette pose si elle fait un gros gain cette nuit ». Deux tranches, comme l operateur trade
+  # lui-meme (2dDDte sorti en trois fois) : la moitie a x2, le reste a x4, rapporte a la mise.
+  # Le suivi ecrit une DECISION que l executeur EVM ramasse et dimensionne sur le solde reel ;
+  # chaque tranche n est emise qu une fois. L arret d urgence ne bloque plus les ventes.
+  vente_auto:
+    # DESARMEE le 10/09 au matin : l operateur a dit de ne pas vendre. Remettre true pour rearmer.
+    enabled: false
+    moitie_a: 2.0
+    tout_a: 4.0
+  # LES PORTEFEUILLES DE L OPERATEUR, pour que /manuel montre ce qu il DETIENT et pas seulement ce
+  # que le registre a enregistre. Le 09/09 a minuit, six portefeuilles dont trois ouverts par le
+  # moteur : ses PURR sur Trust, son SOL, son ETH n apparaissaient nulle part. Adresses publiques
+  # seulement -- lecture. « qui » dit qui detient la cle.
+  eth_eur: 2280.0
+  portefeuilles:
+    - {nom: "Trust Solana",   chaine: solana,    qui: "toi",        adresse: "4f1ShTjEDMRby6Zt5cYYDx7bmy1V8ZxwJWEL5Kg5ksA5"}
+    - {nom: "Trust EVM",      chaine: robinhood, qui: "toi",        adresse: "0xBE41FD70105b7FA4f632a43d4Ecb24f485ed174C"}
+    - {nom: "Phantom",        chaine: solana,    qui: "toi",        adresse: "Dc7hibeE7JqnLE1eaQaX4zvdWkFeFbFpAm5sxx1JCULX"}
+    - {nom: "MediTrading",    chaine: solana,    qui: "moteur+toi", adresse: "sygsohR7ZsXJJ5QCtmFhE7Y24Qsbj155dkK6GqTnxs2"}
+    - {nom: "Robot EVM",      chaine: robinhood, qui: "moteur+toi", adresse: "0x2a33086d2fce255f61ac1a3000bf944397c9c908"}
+    - {nom: "Robot Solana",   chaine: solana,    qui: "moteur",     adresse: "HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL"}
+
+# Vendre chaque jeton detenu des qu il touche un NOUVEAU SOMMET HISTORIQUE. Regle donnee par
+# l operateur le 11/09 : « parmi toutes les crypto dont on dispose, des qu elles atteignent un
+# nouveau plus haut tu vends », PACK excepte.
+#
+# Le sommet est le VRAI sommet : amorce une fois par jeton sur l historique journalier complet du
+# pool, jamais « le plus haut vu depuis qu on regarde » -- sinon la premiere hausse de 1 % vendrait
+# tout. Le prix est la mediane des paires ou le jeton est en base : une paire aberrante ferait
+# vendre pour de bon (S5.30).
+#
+# On ne vend QUE la ou la cle existe : MediTrading et les deux portefeuilles du robot. Sur les
+# portefeuilles Trust de l operateur, alerte Telegram seulement.
+ath:
+  # COUPE le 11/09 a la demande de l operateur (« ne l applique pas »), apres avoir tourne moins
+  # d une heure et n avoir vendu ni alerte sur rien. Remettre true pour reactiver.
+  enabled: false
+  pas_secondes: 30        # verification continue, pour ne pas rater une occasion la nuit
+  min_eur: 5.0            # sous ce montant on ne s occupe pas de la poussiere
+  marge_pct: 0.0          # 0 = le moindre depassement compte
+  exclus:
+    - "0x27495511b8A2e163efC75d788706a40Dd100Bc27"   # PACK, exclu a la demande de l operateur
+
+# Vendre une ligne par tranches, a des multiples du PRIX D ENTREE reel lu sur la chaine.
+# Demande de l operateur le 11/09 : sur STOCKLANA seulement, 75 % a x3 et le reste a x4, verifie
+# toutes les cinq secondes. Remplace la regle du plus haut historique (`ath`), coupee.
+#
+# Le multiple est mesure sur ce que le ROUTEUR donne pour la tranche qu on s apprete a vendre,
+# impact de notre propre ordre compris : x3 veut dire qu on encaisse trois fois la mise par jeton.
+# DexScreener ne conviendrait pas -- il se rafraichit toutes les 30 a 60 s, donc verifier a 5 s sur
+# sa cotation reviendrait a relire douze fois la meme valeur perimee (S3.61).
+paliers_vente:
+  enabled: true
+  pas_secondes: 5
+  lignes:
+    - nom: STOCKLANA
+      jeton: "C5tGuxaPnbxHHP6RTpAQs34x8TN8A9ZfJxcfizd2WF3u"
+      chaine: solana
+      decimales: 6
+      # achat du 11/09 17:09:28 : 0,4436 SOL pour 439 519,5347 jetons
+      entree_sol_par_jeton: 0.000001009206
+      tranches:
+        - {multiple: 3.0, part_pct: 75}
+        - {multiple: 4.0, part_pct: 100}
+
+# ---------------------------------------------------------------------------
+# Acheter un lancement qui a un Telegram, le revendre quatre minutes plus tard.
+#
+# Mesure du 12/09 sur 2 560 courbes (intel/research/croise.py), coupees en deux par date de
+# naissance. Moitie de JUGEMENT seule, jamais regardee pendant la recherche :
+#
+#     avec Telegram   n=95    69 % de gagnants   mediane +4,3 %   +0,174 par euro
+#     population      n=1280  48 % de gagnants   mediane -0,3 %   +0,061 par euro
+#
+# Zero tirage sur 20 000 ne fait aussi bien. Tient sans sa meilleure ligne (+0,154), sur 8 tranches
+# de 6 h sur 11, avec 60 s de retard a l entree (+0,151) et avec 10 % de peage (+0,077).
+#
+# POUR PASSER EN REEL IL FAUT DEUX ACTES : mettre `mode: live` ET deposer une cle dans
+# `cle_fichier`. Tant que l un des deux manque, ce moteur n envoie aucun ordre.
+telegram_rapide:
+  enabled: true
+  mode: live                   # paper | live
+  pas_secondes: 10
+  mise_eur: 20.0
+  # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
+  # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
+  # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
+  # « c est pas grave je vais alimenter »). Ce nombre ne sert plus qu a borner le pire cas.
+  max_lignes_simultanees: 6
+  reserve_sol: 0.02            # gardee pour les frais des ventes en cours
+  max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
+  peage_pct: 2.0               # aller-retour, pour le calcul a blanc seulement
+  # Les messages de cette strategie vont dans le canal « Trading DEX » de l operateur, pas dans le
+  # fil qui porte les alertes du portefeuille : a soixante tickets par jour, les melanger rendrait
+  # les deux illisibles. Une VENTE QUI ECHOUE part meme si `alertes` est coupe.
+  alertes: true
+  # Ou arrivent les messages. Un identifiant negatif est un canal ou un groupe ; un identifiant
+  # positif est une conversation privee, et il vaut alors l identifiant de l utilisateur.
+  canal: "1047701515"
+  # Le robot qui signe l envoi : « TradingDEX », alias @shamsouR_bot, celui sous lequel l operateur
+  # recoit deja ses messages. On ne nomme QUE l endroit ou lire le jeton, jamais le jeton lui-meme,
+  # ce fichier etant versionne. `TELEGRAM_BOT_TOKEN_BIS` est dans le `.env` depuis un mois.
+  jeton_variable: TELEGRAM_BOT_TOKEN_BIS
+  jeton_fichier: /app/data/.telegram_token_tradingdex   # secours si la variable disparait
+  slippage_achat_pct: 20.0
+  slippage_vente_pct: 25.0
+  max_impact_pct: 15.0
+  # « peut-on ressortir ? » : on cote la revente AVANT d acheter. Cinq pools sur vingt-cinq sont
+  # invendables a notre taille (mesure du 09/09) et causent 25 % des tickets aneantis. La mesure qui
+  # justifie cette strategie lit des reserves, qui ne disent rien de la contrepartie.
+  max_aller_retour_pct: 15.0
+  # `null` = le portefeuille DU ROBOT (cle prise dans l environnement), pas « aucune cle ». Mettre
+  # ici un chemin de fichier designerait un autre portefeuille. Le portefeuille manuel de
+  # l operateur n est pas utilise : une erreur du robot ne doit pas pouvoir y toucher.
+  cle_fichier: null

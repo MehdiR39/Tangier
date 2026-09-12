@@ -40,6 +40,11 @@ class Runtime:
         await self.ctx.close()
 
     async def _run_engine(self, name: str, fn: Any) -> dict[str, Any]:
+        # Journaliser l ENTREE, pas seulement la sortie. Le 10/09 le moteur est reste muet vingt
+        # minutes apres le demarrage : chaque cycle ne se signale qu une fois FINI, donc un cycle
+        # qui ne finit jamais ne laisse aucune trace et on ne sait meme pas lequel c est. Une ligne
+        # a l entree transforme « le moteur est bloque » en « ce cycle-la est bloque ».
+        log.info("cycle %s demarre", name)
         started = now_ts()
         run_id = None
         if name == "t1":
@@ -56,7 +61,7 @@ class Runtime:
                     os._exit(0)
             except Exception as exc:  # noqa: BLE001
                 log.info("drapeau de redemarrage illisible (%s)", str(exc)[:80])
-        if name not in ("history", "digest", "backup", "retention", "t1", "telegram", "solana", "solana_carnet"):  # keep engine_runs meaningful: real cycles only (t1 and telegram poll every few seconds)
+        if name not in ("history", "digest", "backup", "retention", "t1", "telegram", "solana", "solana_carnet", "solana_prix_chaine", "solana_suivi_long", "telegram_rapide", "paliers"):  # keep engine_runs meaningful: real cycles only (t1 and telegram poll every few seconds)
             try:
                 run_id = self.ctx.db.insert("engine_runs", {"engine": name, "started_ts": started, "finished_ts": None, "ok": None, "tokens_processed": None, "alerts_sent": None, "error": None, "stats_json": None})
             except Exception as exc:  # noqa: BLE001
@@ -253,6 +258,27 @@ class Runtime:
             # toutes les 35 a 95 s -- une eternite pour un stop de perte. Voir SolanaWatcher.run_carnet.
             tasks.append(asyncio.create_task(self._loop("solana_carnet", self.solana.run_carnet,
                                                         int(self.ctx.config.get("solana.book_poll_seconds", 5)))))
+            # Le prix lu dans les reserves du pool, des la creation. DexScreener n indexe pas ces
+            # pools avant ~T+1,5 min -- 6 sur 74 en une heure -- et se rafraichit toutes les 30 a
+            # 60 s, ce qui rend toute rejouee de sortie deux fois trop pessimiste (§3.61) et laisse
+            # la zone T+0 a T+1,5 min totalement inobservee. Ce collecteur n achete rien : il ecrit
+            # une serie de prix a la cadence qu on veut, sans agregateur.
+            if self.ctx.config.get("solana.prix_chaine.enabled", True):
+                from intel.engines.prix_chaine import PrixChaine
+                self.prix_chaine = PrixChaine(self.ctx, self.solana.client)
+                tasks.append(asyncio.create_task(self._loop(
+                    "solana_prix_chaine", self.prix_chaine.cycle,
+                    int(self.ctx.config.get("solana.prix_chaine.pas_secondes", 10)))))
+            # Le suivi de LONGUE duree : 24 h par lancement, pas 30 min. L operateur a tenu un jeton
+            # quatre heures pour x3,13 la ou le moteur vendait a 30 min ; l ecran montre des jetons a
+            # +400 % dix-sept heures apres leur naissance. Toute la recherche s arretait avant.
+            # Ce collecteur n achete rien. Voir intel/engines/suivi_long.py.
+            if self.ctx.config.get("solana.suivi_long.enabled", True):
+                from intel.engines.suivi_long import SuiviLong
+                self.suivi_long = SuiviLong(self.ctx, self.solana.client)
+                tasks.append(asyncio.create_task(self._loop(
+                    "solana_suivi_long", self.suivi_long.cycle,
+                    int(self.ctx.config.get("solana.suivi_long.pas_secondes", 30)))))
             if self.ctx.config.get("solana.stream.enabled", False):
                 # Ecoute des creations de pool en direct, a cote de DexScreener et non a sa place :
                 # la source promotionnelle ne montre que 4,3 des ~20 graduations horaires. Elle
@@ -262,6 +288,39 @@ class Runtime:
                 tasks.append(asyncio.create_task(self._loop(
                     "solana_stream", self.solana_stream.run_cycle,
                     int(self.ctx.config.get("solana.stream.pause_seconds", 5)))))
+        # Vendre chaque jeton detenu des qu il touche un nouveau sommet historique -- regle posee
+        # par l operateur le 11/09, apres la nuit ou une vente demandee n est pas partie (S5.24).
+        # Il tourne a part et en continu justement pour ne plus dependre d une passe lente.
+        # Vendre une ligne nommee par tranches, a des multiples du prix d entree. Boucle a part et
+        # tres rapide : l operateur a demande cinq secondes pour ne pas rater un pic nocturne.
+        if self.ctx.config.get("paliers_vente.enabled", False):
+            from intel.engines.paliers import Paliers
+            import httpx as _hx
+            self.paliers = Paliers(self.ctx, getattr(getattr(self, "solana", None), "client", None)
+                                   or _hx.AsyncClient(headers={"User-Agent": "tangier-intel/paliers"}))
+            tasks.append(asyncio.create_task(self._loop(
+                "paliers", self.paliers.cycle,
+                int(self.ctx.config.get("paliers_vente.pas_secondes", 5)))))
+        # Acheter un lancement qui a un Telegram, le revendre quatre minutes plus tard. Boucle a
+        # part et rapide : la fenetre d entree ne dure que cent secondes et la sortie est a la
+        # minute pres. Voir intel/engines/telegram_rapide.py pour la mesure qui la justifie.
+        if self.ctx.config.get("telegram_rapide.enabled", False):
+            from intel.engines.telegram_rapide import TelegramRapide
+            import httpx as _hxt
+            self.tg_rapide = TelegramRapide(
+                self.ctx, getattr(getattr(self, "solana", None), "client", None)
+                or _hxt.AsyncClient(headers={"User-Agent": "tangier-intel/tg"}))
+            tasks.append(asyncio.create_task(self._loop(
+                "telegram_rapide", self.tg_rapide.cycle,
+                int(self.ctx.config.get("telegram_rapide.pas_secondes", 10)))))
+        if self.ctx.config.get("ath.enabled", False):
+            from intel.engines.ath import Ath
+            self.ath = Ath(self.ctx, self.solana.client if hasattr(self, "solana") else None)
+            if self.ath.client is None:
+                import httpx as _httpx
+                self.ath.client = _httpx.AsyncClient(headers={"User-Agent": "tangier-intel/ath"})
+            tasks.append(asyncio.create_task(self._loop(
+                "ath", self.ath.cycle, int(self.ctx.config.get("ath.pas_secondes", 30)))))
         if self.ctx.config.get("alerts.telegram_commands", True):
             # /positions, /closed, /pnl, /orders, /solde, /pause, /resume from the phone. Reads a
             # second bot (INTEL_TELEGRAM_COMMANDS_TOKEN): Telegram allows one reader per bot and

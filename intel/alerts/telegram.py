@@ -23,9 +23,20 @@ def strip_html(text: str) -> str:
 
 
 class TelegramSender:
-    def __init__(self, settings: Settings) -> None:
-        self.token = settings.telegram_bot_token
-        self.chat_id = settings.telegram_chat_id
+    def __init__(self, settings: Settings, chat_id: str | None = None,
+                 token: str | None = None) -> None:
+        """`chat_id` envoie ailleurs que dans le fil par defaut, `token` envoie sous un autre robot.
+
+        Demande de l operateur le 12/09 : les messages de la strategie « Telegram, quatre minutes »
+        vont dans son canal *Trading DEX*, pas dans le fil qui porte les alertes du portefeuille.
+        A soixante tickets par jour, les melanger rendrait les deux illisibles.
+
+        `token` existe parce qu un canal n accepte que les robots qui en sont administrateurs. Si
+        celui deja present dans le canal n est pas celui du `.env`, c est SON jeton qu il faut
+        utiliser -- sans quoi Telegram repond « bot is not a member of the channel chat ».
+        """
+        self.token = token or settings.telegram_bot_token
+        self.chat_id = chat_id or settings.telegram_chat_id
         self.dry_run = settings.telegram_dry_run or not (self.token and self.chat_id)
         self.limiter = RateLimiter(settings.limits.telegram_rps, burst=3, name="telegram")
         self._client = httpx.AsyncClient(timeout=30, headers={"User-Agent": settings.user_agent})

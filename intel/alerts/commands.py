@@ -143,7 +143,9 @@ class TelegramCommands:
             return await Manuel(self.ctx, self._client).vendre(arg)
         if cmd in ("/manuel", "/manual"):
             from intel.alerts.manuel import Manuel
-            return Manuel(self.ctx, self._client).suivi()
+            return await Manuel(self.ctx, self._client).suivi()
+        if cmd in ("/tg", "/telegram"):
+            return self.tg_rapide(n if arg.strip().isdigit() else 24)
         if cmd == "/restart":
             self.ctx.db.cursor_set("engine_restart_request", 1, now_ts())
             return "redémarrage du moteur dans quelques secondes (code et config du disque). /help pour vérifier ensuite."
@@ -159,6 +161,7 @@ class TelegramCommands:
             "<code>/pause     </code> arreter d acheter (Robinhood)",
             "<code>/resume    </code> reprendre les achats",
             "<code>/restart   </code> redemarrer le moteur",
+            "<code>/tg        </code> strategie « Telegram, 4 minutes »",
             "",
             "<b>A la main</b>",
             "<code>/achat  &lt;adresse&gt; &lt;euros&gt;</code> acheter (chaine reconnue seule)",
@@ -168,6 +171,66 @@ class TelegramCommands:
             "", f"Robinhood {rh} · Solana {so}"
             + (" · achats Robinhood en pause" if t1_paused(self.ctx) else ""),
         ])
+
+    def tg_rapide(self, heures: int = 24) -> str:
+        """Ou en est le test en avant de « Telegram, quatre minutes » (intel/engines/telegram_rapide.py).
+
+        La mesure hors echantillon annonce 69 % de gagnants et +0,174 par euro. Cette commande dit ce
+        que le test en avant a REELLEMENT fait, sans le rapprocher d une esperance : comparer un
+        echantillon de quelques heures a une esperance mesuree sur 2 560 courbes ne prouve rien dans
+        un sens comme dans l autre, et l avoir fait trop tot a deja enterre a tort six familles de
+        strategies cette semaine.
+        """
+        depuis = now_ts() - heures * 3600
+        mode = str(self.ctx.config.get("telegram_rapide.mode", "paper")).lower()
+        actif = bool(self.ctx.config.get("telegram_rapide.enabled", False))
+        try:
+            juges = {r["verdict"]: r["n"] for r in self.ctx.db.query(
+                "SELECT verdict, COUNT(*) n FROM tg_juges WHERE ts >= ? GROUP BY verdict", (depuis,))}
+            lignes = self.ctx.db.query(
+                "SELECT symbole, mint, ts_entree, statut, mise_eur, gain_eur, prix_entree,"
+                " prix_sortie, mode FROM tg_lignes WHERE ts_entree >= ? ORDER BY ts_entree DESC",
+                (depuis,))
+        except Exception as exc:  # noqa: BLE001
+            return "strategie Telegram : rien a lire (%s)" % str(exc)[:80]
+
+        fermees = [l for l in lignes if l["statut"] == "FERMEE" and l["gain_eur"] is not None]
+        ouvertes = [l for l in lignes if l["statut"] == "OUVERTE"]
+        out = ["<b>Telegram, quatre minutes</b> — %s, %s"
+               % ("actif" if actif else "COUPE", "reel" if mode == "live" else "a blanc"),
+               "<i>sur %d h</i>" % heures, ""]
+        out.append("Juges : %d avec Telegram · %d sans · %d illisibles"
+                   % (juges.get("achete", 0), juges.get("pas de telegram", 0),
+                      juges.get("illisible", 0)))
+        if not lignes:
+            out.append("")
+            out.append("Aucune ligne. Le flux donne environ 2 jetons avec Telegram par heure ;")
+            out.append("sous une heure d attente il n y a rien a en conclure.")
+            return NL.join(out)
+
+        out.append("Lignes : %d ouvertes · %d fermees" % (len(ouvertes), len(fermees)))
+        if fermees:
+            gains = [float(l["gain_eur"]) for l in fermees]
+            mise = sum(float(l["mise_eur"] or 0) for l in fermees) or 1.0
+            gagnants = sum(1 for g in gains if g > 0)
+            out += ["", "<b>Resultat</b> %+.2f EUR sur %.0f EUR engages (%+.3f par euro)"
+                    % (sum(gains), mise, sum(gains) / mise),
+                    "%d gagnantes sur %d (%.0f %%)" % (gagnants, len(gains),
+                                                       100 * gagnants / len(gains))]
+        if ouvertes:
+            out += ["", "<b>En cours</b>"]
+            for l in ouvertes[:6]:
+                out.append("  %s · entree il y a %d s" % (l["symbole"] or l["mint"][:8],
+                                                          now_ts() - int(l["ts_entree"])))
+        if fermees:
+            out += ["", "<b>Dernieres fermetures</b>"]
+            for l in fermees[:8]:
+                mult = ((float(l["prix_sortie"]) / float(l["prix_entree"]))
+                        if l["prix_sortie"] and l["prix_entree"] else None)
+                out.append("  %-10s %+7.2f EUR%s" % ((l["symbole"] or l["mint"][:8])[:10],
+                                                     float(l["gain_eur"]),
+                                                     (" · x%.2f" % mult) if mult else ""))
+        return NL.join(out)
 
     def _mark(self, p: Any) -> float | None:
         """The token's price now, from whichever chain the line lives on. None only when unknown."""
