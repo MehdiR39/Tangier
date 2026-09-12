@@ -537,6 +537,26 @@ def test_un_achat_refuse_ne_se_compte_pas_comme_achete():
     assert ctx.db.scalar("SELECT COUNT(*) FROM tg_lignes", (), 0) == 0
 
 
+def test_le_livre_note_l_age_VRAI_a_l_achat_et_pas_celui_de_la_lecture():
+    """L operateur a vu des achats « a T+50 » alors que la fenetre s ouvre a T+55. Ce n etait pas
+    l execution mais le livre : la colonne portait l age du jeton au moment de la LECTURE du prix,
+    qui peut dater de 30 s. Les deux ages doivent etre notes separement, sinon toute relecture des
+    entrees est fausse."""
+    ctx = _ctx()
+    # lancement il y a 70 s, mais la lecture de prix date de 12 s et portait alors age_s=58
+    ctx.db.execute("INSERT OR REPLACE INTO solana_stream_launches(mint, ts) VALUES(?,?)",
+                   (MINT_TG, NOW - 70))
+    ctx.db.execute("INSERT OR REPLACE INTO solana_prix_chaine"
+                   "(pair_id, mint, ts, age_s, prix_sol) VALUES(?,?,?,?,?)",
+                   ("p", MINT_TG, NOW - 12, 58, 1.0))
+    m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    assert _cycle(m, NOW)["achetes"] == 1
+    l = ctx.db.query("SELECT age_entree, age_lecture FROM tg_lignes")[0]
+    assert l["age_entree"] == 70, "l age note doit etre celui de l ACHAT"
+    assert l["age_lecture"] == 58, "l age de la lecture doit rester disponible"
+    assert l["age_entree"] >= AGE_MIN
+
+
 def test_on_vise_bien_une_entree_vers_soixante_secondes():
     """Le balayage du 12/09 place le point stable a T+60 : les deux moities y disent la meme chose
     (+0,197 et +0,194) et « sans best » y est le plus haut. T+90 etait herite du filtre

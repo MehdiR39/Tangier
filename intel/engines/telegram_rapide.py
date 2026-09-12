@@ -118,12 +118,20 @@ class TelegramRapide:
         # `echecs` compte les ventes reelles refusees sur une ligne. La colonne est ajoutee apres
         # coup : une base creee avant cette version n en a pas, et un moteur qui suppose sa presence
         # s arreterait au premier cycle.
+        #
+        # `age_lecture` distingue deux ages que la premiere version confondait : `age_entree` est
+        # l age VRAI du jeton a l achat, compte depuis le lancement ; `age_lecture` est son age au
+        # moment ou le prix d entree a ete releve, qui peut dater de 30 s. L operateur a vu des
+        # achats « a T+50 » le 12/09 alors que la fenetre s ouvre a T+55 : c etait le second qui
+        # etait ecrit dans la colonne du premier.
         try:
             cols = {r["name"] for r in self.ctx.db.query("PRAGMA table_info(tg_lignes)")}
             if "echecs" not in cols:
                 self.ctx.db.execute("ALTER TABLE tg_lignes ADD COLUMN echecs INTEGER DEFAULT 0")
+            if "age_lecture" not in cols:
+                self.ctx.db.execute("ALTER TABLE tg_lignes ADD COLUMN age_lecture INTEGER")
         except Exception as exc:  # noqa: BLE001
-            log.info("tg: colonne echecs non ajoutee (%s)", str(exc)[:80])
+            log.info("tg: colonne non ajoutee (%s)", str(exc)[:80])
 
     def _prix(self, mint: str, now: int, fraicheur: int = LECTURE_MAX, pair: str | None = None):
         """Le dernier prix lu EN CHAINE pour ce mint, et l age du pool a ce moment-la.
@@ -403,7 +411,12 @@ class TelegramRapide:
             # Le verdict s ecrit APRES l ouverture et dit ce qui s est REELLEMENT passe. L ecrire
             # avant ferait compter comme achete un jeton refuse par le garde « peut-on ressortir »,
             # et le carnet annoncerait des achats qui n ont pas eu lieu (S5.16).
-            pris = await self._ouvrir(mint, fiche["nom"], pair, prix, age, now)
+            # DEUX ages, et les confondre a induit l operateur en erreur le 12/09 : il voyait des
+            # achats « a T+50 » alors que la fenetre s ouvre a T+55. `age` est l age du jeton au
+            # moment de la LECTURE DU PRIX, qui peut dater de 30 s ; l age vrai a l achat se compte
+            # depuis le lancement. Le livre doit porter les deux, sinon toute relecture est fausse.
+            age_vrai = max(0, now - int(c["ts"] or now))
+            pris = await self._ouvrir(mint, fiche["nom"], pair, prix, age_vrai, age, now)
             self.ctx.db.execute(
                 "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
                 (mint, now, 1, fiche["twitter"], fiche["site"],
@@ -412,14 +425,17 @@ class TelegramRapide:
                 ouverts += 1
         return ouverts
 
-    async def _ouvrir(self, mint: str, symbole: str, pair: str, prix: float, age: int, now: int) -> bool:
+    async def _ouvrir(self, mint: str, symbole: str, pair: str, prix: float, age: int,
+                      age_lecture: int, now: int) -> bool:
         mise = float(self._cfg("mise_eur", 10.0))
         mode = str(self._cfg("mode", "paper")).lower()
         if mode != "live":
             self.ctx.db.execute(
                 "INSERT OR REPLACE INTO tg_lignes(mint, symbole, pair_id, ts_entree, age_entree,"
-                " prix_entree, mise_eur, statut, mode, motif) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (mint, symbole, pair, now, age, prix, mise, "OUVERTE", "paper", "telegram present"))
+                " age_lecture, prix_entree, mise_eur, statut, mode, motif)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (mint, symbole, pair, now, age, age_lecture, prix, mise, "OUVERTE", "paper",
+                 "telegram present"))
             log.info("tg: %s ouvert A BLANC a T+%d s (%.2f EUR)", symbole, age, mise)
             return True
 
@@ -478,8 +494,10 @@ class TelegramRapide:
             return False
         self.ctx.db.execute(
             "INSERT OR REPLACE INTO tg_lignes(mint, symbole, pair_id, ts_entree, age_entree,"
-            " prix_entree, mise_eur, tx_achat, statut, mode, motif) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (mint, symbole, pair, now, age, prix, mise, h, "OUVERTE", "live", "telegram present"))
+            " age_lecture, prix_entree, mise_eur, tx_achat, statut, mode, motif)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (mint, symbole, pair, now, age, age_lecture, prix, mise, h, "OUVERTE", "live",
+             "telegram present"))
         log.info("tg: %s ACHETE POUR DE VRAI a T+%d s (%.2f EUR), tx %s", symbole, age, mise, h[:20])
         await self._prevenir("🟢 <b>%s</b> achete (Telegram present, T+%d s)\n%.2f EUR · vente dans 4 min"
                              % (symbole, age, mise))
