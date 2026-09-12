@@ -45,3 +45,6 @@ notebooks/*.ipynb
 # Cle du portefeuille de remplacement, apres la fuite du 09/09 : ne doit jamais partir au depot.
 data/nouveau_portefeuille.txt
 .env.compromis
+
+# Cle du portefeuille dedie au trading manuel : ne doit jamais partir au depot.
+data/.solana_key_manuel

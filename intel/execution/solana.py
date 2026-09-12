@@ -164,9 +164,20 @@ def _depuis_texte(raw: str) -> Any:
 
 
 async def quote(client: httpx.AsyncClient, *, input_mint: str, output_mint: str, amount: int,
-                slippage_bps: int) -> SolanaQuote:
-    r = await client.get(f"{JUPITER}/quote", params={"inputMint": input_mint, "outputMint": output_mint,
-                                                     "amount": amount, "slippageBps": slippage_bps}, timeout=20)
+                slippage_bps: int, max_comptes: int | None = None) -> SolanaQuote:
+    """`max_comptes` borne le nombre de comptes de la route, donc la TAILLE de la transaction.
+
+    Solana refuse toute transaction depassant 1 232 octets. Jupiter assemble parfois une route a
+    plusieurs sauts qui franchit ce seuil : le 09/09, deux achats sur 747 ont ete rejetes a
+    1 233 octets, un octet de trop. On ne bride pas les routes par defaut -- ce serait degrader
+    99,7 % des ordres pour en sauver 0,3 -- mais `prepare_buy` recote avec cette borne quand la
+    transaction construite frole la limite.
+    """
+    params = {"inputMint": input_mint, "outputMint": output_mint,
+              "amount": amount, "slippageBps": slippage_bps}
+    if max_comptes:
+        params["maxAccounts"] = int(max_comptes)
+    r = await client.get(f"{JUPITER}/quote", params=params, timeout=20)
     if r.status_code != 200:
         raise SolanaRefused(f"cotation refusée ({r.status_code}): {r.text[:120]}")
     q = r.json()
@@ -286,7 +297,8 @@ async def sol_balance(client: httpx.AsyncClient, rpc_url: str, owner: str) -> in
 
 
 async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, slippage_pct: float,
-                       max_impact_pct: float = 100.0, priorite_lamports: int = 0) -> dict[str, Any]:
+                       max_impact_pct: float = 100.0, priorite_lamports: int = 0,
+                       proprietaire: str | None = None) -> dict[str, Any]:
     """Sell what the wallet holds, sized from the chain and never from the book.
 
     Leaving is not entering: the impact ceiling that protects a purchase from overpaying would,
@@ -310,11 +322,53 @@ async def prepare_sell(client: httpx.AsyncClient, *, mint: str, amount: int, sli
                 "slippage_pct": q.price_impact_pct, "route": q.route,
                 "refused_reason": "aucune cle : transaction non assemblee (a blanc)"}
     try:
-        tx = await build_swap(client, q, owner, priorite_lamports)
+        tx, q = await _construire_sous_limite(
+            client, q, owner, priorite_lamports, input_mint=mint, output_mint=SOL_MINT,
+            amount=amount, slippage_bps=int(slippage_pct * 100))
     except SolanaRefused as exc:
         return {"status": "REFUSED", "refused_reason": str(exc)}
     return {"status": "BUILT", "amount_in": str(amount), "quoted_amount_out": str(q.out_amount),
             "slippage_pct": q.price_impact_pct, "route": q.route, "tx": tx}
+
+
+LIMITE_TX = 1232          # octets : le maximum absolu d une transaction Solana
+MARGE_TX = 1180           # au-dela, on recote une route plus courte avant de tenter l envoi
+
+
+async def _construire_sous_limite(client: httpx.AsyncClient, q: SolanaQuote, owner: str,
+                                  priorite_lamports: int, *, input_mint: str, output_mint: str,
+                                  amount: int, slippage_bps: int) -> tuple[str, SolanaQuote]:
+    """Assembler la transaction, et si elle frole la limite de taille, recoter plus court.
+
+    Solana refuse toute transaction depassant 1 232 octets. Jupiter compose parfois une route a
+    plusieurs sauts qui la franchit : le 09/09, deux ordres sur 747 ont ete rejetes a 1 233 octets,
+    UN octet de trop. L argent n etait pas perdu -- le refus arrive avant l envoi -- mais l occasion
+    l etait, pour une raison purement technique.
+
+    On ne bride pas les routes par defaut : ce serait degrader 99,7 % des ordres pour en sauver 0,3.
+    On mesure la transaction reellement construite, et on ne recote que si elle est au-dessus de la
+    marge, en resserrant le nombre de comptes autorises jusqu a passer.
+    """
+    tx = await build_swap(client, q, owner, priorite_lamports)
+    taille = len(base64.b64decode(tx))
+    if taille <= MARGE_TX:
+        return tx, q
+    for comptes in (40, 32, 24):
+        try:
+            q2 = await quote(client, input_mint=input_mint, output_mint=output_mint,
+                             amount=amount, slippage_bps=slippage_bps, max_comptes=comptes)
+            if not q2.usable:
+                continue
+            tx2 = await build_swap(client, q2, owner, priorite_lamports)
+            if len(base64.b64decode(tx2)) <= MARGE_TX:
+                log.info("solana: route raccourcie a %d comptes (%d -> %d octets)",
+                         comptes, taille, len(base64.b64decode(tx2)))
+                return tx2, q2
+        except SolanaRefused:
+            continue
+    if taille > LIMITE_TX:
+        raise SolanaRefused(f"transaction de {taille} octets, la chaine refuse au-dela de {LIMITE_TX}")
+    return tx, q                          # sous la limite absolue : on tente
 
 
 async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, sol_eur: float,
@@ -368,7 +422,9 @@ async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, 
                 "slippage_pct": q.price_impact_pct, "route": q.route,
                 "refused_reason": "aucune clé : transaction non assemblée (à blanc)"}
     try:
-        tx = await build_swap(client, q, owner, priorite_lamports)
+        tx, q = await _construire_sous_limite(
+            client, q, owner, priorite_lamports, input_mint=SOL_MINT, output_mint=mint,
+            amount=lamports, slippage_bps=int(slippage_pct * 100))
     except SolanaRefused as exc:
         return {"status": "REFUSED", "refused_reason": str(exc)}
     return {"status": "BUILT", "amount_in": str(lamports), "quoted_amount_out": str(q.out_amount),

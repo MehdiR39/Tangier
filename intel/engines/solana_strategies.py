@@ -87,6 +87,27 @@ STRATEGIES: list[dict[str, Any]] = [
      "accel_min": 2.0, "tp": 1.5, "stop": 0.7, "hold": 30},
     {"nom": "ta_accel_fort", "acheteurs": 75, "trades_max": 600, "cap": (25_000, 500_000),
      "accel_min": 3.0, "tp": 1.5, "stop": 0.7, "hold": 30},
+    # --- RETOUR A LA MOYENNE : acheter la chute, l inverse exact de ce que fait le carnet ---
+    # Balayage du 09/09 sur 302 lancements, moitie de jugement tenue a l ecart (§3.58) : sur ~200
+    # regles d entree, `chg_m5 <= -56,9` est la SEULE correcte des deux cotes -- -0,041 en recherche
+    # puis -0,079 en jugement, contre -0,178 pour « acheter tout ». Elle reste perdante : ce n est
+    # pas une solution, c est la seule piste qui ne soit pas morte, et sa place est ici et pas en
+    # production.
+    #
+    # `ta_chute` existait deja mais a -10 % ET derriere le plancher de 75 acheteurs : zero ticket en
+    # deux jours. Deux differences comptent donc et sont testees separement :
+    #   - la profondeur de la chute (-57 % et non -10 %) ;
+    #   - le PLANCHER D ACHETEURS, que la regle mesuree n avait pas. Ce plancher a ete calibre sur
+    #     l echantillon biaise par le bug d ordre de tri (§3.57) et n a jamais ete revalide. La
+    #     paire chute_forte / chute_forte_75 mesure exactement ce qu il ajoute ou retire.
+    {"nom": "chute_forte", "acheteurs": 0, "trades_max": 10 ** 9, "cap": (0, 10 ** 12),
+     "chg_max": -57, "tp": 1.5, "stop": 0.7, "hold": 30},
+    {"nom": "chute_forte_75", "acheteurs": 75, "trades_max": 10 ** 9, "cap": (0, 10 ** 12),
+     "chg_max": -57, "tp": 1.5, "stop": 0.7, "hold": 30},
+    # Si la these du rebond est juste, il est rapide : on la teste aussi avec un objectif proche et
+    # une fenetre courte, plutot qu en attendant x1,5 pendant trente minutes.
+    {"nom": "chute_rebond", "acheteurs": 0, "trades_max": 10 ** 9, "cap": (0, 10 ** 12),
+     "chg_max": -57, "tp": 1.2, "stop": 0.7, "hold": 10},
     # --- la densite, dans l autre sens : acheter ce que la regle ecarte ---
     {"nom": "dense", "acheteurs": 75, "trades_min": 600, "trades_max": 10 ** 9,
      "cap": (25_000, 500_000), "tp": 1.5, "stop": 0.7, "hold": 30},
@@ -103,7 +124,15 @@ def _sortie(pts: list[tuple[float, float]], tp: float, stop: float, hold: float)
     for i, (_a, m) in enumerate(fen):
         suiv = fen[i + 1][1] if i + 1 < len(fen) else None
         if stop and m <= stop and suiv is not None and suiv <= stop:
-            return stop
+            # LE PRIX REEL, PAS LE SEUIL. Un stop n est pas une garantie de sortie a son niveau :
+            # il dit quand on donne l ordre, pas a combien il s execute. PONSZCAT, le 09/09, stop a
+            # 0,70 et execution a x0,20 -- le pool s etait vide entre deux releves de vingt
+            # secondes. Rendre `stop` supposait qu on est toujours servi au seuil, ce qui gonflait
+            # CHAQUE strategie a stop, et d autant plus qu elle s arrete souvent : jusqu a
+            # +0,373/euro d ecart mesure, et cela suffisait a faire passer des strategies perdantes
+            # pour gagnantes. `sans_stop`, seule strategie sans stop, etait la seule non affectee --
+            # c est ce qui a permis d isoler la cause (§3.59).
+            return suiv
         if tp and m >= tp and suiv is not None and suiv >= tp:
             return tp
     return fen[-1][1] if fen else None

@@ -158,6 +158,20 @@ class SolanaWatcher:
             if mode == "live":
                 await self._reconcile(rpc)
             await self._positions(rpc, mode)
+        # Les lignes ouvertes A LA MAIN : le bot ne les vend jamais, mais il previent quand elles
+        # franchissent un palier. C est ce que l operateur a demande -- savoir que ca monte sans
+        # avoir a le demander. La verification passe par le routeur, comme pour les lignes du robot.
+        try:
+            from intel.alerts.manuel import Manuel
+            # On journalise l ENVOI. Sans cette ligne une alerte partie ne laisse aucune trace, et
+            # on ne peut plus distinguer « la surveillance n a rien vu » de « elle a prevenu » : le
+            # 09/09 j ai cherche pendant plusieurs minutes une alerte qui etait deja dans le
+            # telephone de l operateur. Un effet de bord invisible n est pas verifiable.
+            envoyes = await Manuel(self.ctx, self.client).surveiller()
+            if envoyes:
+                log.info("solana: %d alerte(s) de palier manuel envoyee(s)", envoyes)
+        except Exception as exc:  # noqa: BLE001
+            log.info("solana: surveillance manuelle indisponible (%s)", str(exc)[:80])
         return {"status": "ok"}
 
     async def _discover(self) -> list[dict[str, Any]]:
@@ -234,6 +248,20 @@ class SolanaWatcher:
         aviser = db.query(
             "SELECT pair_id, mint, ts FROM solana_judgements WHERE ts > ? GROUP BY pair_id",
             (now - fenetre * 60,))
+        # ET les creations vues par le flux mais pas encore jugees. Sans elles, le premier releve
+        # d une courbe tombe apres le jugement : mesure du 09/09, le plus precoce des 527 lancements
+        # suivis etait a T+1,28 min et la mediane a T+1,72. Impossible, donc, de repondre a « faut-il
+        # entrer plus tot ? » -- on n a aucune donnee sur la periode ou la question se pose. Les
+        # ajouter ne coute rien : le meme appel DexScreener rend 25 jetons a la fois (§3.65).
+        deja = {r["mint"] for r in aviser if r["mint"]}
+        try:
+            tot = db.query(
+                "SELECT mint, ts FROM solana_stream_launches WHERE ts > ? ORDER BY ts DESC LIMIT 60",
+                (now - fenetre * 60,))
+            aviser = list(aviser) + [{"pair_id": None, "mint": r["mint"], "ts": r["ts"]}
+                                     for r in tot if r["mint"] and r["mint"] not in deja]
+        except Exception:  # noqa: BLE001
+            pass
         if not aviser:
             return 0
         par_mint = {r["mint"]: r for r in aviser if r["mint"]}
@@ -249,7 +277,19 @@ class SolanaWatcher:
                 pid = p.get("pairAddress")
                 ligne = next((x for x in aviser if x["pair_id"] == pid), None)
                 if ligne is None:
-                    continue                      # un autre pool du meme jeton : ce n est pas le notre
+                    # Pas encore juge : on n a pas d adresse de pool a reconnaitre. On accepte alors
+                    # la paire la plus profonde du jeton, qui est celle ou le negoce a lieu et celle
+                    # que le jugement retiendra. Un jeton non juge n a qu une entree sans pair_id.
+                    attente = next((x for x in aviser if x["pair_id"] is None
+                                    and (x["mint"] or "").lower() == ((p.get("baseToken") or {}).get("address") or "").lower()), None)
+                    if attente is None:
+                        continue                  # un autre pool d un jeton deja juge : ce n est pas le notre
+                    meilleure = max((q for q in paires
+                                     if ((q.get("baseToken") or {}).get("address") or "").lower() == (attente["mint"] or "").lower()),
+                                    key=lambda q: float((q.get("liquidity") or {}).get("usd") or 0), default=None)
+                    if not meilleure or meilleure.get("pairAddress") != pid:
+                        continue
+                    ligne = attente
                 cree = p.get("pairCreatedAt") or 0
                 try:
                     db.execute(
@@ -552,6 +592,22 @@ class SolanaWatcher:
             log.warning("solana: %s passe la regle mais le portefeuille en detient deja %d "
                         "-- le journal ne le disait pas", symbol, deja)
             return False
+        # LE FILTRE « TROP PROPRE » (§3.66). Pose ici, juste avant les plafonds, parce qu il lit une
+        # donnee que le moteur ne possedait pas avant aujourd hui : la courbe de prix des quatre-
+        # vingt-dix premieres secondes, lue dans les reserves du pool. Un lancement qui monte, ne
+        # baisse jamais et voit sa liquidite gonfler est vide quatre a sept fois plus souvent que
+        # les autres -- l absence de degat trahit l absence de contrepartie.
+        #
+        # Il ecarte un groupe mesure a -0,244/euro, negatif dans LES DEUX moities. Le groupe retenu
+        # est a l equilibre, pas en gain : ce filtre retire une perte, il ne cree pas un profit, et
+        # il faut le lire ainsi tant que le test en avant n a pas parle.
+        #
+        # Silencieux quand la courbe manque : un filtre qui ecarte ce qu il n a pas mesure
+        # echantillonne au hasard au lieu de filtrer.
+        if bool(self._cfg("filtre_trop_propre", True)):
+            from intel.engines.trop_propre import ecarter
+            if ecarter(self.ctx, mint, symbol, int(self._cfg("trop_propre_seuil", 2))):
+                return False
         max_open = int(self._cfg("max_open_positions", 4))
         n_open = self.ctx.db.scalar(
             "SELECT COUNT(*) FROM positions WHERE chain_id=? AND model_version=? AND status='OPEN'",
@@ -598,8 +654,12 @@ class SolanaWatcher:
             "model_version": MODEL_VERSION,
         })
         self.sent_ts.append(now)
-        log.info("solana ACHAT %s · %d echanges, %d acheteurs · %.0f EUR", symbol, trades, payers,
-                 float(self._cfg("size_eur", 5.0)))
+        # « RETENU », pas « ACHAT » : a ce point on vient d ecrire une decision, et l executeur peut
+        # encore la refuser -- plafond d aller-retour, impact, solde. Le 09/09 le journal annoncait
+        # « solana ACHAT Sydney · 20 EUR » pour un ordre refuse une seconde plus tard : on lisait des
+        # achats qui n avaient jamais eu lieu. L achat reel se lit sur « position ouverte » (§5.16).
+        log.info("solana RETENU %s · %d echanges, %d acheteurs · %.0f EUR demandes", symbol, trades,
+                 payers, float(self._cfg("size_eur", 5.0)))
         return True
 
     def _observe(self, pid: str, mint: str, symbol: str, dex: str | None, trades: int, payers: int, liq: float, price: float | None = None) -> None:
@@ -814,7 +874,11 @@ class SolanaWatcher:
                 "notes": f"sol:{r['id']} mint:{r['token_address']} pool:{pool}" if pool
                          else f"sol:{r['id']} mint:{r['token_address']}",
             })
-            log.info("solana position ouverte %s · %.0f EUR", r["label"], float(r["size_eur"] or 0))
+            # « a blanc » quand le carnet est en paper : le 09/09 a 22h42 une ligne « position
+            # ouverte babybaton · 5 EUR » a fait croire a un achat reel douze minutes apres l arret.
+            # Un journal qui ne distingue pas le papier du reel force a aller verifier en base.
+            log.info("solana position ouverte %s · %.0f EUR%s", r["label"], float(r["size_eur"] or 0),
+                     "" if str(self._cfg("mode", "dry_run")) == "live" else " (a blanc)")
 
         tp = float(self._cfg("take_profit_multiple", 2.0))
         hold = int(self._cfg("max_hold_seconds", 900))

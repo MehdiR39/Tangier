@@ -7,10 +7,16 @@ import pytest
 from intel.execution import solana as S
 
 
-def test_no_key_means_no_address_and_no_signature():
+def test_no_key_means_no_address_and_no_signature(monkeypatch, tmp_path):
     # The same two-act model as the other chain: without a key nothing can be signed, and the
     # refusal never carries the key or any part of it.
+    #
+    # Une clé peut venir de DEUX endroits depuis que le portefeuille manuel existe : la variable
+    # d'environnement et un fichier sous data/. Le test n'en neutralisait qu'une et passait donc
+    # à côté de l'invariant qu'il prétend garder.
     os.environ.pop(S.KEY_ENV, None)
+    monkeypatch.setenv(S.KEY_ENV + "_FILE", str(tmp_path / "absent"))
+    monkeypatch.setattr(S.os.path, "exists", lambda p: False)
     assert S.signer_address() is None
     with pytest.raises(S.SolanaRefused) as e:
         S.sign("AQAB")
