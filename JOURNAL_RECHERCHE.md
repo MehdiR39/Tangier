@@ -3021,6 +3021,29 @@ Ce qui reste réellement inexploité est la phase AVANT graduation (pumpfun, 1 2
 que l'effet publié s'applique dans le bon sens (Telegram multiplie par 8,9 la probabilité de
 graduer, Kamat 2026), alors que nous n'observons que des diplômés. Piste ouverte, non mesurée.
 
+**LA RÈGLE NE SE TRANSPORTE PAS SUR ROBINHOOD CHAIN, 13/09.** Question de l'opérateur : « ce truc là
+avec Telegram et tout fonctionne pour Robinhood chain aussi ? ». Non, et pour une raison de fond.
+
+Sur Solana le lien Telegram est écrit DANS le jeton à sa création et gelé (`updateAuthority: None`,
+40 sur 40). Sur Robinhood Chain il n'existe aucune métadonnée équivalente : aucune des 30 tables EVM
+ne porte de champ social. La seule source est la fiche DexScreener, que le créateur remplit quand il
+veut. Mesuré le 13/09 :
+
+    âge du jeton      n    avec réseaux   dont Telegram
+    moins de 2 h     12        58 %            17 %
+    2 à 24 h         15        53 %             7 %
+    1 à 7 jours      13        77 %            23 %
+    plus de 7 jours  23        83 %            30 %
+
+**La part monte avec l'âge**, donc l'information est ajoutée après coup. Un test historique y
+lirait le futur : un jeton qui a monté aurait eu son Telegram renseigné ensuite. C'est exactement la
+fuite que §3.73 avait écartée côté Solana, et elle est bien réelle ici.
+
+S'ajoute le flux : 211 jetons par jour sur Robinhood contre 1 122 sur Solana.
+
+**Le seul chemin honnête** serait de collecter les réseaux À LA PREMIÈRE VUE, horodatés, pendant
+plusieurs semaines, puis de tester sur cette donnée propre. Rien d'autre ne vaut.
+
 **LE PÉAGE RÉEL, deux tickets.** C'est désormais le chiffre à surveiller avant tous les autres.
 
     ticket        prix     encaissé   péage
