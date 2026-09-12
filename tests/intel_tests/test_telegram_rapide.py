@@ -357,6 +357,39 @@ def test_le_jeton_du_robot_se_lit_dans_un_fichier_et_jamais_dans_la_config(tmp_p
     assert _moteur(_ctx(**{"telegram_rapide.jeton_fichier": str(vide)}), {})._jeton() is None
 
 
+def test_un_achat_refuse_ecrit_l_erreur_entiere():
+    """Un message d echec qui ne dit pas pourquoi ne sert a rien. Le 12/09 un achat a echoue sur
+    « Error processing Instruction 6: custom program... », coupe juste AVANT le code d erreur."""
+    LONG = "Transaction simulation failed: Error processing Instruction 6: " + "x" * 300 + " 0x1771"
+
+    class _S:
+        SOL_MINT = "So1"
+        @staticmethod
+        def rpc_url(): return "http://rpc"
+        @staticmethod
+        def signer_address(f=None): return "PROPRIO"
+        @staticmethod
+        async def sol_eur(cl): return 100.0
+        @staticmethod
+        async def sol_balance(cl, rpc, a): return int(50 * 1e9)
+        @staticmethod
+        async def prepare_buy(*a, **k): raise RuntimeError(LONG)
+
+    ctx = _ctx(**{"telegram_rapide.mode": "live"})
+    _lancement(ctx, MINT_TG, NOW, prix=1.0)
+    m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    import intel.execution as paquet
+    vrai = paquet.solana
+    paquet.solana = _S  # type: ignore[assignment]
+    try:
+        assert _cycle(m, NOW)["achetes"] == 0
+    finally:
+        paquet.solana = vrai  # type: ignore[assignment]
+    e = ctx.db.query("SELECT etape, erreur FROM tg_echecs")
+    assert len(e) == 1 and e[0]["etape"] == "achat"
+    assert "0x1771" in e[0]["erreur"], "le code d erreur doit survivre a la troncature"
+
+
 def test_le_portefeuille_est_le_frein_et_suit_les_fonds():
     """Un plafond de lignes fixe se regle sur le solde d un jour et se trompe le lendemain. Avant
     chaque achat reel le moteur verifie que le portefeuille peut payer, donc la capacite suit les

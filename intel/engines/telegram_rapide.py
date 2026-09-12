@@ -259,7 +259,14 @@ class TelegramRapide:
             # avec.
             n = int(l["echecs"] or 0) + 1
             self.ctx.db.execute("UPDATE tg_lignes SET echecs=? WHERE mint=?", (n, l["mint"]))
-            log.warning("tg: VENTE ECHOUEE sur %s (essai %d) : %s", l["symbole"], n, str(exc)[:120])
+            self.ctx.db.execute(
+                "CREATE TABLE IF NOT EXISTS tg_echecs("
+                " ts INTEGER, mint TEXT, symbole TEXT, etape TEXT, erreur TEXT)")
+            if n in (1, 5, 30):
+                self.ctx.db.insert("tg_echecs", {"ts": now, "mint": l["mint"],
+                                                 "symbole": l["symbole"], "etape": "vente",
+                                                 "erreur": str(exc)[:2000]})
+            log.warning("tg: VENTE ECHOUEE sur %s (essai %d) : %s", l["symbole"], n, str(exc)[:400])
             if n == 1 or n % 180 == 0:
                 await self._prevenir(
                     "⚠️ <b>%s</b> devait etre vendu (4 min) et la vente a echoue (essai %d)\n"
@@ -420,7 +427,18 @@ class TelegramRapide:
                 raise RuntimeError(tx.get("refused_reason") or "transaction non assemblee")
             h = await sol.send(self.client, rpc, sol.sign(tx["tx"], cle))
         except Exception as exc:  # noqa: BLE001
-            log.warning("tg: ACHAT ECHOUE sur %s : %s", symbole, str(exc)[:120])
+            # 400 caracteres et non 120 : le 12/09 un achat a echoue sur « Error processing
+            # Instruction 6: custom program... », coupe juste AVANT le code d erreur, donc
+            # indiagnosticable. Un message d echec qui ne dit pas pourquoi ne sert a rien, et
+            # celui-ci porte le seul chiffre qui compte -- 0x1771 veut dire que le prix a bouge
+            # entre la cotation et l atterrissage, ce qui se corrige avec les frais de priorite.
+            self.ctx.db.execute(
+                "CREATE TABLE IF NOT EXISTS tg_echecs("
+                " ts INTEGER, mint TEXT, symbole TEXT, etape TEXT, erreur TEXT)")
+            from intel.utils.timeutil import now_ts
+            self.ctx.db.insert("tg_echecs", {"ts": now_ts(), "mint": mint, "symbole": symbole,
+                                             "etape": "achat", "erreur": str(exc)[:2000]})
+            log.warning("tg: ACHAT ECHOUE sur %s : %s", symbole, str(exc)[:400])
             return False
         self.ctx.db.execute(
             "INSERT OR REPLACE INTO tg_lignes(mint, symbole, pair_id, ts_entree, age_entree,"

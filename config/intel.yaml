@@ -271,7 +271,13 @@ solana:
     enabled: true
     pas_secondes: 10        # cadence de lecture ; le moteur decide toutes les 20 s
     fenetre_minutes: 15     # on suit un lancement pendant ce temps apres sa creation
-    tentatives: 6           # le pool peut n etre visible qu au bloc suivant la migration
+    # Combien de fois on redemande le pool avant d abandonner un lancement. A 6 essais et une
+    # cadence de 10 s, on renonçait au bout de 60 s -- alors que la fenetre d entree de la
+    # strategie Telegram court jusqu a T+180 s. Audit du 12/09 sur 3 h : 10 lancements sur 153
+    # n ont jamais ete juges, et les 10 pools EXISTAIENT, simplement indexes trop tard par
+    # getProgramAccounts. C etait la seule perte de flux de tout l entonnoir, 7 %.
+    # 20 essais couvrent les 200 s utiles ; le surcout est d une cinquantaine d appels par heure.
+    tentatives: 20
   # Le suivi de LONGUE duree (intel/engines/suivi_long.py) : 24 h par lancement au lieu de 30 min,
   # cadence relachee avec l age (60 s puis 300 s puis 900 s), source DexScreener. Ne coute que des
   # lectures. Sert a tester « acheter la survie a T+1 h et tenir des heures » (§3.68).

@@ -72,7 +72,58 @@ class PrixChaine:
         except Exception:  # noqa: BLE001
             return None
 
-    async def _resoudre(self, mint: str) -> tuple[str, str, str] | None:
+    async def _depuis_migration(self, mint: str, signature: str) -> tuple[str, str, str] | None:
+        """Le pool et ses deux reserves, lus DANS la transaction de migration.
+
+        C est le chemin principal depuis le 12/09. Chercher le pool par `getProgramAccounts` oblige
+        a attendre que l index du fournisseur rattrape la chaine, et cette attente coutait du flux :
+        audit du meme jour, 10 lancements sur 153 n avaient jamais ete juges, et leurs 10 pools
+        EXISTAIENT -- simplement indexes apres la fermeture de la fenetre d entree. Or la
+        transaction de migration, qu on recoit deja et dont on garde la signature, contient tout :
+
+            postTokenBalances  ->  l entree de NOTRE mint avec un solde non nul
+                                   son `owner` EST le pool
+                                   son compte est la reserve en jetons
+                               ->  l entree WSOL du meme `owner` est la reserve en SOL
+
+        Une lecture, zero attente. L ancienne recherche reste en secours quand la signature manque
+        ou que la transaction n est pas encore servie par le noeud.
+
+        Le solde non nul est la condition qui distingue : la migration laisse aussi une entree a
+        zero pour l ancienne courbe de bonding, avec un autre proprietaire.
+        """
+        from intel.execution.solana import SOL_MINT
+        res = await self._rpc("getTransaction",
+                              [signature, {"maxSupportedTransactionVersion": 0,
+                                           "encoding": "jsonParsed"}])
+        if not res:
+            return None
+        try:
+            meta = res.get("meta") or {}
+            if meta.get("err"):
+                return None
+            keys = [k["pubkey"] if isinstance(k, dict) else k
+                    for k in res["transaction"]["message"]["accountKeys"]]
+            soldes = meta.get("postTokenBalances") or []
+            pool = base_ta = quote_ta = None
+            for b in soldes:
+                if b.get("mint") != mint:
+                    continue
+                if float(b["uiTokenAmount"]["uiAmountString"] or 0) <= 0:
+                    continue
+                pool, base_ta = b.get("owner"), keys[int(b["accountIndex"])]
+            if not pool or not base_ta:
+                return None
+            for b in soldes:
+                if b.get("mint") == SOL_MINT and b.get("owner") == pool:
+                    quote_ta = keys[int(b["accountIndex"])]
+            if not quote_ta:
+                return None
+        except Exception:  # noqa: BLE001
+            return None
+        return pool, base_ta, quote_ta
+
+    async def _resoudre(self, mint: str, signature: str | None = None) -> tuple[str, str, str] | None:
         """Le pool PumpSwap d un jeton et ses deux comptes de reserve. Un seul appel, mis en cache.
 
         Un pool absent ne l est pas forcement pour toujours : la migration vient d etre emise et le
@@ -83,6 +134,13 @@ class PrixChaine:
             return self.pools[mint]
         if self.introuvables.get(mint, 0) >= int(self._cfg("tentatives", 6) or 6):
             return None
+        # D abord la transaction de migration : elle porte le pool, sans attendre aucun index.
+        if signature:
+            trouve = await self._depuis_migration(mint, signature)
+            if trouve:
+                self.introuvables.pop(mint, None)
+                self.pools[mint] = trouve
+                return trouve
         res = await self._rpc("getProgramAccounts", [PAMM, {
             "encoding": "base64",
             "filters": [{"dataSize": TAILLE_POOL},
@@ -113,7 +171,7 @@ class PrixChaine:
         fenetre = int(self._cfg("fenetre_minutes", 15) or 15)
         now = now_ts()
         lancements = db.query(
-            "SELECT mint, ts FROM solana_stream_launches WHERE ts > ? ORDER BY ts DESC LIMIT 40",
+            "SELECT mint, ts, signature FROM solana_stream_launches WHERE ts > ? ORDER BY ts DESC LIMIT 40",
             (now - fenetre * 60,))
         if not lancements:
             return {"status": "ok", "suivis": 0}
@@ -124,7 +182,7 @@ class PrixChaine:
             m = l["mint"]
             if not m:
                 continue
-            trouve = await self._resoudre(m)
+            trouve = await self._resoudre(m, l["signature"] if "signature" in l.keys() else None)
             if not trouve:
                 continue
             pool, base_ta, quote_ta = trouve
