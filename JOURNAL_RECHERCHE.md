@@ -3064,9 +3064,21 @@ l'événement de création (donc gelés et horodatés) ou dans leur base de donn
 comme Robinhood) ? L'adresse de contrat citée par la documentation Bitquery ne renvoie aucun
 événement sur un nœud public, et les nœuds BSC publics plafonnent la portée des requêtes.
 
-**Le test qui tranche** tient en une journée : un accès BSC correct, lire un événement `TokenCreate`,
-regarder si le lien Telegram est dedans. Si oui la règle se transporte presque telle quelle, avec
-vingt fois le flux. Si c'est dans leur base, c'est la situation Robinhood et ça ne vaut rien.
+**LE TEST EST FAIT, ET IL TRANCHE : NON.** 68 événements du contrat four.meme
+(`0x5c952063c7fc8610ffdb798152d69f0b9550762b`, 20,7 M de transactions) lus sur 60 blocs BNB, soit
+45 secondes de chaîne. **Zéro porte un lien social.** Les seules chaînes lisibles sont le nom et le
+symbole du jeton. Les liens Telegram et Twitter vivent donc dans leur base de données, modifiables,
+exactement comme sur Robinhood Chain. La règle ne s'y transporte pas.
+
+**Et ça n'a rien coûté.** J'avais annoncé qu'il fallait un nœud BNB payant : c'était faux, et
+l'erreur venait de moi. `bsc-dataseed.binance.org` refuse `eth_getLogs` avec
+`{'code': -32005, 'message': 'limit exceeded'}`, et mon script écrivait `.get('result') or []`, ce
+qui transforme une erreur en liste vide. J'ai donc conclu « ce contrat n'émet rien » alors que le
+nœud disait « je refuse ». `bsc.publicnode.com` répond correctement, gratuitement.
+
+**Méthode, pour la troisième fois cette semaine.** `réponse.get('result') or []` est un piège :
+il efface la différence entre « rien » et « refusé ». Vérifier la présence d'une erreur AVANT de
+lire un résultat. Même famille que l'IPFS à 429 (§3.72) et que le prix aberrant de HYPE (§5.30).
 
 **LE PÉAGE RÉEL, deux tickets.** C'est désormais le chiffre à surveiller avant tous les autres.
 
@@ -3612,6 +3624,11 @@ bout en bout, du seuil jusqu a la signature.*
   épaisse, la moyenne d'un tirage aléatoire varie tellement qu'aucun effet réel ne s'en distingue :
   le groupe Telegram donne 11,6 % sur la moyenne et 0,00 % sur le taux de gagnants et la médiane,
   pour le même échantillon. Choisir la statistique AVANT de voir le résultat.
+- **`reponse.get("result") or []` efface la différence entre « rien » et « refusé ».** Le 13/09 j'en
+  ai conclu qu'un contrat BNB n'émettait aucun événement, alors que le nœud répondait
+  `limit exceeded` — et j'ai annoncé à l'opérateur qu'il fallait un accès payant. Vérifier la
+  présence d'une erreur AVANT de lire un résultat. Troisième occurrence de cette famille cette
+  semaine, après l'IPFS à 429 (§3.72) et le prix aberrant de HYPE (§5.30).
 - **Une variable lue après coup doit être prouvée non modifiable après coup.** Sinon la mesure lit
   le futur sans le dire. Pour les métadonnées de jetons Solana la chaîne le garantit
   (`updateAuthority: None` sur 40 sur 40, §3.73) ; partout ailleurs, horodater à la lecture.
