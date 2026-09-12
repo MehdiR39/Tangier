@@ -685,6 +685,12 @@ telegram_rapide:
   max_lignes_simultanees: 6
   reserve_sol: 0.02            # gardee pour les frais des ventes en cours
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
+  # Heures UTC ou l on n achete pas. 20h-24h UTC porte le plus de lancements (726 sur 3 jours) et
+  # le moins de Telegram (3,2 %, contre 10,4 % entre 08h et 12h) : population de createurs
+  # differente. La rentabilite y est negative des deux cotes de la coupure (-0,207 puis -0,039) et
+  # l ecarter ameliore les deux moities. Mesure sur 23 jetons seulement -- a remesurer quand la
+  # collecte aura double. Liste vide = on achete a toute heure.
+  heures_exclues: [20, 21, 22, 23]
   peage_pct: 2.0               # aller-retour, pour le calcul a blanc seulement
   # Les messages de cette strategie vont dans le canal « Trading DEX » de l operateur, pas dans le
   # fil qui porte les alertes du portefeuille : a soixante tickets par jour, les melanger rendrait

@@ -100,11 +100,13 @@ def _cycle(m, now: int) -> dict:
     On remplace l objet `time` VU PAR LE MODULE, et non `time.time` dans tout le processus : figer
     l horloge globale casse la boucle asyncio qui s en sert pour ses echeances.
     """
+    import time as _t
     import types
 
     import intel.engines.telegram_rapide as mod
     vrai = mod.time
-    mod.time = types.SimpleNamespace(time=lambda: now)  # type: ignore[assignment]
+    # `gmtime` reste la VRAIE : seule l heure courante est figee, pas la conversion des dates.
+    mod.time = types.SimpleNamespace(time=lambda: now, gmtime=_t.gmtime)  # type: ignore[assignment]
     try:
         return asyncio.run(m.cycle())
     finally:
@@ -314,6 +316,7 @@ def test_le_resultat_reel_se_lit_sur_le_portefeuille():
     # `from intel.execution import solana` lit l ATTRIBUT du paquet, pas `sys.modules` : remplacer
     # l entree de `sys.modules` ne changerait rien et le test passerait a cote.
     import intel.execution as paquet
+    import intel.execution.solana  # noqa: F401  -- sans cet import l attribut n existe pas encore
     vrai = paquet.solana
     paquet.solana = _FauxSol  # type: ignore[assignment]
     try:
@@ -379,6 +382,7 @@ def test_un_achat_refuse_ecrit_l_erreur_entiere():
     _lancement(ctx, MINT_TG, NOW, prix=1.0)
     m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
     import intel.execution as paquet
+    import intel.execution.solana  # noqa: F401  -- sans cet import l attribut n existe pas encore
     vrai = paquet.solana
     paquet.solana = _S  # type: ignore[assignment]
     try:
@@ -388,6 +392,74 @@ def test_un_achat_refuse_ecrit_l_erreur_entiere():
     e = ctx.db.query("SELECT etape, erreur FROM tg_echecs")
     assert len(e) == 1 and e[0]["etape"] == "achat"
     assert "0x1771" in e[0]["erreur"], "le code d erreur doit survivre a la troncature"
+
+
+def test_chaque_vente_annonce_le_cumul_depuis_le_depart():
+    """Demande de l operateur : un ticket ne veut rien dire, seul le cumul porte l information.
+    Une ligne dont le resultat n est pas encore lu sur la chaine ne doit PAS compter comme zero."""
+    ctx = _ctx()
+    ctx.db.execute(
+        "CREATE TABLE IF NOT EXISTS tg_lignes("
+        " mint TEXT PRIMARY KEY, symbole TEXT, pair_id TEXT, ts_entree INTEGER, age_entree INTEGER,"
+        " prix_entree REAL, mise_eur REAL, jetons TEXT, tx_achat TEXT, ts_sortie INTEGER,"
+        " prix_sortie REAL, gain_eur REAL, tx_vente TEXT, statut TEXT, mode TEXT, motif TEXT,"
+        " echecs INTEGER DEFAULT 0)")
+    m = _moteur(ctx, {})
+    assert m._cumul() == ""                       # aucun ticket : on n annonce rien
+
+    for i, (gain, mise, mode) in enumerate(
+            [(+14.79, 20.0, "live"), (-3.35, 20.0, "live"), (+7.69, 10.0, "live"),
+             (None, 20.0, "live"),                 # pas encore comptee sur la chaine
+             (+99.0, 10.0, "paper")]):             # a blanc : hors cumul
+        ctx.db.execute(
+            "INSERT INTO tg_lignes(mint, symbole, ts_entree, mise_eur, gain_eur, statut, mode)"
+            " VALUES(?,?,?,?,?,?,?)", ("M%d" % i, "T%d" % i, NOW, mise, gain, "FERMEE", mode))
+
+    t = m._cumul()
+    assert "+19.13 EUR" in t                      # 14,79 - 3,35 + 7,69, sans le papier ni l attente
+    assert "3 tickets" in t
+    assert "2 gagnants" in t
+    assert "+0.383" in t                          # 19,13 / 50 EUR mises
+
+
+def test_les_heures_exclues_bloquent_l_achat_mais_jamais_la_vente():
+    """La tranche 20h-24h UTC est ecartee (voir le module). Mais une heure creuse ne doit pas
+    empecher de SORTIR d une ligne ouverte avant : ce serait garder une position quatre heures de
+    plus qu il ne faut, exactement l inverse de la strategie."""
+    import calendar
+    # 21h UTC : dans la tranche exclue
+    t21 = calendar.timegm((2026, 9, 12, 21, 30, 0, 0, 0, 0))
+    t18 = calendar.timegm((2026, 9, 12, 18, 30, 0, 0, 0, 0))
+
+    ctx = _ctx(**{"telegram_rapide.heures_exclues": [20, 21, 22, 23]})
+    _lancement(ctx, MINT_TG, t21, prix=1.0)
+    m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    assert _cycle(m, t21)["achetes"] == 0
+    assert m.lectures == []                      # on ne depense meme pas l appel reseau
+
+    # a 18h30 le meme jeton est achete
+    ctx2 = _ctx(**{"telegram_rapide.heures_exclues": [20, 21, 22, 23]})
+    _lancement(ctx2, MINT_TG, t18, prix=1.0)
+    m2 = _moteur(ctx2, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    assert _cycle(m2, t18)["achetes"] == 1
+
+    # une ligne ouverte a 19h58 se vend bien apres 20h00, en pleine heure exclue
+    t_ouv = calendar.timegm((2026, 9, 12, 19, 58, 0, 0, 0, 0))
+    t_fin = t_ouv + TENUE_S + 10               # 20h02, dans la tranche exclue
+    assert __import__("time").gmtime(t_ouv).tm_hour == 19
+    assert __import__("time").gmtime(t_fin).tm_hour == 20
+    ctx3 = _ctx(**{"telegram_rapide.heures_exclues": [20, 21, 22, 23]})
+    _lancement(ctx3, MINT_TG, t_ouv, prix=1.0)
+    m3 = _moteur(ctx3, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    _cycle(m3, t_ouv)
+    assert ctx3.db.scalar("SELECT COUNT(*) FROM tg_lignes WHERE statut='OUVERTE'", (), 0) == 1
+    assert _cycle(_moteur(ctx3, {}), t_fin)["vendus"] == 1
+
+    # liste vide : la regle est annulee
+    ctx4 = _ctx(**{"telegram_rapide.heures_exclues": []})
+    _lancement(ctx4, MINT_TG, t21, prix=1.0)
+    m4 = _moteur(ctx4, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    assert _cycle(m4, t21)["achetes"] == 1
 
 
 def test_le_portefeuille_est_le_frein_et_suit_les_fonds():
@@ -418,6 +490,7 @@ def test_le_portefeuille_est_le_frein_et_suit_les_fonds():
         return _S
 
     import intel.execution as paquet
+    import intel.execution.solana  # noqa: F401  -- sans cet import l attribut n existe pas encore
     vrai = paquet.solana
     try:
         # mise de 20 EUR = 0,20 SOL, plus 0,02 de reserve : il faut 0,22 SOL

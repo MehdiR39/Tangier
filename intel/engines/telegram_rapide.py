@@ -320,12 +320,48 @@ class TelegramRapide:
             log.info("tg: %s compte sur la chaine — %+.5f SOL soit %+.2f EUR",
                      l["symbole"], da + dv, gain)
             await self._prevenir("%s <b>%s</b> boucle en 4 min : <b>%+.2f EUR</b>\n"
-                                 "<i>lu sur le portefeuille, pas sur une cotation</i>"
-                                 % ("✅" if gain > 0 else "🔻", l["symbole"], gain))
+                                 "<i>lu sur le portefeuille, pas sur une cotation</i>\n%s"
+                                 % ("✅" if gain > 0 else "🔻", l["symbole"], gain, self._cumul()))
         return faits
 
     # ---------------------------------------------------------------- acheter
+    def _heure_creuse(self, now: int) -> bool:
+        """Cette tranche horaire est-elle exclue ? Question de l operateur le 12/09, 21h UTC :
+        « le rythme change pas en fonction de l heure de la journee ? ». Il change, deux fois.
+
+        LE RYTHME, sur 2 998 lancements et 3,1 jours :
+
+            tranche UTC   lancements   telegram   taux
+            08h-12h              367         38   10,4 %
+            20h-24h              726         23    3,2 %
+
+        La tranche 20h-24h porte le PLUS de lancements et le MOINS de Telegram. C est une
+        population de createurs differente, et le constat tient sur des centaines de lignes.
+
+        LA RENTABILITE suit le meme sens, sur bien moins de lignes :
+
+            20h-24h, telegram    recherche -0,207 (n=13)   JUGEMENT -0,039 (n=10)
+            toutes heures        recherche +0,201 (n=89)   JUGEMENT +0,189 (n=102)
+            hors 20h-24h         recherche +0,271 (n=76)   JUGEMENT +0,214 (n=92)
+
+        Negatif des DEUX cotes, et l ecarter ameliore les DEUX moities. C est la bonne signature --
+        mais sur 23 jetons, et je me suis fait avoir trois fois cette semaine par des echantillons
+        de cette taille. Ce qui fait pencher, c est que le taux (grand echantillon) et la
+        rentabilite (petit) racontent la meme histoire, et que le cout est borne : 12 % des tickets.
+
+        A REMESURER quand la collecte aura doublé. `heures_exclues: []` annule la regle.
+        """
+        try:
+            exclues = {int(h) for h in (self._cfg("heures_exclues", []) or [])}
+        except Exception:  # noqa: BLE001
+            return False
+        if not exclues:
+            return False
+        return time.gmtime(now).tm_hour in exclues
+
     async def _acheter(self, now: int) -> int:
+        if self._heure_creuse(now):
+            return 0
         ouvertes = self.ctx.db.scalar(
             "SELECT COUNT(*) FROM tg_lignes WHERE statut='OUVERTE'", (), 0) or 0
         plafond = int(self._cfg("max_lignes_simultanees", 6))
@@ -448,6 +484,32 @@ class TelegramRapide:
         await self._prevenir("🟢 <b>%s</b> achete (Telegram present, T+%d s)\n%.2f EUR · vente dans 4 min"
                              % (symbole, age, mise))
         return True
+
+    def _cumul(self) -> str:
+        """Le resultat de TOUTE la strategie depuis le passage en reel, joint a chaque vente.
+
+        Demande de l operateur le 12/09 : « accompagne le message de chaque vente par le pnl global
+        depuis qu on a mis en place la nouvelle strat ». C est la bonne facon de lire cette
+        strategie : un ticket ne veut rien dire, deux perdants sur trois sont attendus, et seul le
+        cumul sur plusieurs dizaines de tickets porte l information.
+
+        On ne compte que les lignes REELLES et deja comptees sur la chaine. Une ligne dont le
+        resultat n est pas encore lu n entre pas dans le total plutot que d y entrer a zero.
+        """
+        try:
+            r = self.ctx.db.query(
+                "SELECT COUNT(*) n, COALESCE(SUM(gain_eur), 0) g, COALESCE(SUM(mise_eur), 0) m,"
+                " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w"
+                " FROM tg_lignes WHERE mode='live' AND gain_eur IS NOT NULL")
+        except Exception:  # noqa: BLE001
+            return ""
+        if not r or not int(r[0]["n"] or 0):
+            return ""
+        n = int(r[0]["n"]); g = float(r[0]["g"]); m = float(r[0]["m"]) or 1.0
+        w = int(r[0]["w"] or 0)
+        return ("━━━━━━━━━━━━━━\n<b>Depuis le depart : %+.2f EUR</b>\n"
+                "%d tickets · %d gagnants (%.0f %%) · %+.3f par euro mise"
+                % (g, n, w, 100.0 * w / n, g / m))
 
     async def _prevenir(self, texte: str, critique: bool = False) -> None:
         """Prevenir l operateur, dans SON canal a lui et pas dans le fil du portefeuille.
