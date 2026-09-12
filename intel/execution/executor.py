@@ -100,9 +100,17 @@ def held_units(ctx: IntelContext, token: str, d: dict[str, Any], *, eur_usd: flo
     halved once part of it has already been sold. When execution goes live this is replaced by the
     signer wallet's on-chain balance, which is the only figure that can be trusted to settle.
     """
+    # Le carnet de la decision, et lui seul : une vente se dimensionne sur NOTRE ligne. Une ligne
+    # sans version est du scanner (voir carnet.sql) -- sans ce cas, une vente du scanner sur une
+    # vieille ligne partait « quantite inconnue » et etait refusee a l aveugle.
+    from intel.engines.carnet import SCANNER, prefixe_de
+    prefixe = prefixe_de(d.get("model_version"))
+    ou = ("(model_version IS NULL OR model_version LIKE ?)" if prefixe == SCANNER
+          else "model_version LIKE ?")
     pos = ctx.db.query_one(
-        "SELECT size_eur, entry_price, status FROM positions WHERE chain_id=? AND token_address=? AND status IN ('OPEN','HALF') ORDER BY id DESC LIMIT 1",
-        (ctx.chain_id, token))
+        "SELECT size_eur, entry_price, status FROM positions WHERE chain_id=? AND token_address=? "
+        "AND status IN ('OPEN','HALF') AND " + ou + " ORDER BY id DESC LIMIT 1",
+        (ctx.chain_id, token, prefixe + "%"))
     if pos is None or not pos["entry_price"] or not pos["size_eur"]:
         return None
     units = float(pos["size_eur"]) * eur_usd / float(pos["entry_price"])
@@ -220,9 +228,17 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
         # The quoter's own 3 % ceiling describes a scanner order on an established pool. A T+1 pool
         # is minutes old and a 5 EUR ticket routinely moves it more than that: four of the twenty
         # test tickets died on "impact 3.0 % > 3.0 %" while the book's own ceiling was 8 %.
+        # Un achat MANUEL ne subit pas le controle de fraicheur de l etat du pool. Cet etat n est
+        # rafraichi que pour les jetons que le scanner ingere ; sur DOGSHIT, hors scanner, il datait
+        # de 551 min et l ordre de l operateur du 09/09 23h09 a ete refuse pour un pool qui echangeait
+        # toutes les dix secondes (§5.22). L operateur a le graphique sous les yeux et a decide ; et
+        # la sortie minimale calculee depuis la cotation protege l echange : un etat perime fait
+        # au pire echouer la transaction, jamais surpayer. Meme tolerance que pour les sorties.
+        manuel = str(d.get("model_version") or "").startswith("manuel-")
         q = quote_from_pool(ctx, pool_id=pool["pair_id"], zero_for_one=zero_for_one, amount_in=amount_in,
                             fee_pips=pool_fee if pool_fee > 0 else 10_000,
-                            max_impact_pct=float(check_limits.max_slippage_pct))
+                            max_impact_pct=float(check_limits.max_slippage_pct),
+                            **({"max_state_age_s": 7 * 86400} if manuel else {}))
     else:
         q = quote_from_pool(ctx, pool_id=pool["pair_id"], zero_for_one=zero_for_one, amount_in=amount_in,
                             fee_pips=pool_fee if pool_fee > 0 else 10_000,
@@ -256,9 +272,13 @@ def prepare(ctx: IntelContext, d: dict[str, Any], *, limits: safety.Limits, eur_
                                 "size_eur": d.get("size_eur"), "slippage_pct": q.price_impact_pct,
                                 "quote_liquidity_usd": liq_usd,
                                 "model_version": d.get("model_version"),
-                                # The daily allowance belongs to THIS wallet: it must count only
-                                # what this executor sent, never another chain's book.
-                                "journal_version": MODEL_VERSION}, check_limits)
+                                # L enveloppe quotidienne appartient au CARNET qui passe l ordre.
+                                # Elle etait comptee sous la version de l executeur, donc le carnet
+                                # du scanner et les ordres manuels partageaient la meme : le
+                                # scanner pouvait epuiser le budget de l operateur sans qu il
+                                # comprenne pourquoi son achat Telegram est refuse (§5.25).
+                                "journal_version": d.get("model_version") or MODEL_VERSION},
+                               check_limits)
     if is_t1:
         log.info("t1 ordre %s · profondeur %s %s · impact %.2f %% · %s", token[:10],
                  f"{liq_usd:,.0f} $" if liq_usd is not None else "inconnue", liq_source,
@@ -439,7 +459,8 @@ async def run_once(ctx: IntelContext, *, limit: int = 20) -> dict[str, Any]:
             spending = order.quote if d["kind"] == safety.BUY else order.token
             for need in await missing_approvals(ctx, token=spending, owner=owner, amount=order.amount_in, now_ts=now_ts()):
                 log.info("autorisation manquante (%s) : %s", need.what, need.reason)
-                a_signed = await build_and_sign(ctx, to=need.to, data=need.data, value_wei=0)
+                a_signed = await build_and_sign(ctx, to=need.to, data=need.data, value_wei=0,
+                                                sortie=d["kind"] != safety.BUY)
                 a_hash = await broadcast(ctx, a_signed)
                 # The node's pending nonce lags a fresh broadcast by a second or two: the first
                 # real sell (2026-09-07) signed with the approval's nonce and died "nonce too low".
@@ -452,7 +473,8 @@ async def run_once(ctx: IntelContext, *, limit: int = 20) -> dict[str, Any]:
                          kind="APPROVE", tx_hash=a_hash, refused_reason=need.what)
                 log.info("autorisation envoyée %s tx=%s", need.what, a_hash)
 
-            signed = await build_and_sign(ctx, to=order.router, data=order.calldata, value_wei=order.value_wei)
+            signed = await build_and_sign(ctx, to=order.router, data=order.calldata, value_wei=order.value_wei,
+                                          sortie=d["kind"] != safety.BUY)
             tx_hash = await broadcast(ctx, signed)
             ctx.db.execute("UPDATE executions SET status='SUBMITTED', tx_hash=? WHERE id=?", (tx_hash, exec_id))
             out["submitted"] += 1

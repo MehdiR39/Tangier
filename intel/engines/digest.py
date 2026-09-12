@@ -15,6 +15,7 @@ from typing import Any
 from intel import MODEL_VERSION
 from intel.alerts.labels import action_fr, state_fr
 from intel.context import IntelContext
+from intel.engines.carnet import SCANNER_SQL
 from intel.metrics.launch import launch_history_complete
 from intel.utils.timeutil import now_ts
 
@@ -103,7 +104,7 @@ def build_digest(ctx: IntelContext) -> str:
         m = _latest_metrics(ctx, r["token_address"])
         ret = m.get("returns", {})
         h = m.get("holders", {})
-        pos = ctx.db.query_one("SELECT status, kind FROM positions WHERE chain_id=? AND token_address=? ORDER BY id DESC LIMIT 1", (ctx.chain_id, r["token_address"]))
+        pos = ctx.db.query_one("SELECT status, kind FROM positions WHERE chain_id=? AND token_address=? AND " + SCANNER_SQL + " ORDER BY id DESC LIMIT 1", (ctx.chain_id, r["token_address"]))
         advice = ADVICE_FR.get(r["action"] or "", action_fr(r["action"]))
         if pos and pos["status"] == "HALF":
             advice = "GARDER LE RESTE (moitié vendue)"

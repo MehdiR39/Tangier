@@ -23,6 +23,15 @@ RAW_TABLES = ("transfers", "swap_events", "liquidity_events", "trades", "holders
 
 def prune(ctx: IntelContext, cede: Callable[[], None] | None = None) -> dict[str, Any]:
     """``cede`` est appele entre deux jetons : il rend la main au travail prioritaire."""
+    # INTERRUPTEUR. La selection commence par un regroupement sur `transfers` (16 M lignes) qui,
+    # sur une base de 22,4 Go, lit la base entiere a 39 Mo/s -- plusieurs minutes pendant lesquelles
+    # le disque est sature et TOUS les autres cycles rampent. Reglee a 1 800 s, elle recommencait
+    # toutes les demi-heures ; le 10/09 le moteur est reste muet de 07h00 a 07h20, Telegram compris,
+    # et chaque redemarrage relancait le scan depuis zero. Une purge ne doit jamais couter plus que
+    # ce qu elle libere. Eteinte en attendant d etre bornee autrement (§5.28).
+    if not bool(ctx.config.get("retention.enabled", True)):
+        return {"status": "disabled"}
+
     cfg = ctx.config.section("retention")
     now = now_ts()
     dead_before = now - int(cfg.get("dead_token_days", 2)) * 86400
@@ -52,8 +61,15 @@ def prune(ctx: IntelContext, cede: Callable[[], None] | None = None) -> dict[str
     # compris. En WAL un lecteur separe ne gene personne. Les suppressions, elles, restent sur la
     # connexion partagee : chaque tranche se valide en une fraction de seconde.
     candidates: list[str] = []
-    if ctx.db.path != ":memory:":
-        ro = sqlite3.connect(f"file:{ctx.db.path}?mode=ro", uri=True, timeout=30)
+    # La connexion en lecture seule n existe que pour une base sur disque -- en memoire il n y a
+    # rien a proteger d un verrou. La condition sautait TOUTE la selection dans ce cas, donc la
+    # purge ne faisait rien du tout en base memoire : `test_retention_prunes_a_token_the_scanner
+    # _never_filed` echouait depuis toujours et la seule logique de purge du projet n etait
+    # couverte par aucun test -- celle-la meme qui, en production, ne tournait jamais (§5.7).
+    # On ouvre donc une connexion de lecture dans les deux cas ; seul le chemin change.
+    if True:
+        ro = (sqlite3.connect(f"file:{ctx.db.path}?mode=ro", uri=True, timeout=30)
+              if ctx.db.path != ":memory:" else ctx.db._conn)
         ro.row_factory = sqlite3.Row
         try:
             vivants = {r[0] for r in ro.execute(
@@ -105,8 +121,34 @@ def prune(ctx: IntelContext, cede: Callable[[], None] | None = None) -> dict[str
                     "LIMIT ?",
                     (ctx.chain_id, ctx.chain_id, ctx.chain_id, ctx.chain_id, dead_before,
                      int(cfg.get("scan_tokens_per_prune", 4000))))]
+            # ET AUCUN ECHANGE RECENT, verifie en UNE requete pour tous les candidats.
+            #
+            # Le code jugeait la mort sur les seuls transferts, en supposant qu un jeton sans
+            # transfert depuis `dead_token_days` n a evidemment aucun echange non plus. C est faux
+            # des que l ingestion des transferts prend du retard sur celle des pools, et
+            # `test_retention_prunes_a_token_the_scanner_never_filed` le montrait depuis toujours --
+            # sans pouvoir le dire, la selection etant sautee en base memoire.
+            #
+            # La premiere correction posait la question PAR CANDIDAT. Sur une base de 20,9 Go cette
+            # requete n est pas indexee du cote `swap_events`, et cent quatre-vingts d affilee ont
+            # gele le moteur entier : six minutes sans un seul cycle, le 10/09 a 07h01. Une purge
+            # ne doit jamais couter plus que ce qu elle libere. Ici la liste des candidats est
+            # bornee par `plafond`, donc une seule requete pilotee par `pairs` (petite table) suffit.
+            if candidates:
+                marques = ",".join("?" * len(candidates))
+                vivants_pool = {r[0] for r in ro.execute(
+                    "SELECT DISTINCT p.token_address FROM pairs p "
+                    "JOIN swap_events s ON s.chain_id=p.chain_id AND s.pair_id=p.pair_id "
+                    "WHERE p.chain_id=? AND p.token_address IN (" + marques + ") AND s.ts>=?",
+                    (ctx.chain_id, *candidates, dead_before))}
+                if vivants_pool:
+                    log.info("purge : %d candidats gardes, ils echangent encore", len(vivants_pool))
+                candidates = [t for t in candidates if t not in vivants_pool]
+                stats["candidats_lourds"] = len(candidates)
         finally:
-            ro.close()
+            # jamais fermer la connexion partagee : en memoire, la fermer viderait la base
+            if ctx.db.path != ":memory:":
+                ro.close()
     # Most dead pools carry no rows at all -- the scanner sees far more pools than it ever ingests --
     # so a batch picked blindly frees nothing (60 tokens, 100 rows, 2026-09-07). Keep the ones that
     # actually hold data; the check is one indexed lookup per token.

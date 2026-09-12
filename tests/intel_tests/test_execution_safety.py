@@ -75,10 +75,15 @@ def test_thin_liquidity_is_refused():
 
 
 def test_open_position_ceiling():
+    # kind="PORTFOLIO" : le plafond compte les positions REELLES. Ce test insérait des lignes
+    # VIRTUAL et exigeait qu'elles bloquent un achat, ce qui est exactement le défaut de §5.18 --
+    # quatorze lignes à blanc remplissaient un plafond de quinze et le carnet a refusé tous ses
+    # achats pendant trois jours. Que le papier ne compte PAS est vérifié dans test_carnets.py.
     ctx = _ctx()
     for i in range(15):
-        ctx.db.insert("positions", {"chain_id": ctx.chain_id, "token_address": f"0x{i:040x}", "label": "x", "kind": "VIRTUAL",
-                                    "opened_ts": now_ts(), "status": "OPEN", "size_eur": 20.0})
+        ctx.db.insert("positions", {"chain_id": ctx.chain_id, "token_address": f"0x{i:040x}", "label": "x", "kind": "PORTFOLIO",
+                                    "opened_ts": now_ts(), "status": "OPEN", "size_eur": 20.0,
+                                    "model_version": "intel-scoring-v0.3.0"})
     v = check(ctx, _order(), _limits())
     assert not v.allowed and "positions ouvertes" in v.why
 

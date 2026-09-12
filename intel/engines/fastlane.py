@@ -23,6 +23,7 @@ from typing import Any
 
 from intel import MODEL_VERSION
 from intel.context import IntelContext
+from intel.engines.carnet import SCANNER_SQL
 from intel.utils.timeutil import now_ts
 
 log = logging.getLogger(__name__)
@@ -40,12 +41,17 @@ def _guard(ctx: IntelContext, token: str, cfg: dict[str, Any], volume_usd: float
         raise Skip(f"volume {volume_usd:,.0f} $/h < {floor:,.0f} $/h")
     if ctx.is_system(token) or token in ctx.config.quote_assets:
         raise Skip("adresse système ou actif de cotation")
-    if ctx.db.query_one("SELECT 1 FROM positions WHERE chain_id=? AND token_address=? AND status IN ('OPEN','HALF')", (ctx.chain_id, token)):
+    if ctx.db.query_one("SELECT 1 FROM positions WHERE chain_id=? AND token_address=? AND status IN ('OPEN','HALF') AND " + SCANNER_SQL, (ctx.chain_id, token)):
         raise Skip("position déjà ouverte")
     cooldown = int(cfg.get("rebuy_cooldown_seconds", 3 * 86400))
-    if ctx.db.query_one("SELECT 1 FROM positions WHERE chain_id=? AND token_address=? AND closed_ts>?", (ctx.chain_id, token, now_ts() - cooldown)):
+    if ctx.db.query_one("SELECT 1 FROM positions WHERE chain_id=? AND token_address=? AND closed_ts>? AND " + SCANNER_SQL, (ctx.chain_id, token, now_ts() - cooldown)):
         raise Skip("déjà joué récemment")
-    n_open = ctx.db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF')", (ctx.chain_id,), 0)
+    # kind='PORTFOLIO' : un plafond sur les positions REELLES ne compte pas le papier. Sans ce
+    # filtre le compte incluait 14 lignes VIRTUAL et 2 lignes d observation sans mise, soit 16
+    # pour un plafond de 15 : le carnet reel etait sature par des simulations et n aurait plus
+    # rien achete a sa reactivation, sans qu aucun message ne le dise (§5.18).
+    n_open = ctx.db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND kind='PORTFOLIO' "
+                           "AND status IN ('OPEN','HALF')", (ctx.chain_id,), 0)
     if n_open >= int(cfg.get("max_open", 15)):
         raise Skip(f"{n_open} positions déjà ouvertes")
     last = ctx.db.query_one("SELECT kind, ts FROM decisions WHERE chain_id=? AND token_address=? ORDER BY id DESC LIMIT 1", (ctx.chain_id, token))

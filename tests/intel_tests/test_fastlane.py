@@ -128,9 +128,12 @@ def test_the_open_position_ceiling_is_respected(monkeypatch):
     ctx = _ctx(max_open=2)
     _pool(ctx)
     _patch(monkeypatch)
+    # kind="PORTFOLIO" et le carnet du scanner : le plafond compte les positions RÉELLES du
+    # scanner, pas les lignes à blanc ni celles d'un autre carnet (§5.18, §5.24).
     for i in range(2):
         ctx.db.insert("positions", {"chain_id": ctx.chain_id, "token_address": f"0x{i:040x}", "label": "x",
-                                    "kind": "VIRTUAL", "opened_ts": now_ts(), "status": "OPEN", "size_eur": 20.0})
+                                    "kind": "PORTFOLIO", "opened_ts": now_ts(), "status": "OPEN", "size_eur": 20.0,
+                                    "model_version": "intel-scoring-v0.3.0"})
     assert _consider(ctx) is None
 
 
@@ -138,9 +141,10 @@ def test_a_token_played_recently_is_not_replayed(monkeypatch):
     ctx = _ctx(rebuy_cooldown_seconds=3600)
     _pool(ctx)
     _patch(monkeypatch)
-    ctx.db.insert("positions", {"chain_id": ctx.chain_id, "token_address": TOKEN, "label": "x", "kind": "VIRTUAL",
+    ctx.db.insert("positions", {"chain_id": ctx.chain_id, "token_address": TOKEN, "label": "x", "kind": "PORTFOLIO",
                                 "opened_ts": now_ts() - 1800, "closed_ts": now_ts() - 600, "status": "CLOSED",
-                                "size_eur": 20.0, "entry_price": 1.0})
+                                "size_eur": 20.0, "entry_price": 1.0,
+                                "model_version": "intel-scoring-v0.3.0"})
     assert _consider(ctx) is None
 
 

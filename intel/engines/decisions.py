@@ -21,6 +21,7 @@ from typing import Any
 
 from intel import MODEL_VERSION
 from intel.context import IntelContext
+from intel.engines.carnet import SCANNER_SQL
 from intel.scoring.scores import Scores
 from intel.scoring.states import StateDecision
 from intel.utils.timeutil import now_ts
@@ -49,10 +50,12 @@ def _price(v: float | None) -> str:
 def open_position(ctx: IntelContext, token: str) -> dict[str, Any] | None:
     # The T+1 book keeps its own positions (model_version t1-...) with its own five-minute exit.
     # The scanner's rules applied to one of them on 2026-09-07 ("-89 % depuis son plus haut") and
-    # would emit competing sells; that book is invisible here.
+    # would emit competing sells; that book is invisible here. Same for the Solana and manual
+    # books: on 2026-09-10 03:06 the scanner adopted the operator's manual DOGSHIT line and closed
+    # it (§5.24). The scanner sees its own lines only -- see intel/engines/carnet.py.
     r = ctx.db.query_one(
         "SELECT * FROM positions WHERE chain_id=? AND token_address=? AND status IN ('OPEN','HALF') "
-        "AND (model_version IS NULL OR model_version NOT LIKE 't1-%') ORDER BY id DESC LIMIT 1", (ctx.chain_id, token))
+        "AND " + SCANNER_SQL + " ORDER BY id DESC LIMIT 1", (ctx.chain_id, token))
     return dict(r) if r else None
 
 
@@ -63,7 +66,8 @@ def ensure_portfolio_position(ctx: IntelContext, token: str, label: str, price: 
     # A position the engine already told the user to exit must not be silently re-opened
     # (that re-triggered the same sell every cycle on 2026-09-03). Re-open only after the
     # cooldown AND once the token is back in a non-negative state.
-    last_closed = ctx.db.query_one("SELECT closed_ts FROM positions WHERE chain_id=? AND token_address=? AND status='CLOSED' ORDER BY closed_ts DESC LIMIT 1", (ctx.chain_id, token))
+    last_closed = ctx.db.query_one("SELECT closed_ts FROM positions WHERE chain_id=? AND token_address=? AND status='CLOSED' "
+                                   "AND " + SCANNER_SQL + " ORDER BY closed_ts DESC LIMIT 1", (ctx.chain_id, token))
     if last_closed and last_closed["closed_ts"]:
         if now_ts() - int(last_closed["closed_ts"]) < cooldown:
             return None
@@ -176,10 +180,16 @@ def evaluate_decisions(ctx: IntelContext, *, token: str, label: str, m: dict[str
     if not allowed:
         log.info("achat de %s bloqué : %s", label, why_market)
         return out
-    n_open = ctx.db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF')", (ctx.chain_id,), 0)
+    # kind='PORTFOLIO' : un plafond sur les positions REELLES ne compte pas le papier. Sans ce
+    # filtre le compte incluait 14 lignes VIRTUAL et 2 lignes d observation sans mise, soit 16
+    # pour un plafond de 15 : le carnet reel etait sature par des simulations et n aurait plus
+    # rien achete a sa reactivation, sans qu aucun message ne le dise (§5.18).
+    n_open = ctx.db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND kind='PORTFOLIO' "
+                           "AND status IN ('OPEN','HALF')", (ctx.chain_id,), 0)
     if n_open >= int(cfg.get("max_open", 15)):
         return out
-    recent = ctx.db.query_one("SELECT 1 FROM positions WHERE chain_id=? AND token_address=? AND closed_ts>? LIMIT 1", (ctx.chain_id, token, ts - cooldown))
+    recent = ctx.db.query_one("SELECT 1 FROM positions WHERE chain_id=? AND token_address=? AND closed_ts>? "
+                              "AND " + SCANNER_SQL + " LIMIT 1", (ctx.chain_id, token, ts - cooldown))
     if recent or repeated("BUY"):
         return out
     size = float(cfg.get("size_eur", 20.0))

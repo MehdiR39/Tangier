@@ -62,12 +62,29 @@ def signer_address() -> str | None:
         return None
 
 
-async def build_and_sign(ctx: IntelContext, *, to: str, data: str, value_wei: int, gas_limit: int | None = None) -> SignedTx:
-    """Assemble an EIP-1559 transaction, estimate it, and sign it. Nothing is broadcast here."""
+def verifier_arret(ctx: IntelContext, *, sortie: bool) -> None:
+    """L arret d urgence bloque ce qui DEPENSE, jamais ce qui SORT.
+
+    Ce second controle doublait celui de safety.check, mais sans connaitre le sens de l ordre. Le
+    10/09 a 03h05 la vente de moitie de DOGSHIT, declenchee a x2,98 comme l operateur l avait
+    demande, a passe la porte de securite (corrigee la veille) et a ete refusee ICI. Un arret pose
+    pour empecher le scanner d acheter a empeche l operateur d encaisser (§5.24). Une sortie n est
+    jamais un risque de depense : elle passe.
+    """
+    if bool(ctx.config.get("execution.kill_switch", False)) and not sortie:
+        raise SigningRefused("arrêt d'urgence actif")
+
+
+async def build_and_sign(ctx: IntelContext, *, to: str, data: str, value_wei: int, gas_limit: int | None = None,
+                         sortie: bool = False) -> SignedTx:
+    """Assemble an EIP-1559 transaction, estimate it, and sign it. Nothing is broadcast here.
+
+    `sortie` dit que l ordre fait SORTIR un jeton (vente, ou autorisation prealable a une vente) ;
+    l arret d urgence ne le bloque pas. Un appelant qui ne le precise pas est traite comme un achat.
+    """
     if str(ctx.config.get("execution.mode", "dry_run")) != "live":
         raise SigningRefused("mode d'exécution = dry_run : rien n'est signé")
-    if bool(ctx.config.get("execution.kill_switch", False)):
-        raise SigningRefused("arrêt d'urgence actif")
+    verifier_arret(ctx, sortie=sortie)
     account = _load_account()
     sender = account.address
 

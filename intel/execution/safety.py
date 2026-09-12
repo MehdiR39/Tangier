@@ -105,7 +105,14 @@ def check(ctx: IntelContext, order: dict[str, Any], limits: Limits) -> Verdict:
     slippage = order.get("slippage_pct")
     liq = order.get("quote_liquidity_usd")
 
-    if limits.kill_switch:
+    # L arret d urgence bloque ce qui DEPENSE, jamais ce qui sort, et jamais ce que l operateur
+    # ordonne lui-meme. Applique aux ventes, il enferme dans une position -- le 09/09 au soir il
+    # aurait empeche de solder DOGSHIT sur un pic nocturne (§5.21). Applique aux ordres manuels, il
+    # a refuse les achats tapes sur Telegram le 10/09 alors qu il n avait ete pose que pour arreter
+    # le scanner (§5.25). Il vise un moteur, pas un humain.
+    from intel.engines.carnet import est_manuel
+    manuel = est_manuel(order.get("model_version"))
+    if limits.kill_switch and kind == BUY and not manuel:
         reasons.append("arrêt d'urgence actif")
     if kind not in KINDS:
         reasons.append(f"type d'ordre inconnu: {kind!r}")
@@ -136,11 +143,19 @@ def check(ctx: IntelContext, order: dict[str, Any], limits: Limits) -> Verdict:
             # A bag reopened by the recovery pass is not a working position: its euros are already
             # lost and it is only waiting for a pool that will take it. Counting it against the
             # ceiling let seventeen dead bags forbid every new purchase (2026-09-08, 07:30).
+            # kind='PORTFOLIO' : un plafond sur les positions REELLES ne compte pas le papier.
+            # Troisieme occurrence du meme melange en deux jours (§5.11, §5.17, §5.18), et la seule
+            # qui bloquait vraiment des achats : le carnet du scanner comptait ses quatorze lignes
+            # VIRTUAL contre son plafond de quinze, d ou des refus « 21 positions ouvertes >= 15 »
+            # alors que trois positions reelles seulement etaient ouvertes (09/09 21h05).
             n_open = ctx.db.scalar(
-                "SELECT COUNT(*) FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF') AND model_version LIKE ? "
+                "SELECT COUNT(*) FROM positions WHERE chain_id=? AND kind='PORTFOLIO' "
+                "AND status IN ('OPEN','HALF') AND model_version LIKE ? "
                 "AND (notes IS NULL OR notes NOT LIKE '%recover:%')", (ctx.chain_id, prefix + "%"), 0)
         else:
-            n_open = ctx.db.scalar("SELECT COUNT(*) FROM positions WHERE chain_id=? AND status IN ('OPEN','HALF')", (ctx.chain_id,), 0)
+            n_open = ctx.db.scalar(
+                "SELECT COUNT(*) FROM positions WHERE chain_id=? AND kind='PORTFOLIO' "
+                "AND status IN ('OPEN','HALF')", (ctx.chain_id,), 0)
         if n_open >= limits.max_open_positions:
             reasons.append(f"{n_open} positions ouvertes >= plafond {limits.max_open_positions}")
         n_today, eur_today = spent_today(ctx, order.get("journal_version"))
