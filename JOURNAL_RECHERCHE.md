@@ -2945,6 +2945,33 @@ pic. Coût : 3 % du flux, 91 % des jetons ont un prix lisible dès T+60 contre 9
 Et « ou même avant » est **non** : T+15 et T+30 tombent à +0,090 et +0,107 en jugement. Le signal
 Telegram annonce une audience qui va arriver, pas une qui est déjà là.
 
+**LE MÊME BALAYAGE, REFAIT PROPREMENT, 13/09.** L'opérateur redemande : « le choix de 60 a été
+étudié ? t'avais vérifié qu'acheter avant était pas bon ? ». En lui répondant j'ai vu le défaut du
+premier balayage : il prenait « le premier relevé à *t* secondes ou plus », si bien qu'un jeton dont
+le premier relevé arrive à 40 s entrait dans la tranche T+15. **Les tranches précoces étaient
+contaminées par des entrées tardives.** Refait en exigeant un relevé à ±10 s de la cible :
+
+    cible      n    couvert   recherche   JUGEMENT   sans best
+    T+15     168      88 %     +0,415     +0,101      +0,072
+    T+20     176      92 %     +0,385     +0,087      +0,060
+    T+30     184      96 %     +0,173     +0,102      +0,082
+    T+40     185      97 %     +0,220     +0,111      +0,094
+    T+50     187      98 %     +0,194     +0,218      +0,122
+    T+60     187      98 %     +0,255     +0,181      +0,157
+    T+75     187      98 %     +0,364     +0,187      +0,157
+    T+90     187      98 %     +0,264     +0,139      +0,117
+
+La conclusion ne bouge pas et se durcit : **acheter tôt est mesurablement moins bon**, pas neutre.
+T+15 à T+40 donnent +0,087 à +0,111 en jugement et +0,060 à +0,094 sans leur meilleure ligne, contre
++0,157 à T+60. Les écarts énormes entre moitiés dans ces tranches (+0,415 contre +0,101) sont la
+signature du bruit. T+60 et T+75 sont à égalité sur le critère le plus dur, « sans best ».
+
+Entrer tôt coûte aussi du flux : à T+15, 88 % des jetons ont un relevé, contre 98 % à partir de
+T+50. On paierait deux fois pour être en avance.
+
+**Méthode.** Une tranche horaire définie par « à partir de *t* » n'est pas une tranche : c'est un
+fourre-tout qui aspire tout ce qui vient après. Exiger un point DANS la fenêtre, pas après elle.
+
 **RIEN NE MARCHE SUR LES 93 % SANS TELEGRAM, 12/09 19 h.** La stratégie ignore 2 546 des 2 729
 lancements. Testé, entrée T+60, tenue 4 min, deux moitiés :
 
