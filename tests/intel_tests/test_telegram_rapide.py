@@ -462,6 +462,45 @@ def test_les_heures_exclues_bloquent_l_achat_mais_jamais_la_vente():
     assert _cycle(m4, t21)["achetes"] == 1
 
 
+def test_un_refus_passager_se_rejoue_un_refus_definitif_non():
+    """Le 13/09, HUNTRUMP a ete perdu sur « Market not found » : le pool existait, le routeur ne
+    l avait pas encore indexe, et le moteur a renonce DEFINITIVEMENT. Dix secondes plus tard il
+    aurait pu acheter. Un refus passager doit se rejouer ; un refus de garde-fou, non."""
+    for erreur, rejouable in ((RuntimeError('Market 8Lb... not found'), True),
+                              (RuntimeError('impact 42.7 % > plafond 15.0 %'), False),
+                              (RuntimeError('aller-retour 31.0 % > plafond 15.0 %'), False),
+                              (TimeoutError('delai depasse'), True)):
+        class _S:
+            SOL_MINT = "So1"
+            @staticmethod
+            def rpc_url(): return "http://rpc"
+            @staticmethod
+            def signer_address(f=None): return "PROPRIO"
+            @staticmethod
+            async def sol_eur(cl): return 100.0
+            @staticmethod
+            async def sol_balance(cl, rpc, a): return int(50 * 1e9)
+            @staticmethod
+            async def prepare_buy(*a, **k): raise erreur
+
+        ctx = _ctx(**{"telegram_rapide.mode": "live"})
+        _lancement(ctx, MINT_TG, NOW, prix=1.0)
+        m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+        import intel.execution as paquet
+        import intel.execution.solana  # noqa: F401
+        vrai = paquet.solana
+        paquet.solana = _S  # type: ignore[assignment]
+        try:
+            assert _cycle(m, NOW)["achetes"] == 0
+        finally:
+            paquet.solana = vrai  # type: ignore[assignment]
+        verdicts = ctx.db.query("SELECT verdict FROM tg_juges WHERE mint=?", (MINT_TG,))
+        if rejouable:
+            assert not verdicts, "un refus passager ne doit PAS clore le jeton : %s" % erreur
+        else:
+            assert verdicts and verdicts[0]["verdict"] == "telegram mais achat refuse", erreur
+
+
 def test_le_portefeuille_est_le_frein_et_suit_les_fonds():
     """Un plafond de lignes fixe se regle sur le solde d un jour et se trompe le lendemain. Avant
     chaque achat reel le moteur verifie que le portefeuille peut payer, donc la capacite suit les

@@ -417,6 +417,12 @@ class TelegramRapide:
             # depuis le lancement. Le livre doit porter les deux, sinon toute relecture est fausse.
             age_vrai = max(0, now - int(c["ts"] or now))
             pris = await self._ouvrir(mint, fiche["nom"], pair, prix, age_vrai, age, now)
+            if pris is None:
+                # REFUS PASSAGER : on n ecrit aucun verdict, donc le jeton revient au cycle suivant
+                # tant qu il est dans la fenetre. Le 13/09 a 19h55, HUNTRUMP a ete perdu sur
+                # « Market not found » -- le pool existait, le routeur ne l avait pas encore indexe.
+                # Renoncer definitivement sur une erreur de dix secondes coute un ticket entier.
+                continue
             self.ctx.db.execute(
                 "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
                 (mint, now, 1, fiche["twitter"], fiche["site"],
@@ -426,7 +432,8 @@ class TelegramRapide:
         return ouverts
 
     async def _ouvrir(self, mint: str, symbole: str, pair: str, prix: float, age: int,
-                      age_lecture: int, now: int) -> bool:
+                      age_lecture: int, now: int):
+        """True si la ligne est ouverte, False si le refus est DEFINITIF, None s il est PASSAGER."""
         mise = float(self._cfg("mise_eur", 10.0))
         mode = str(self._cfg("mode", "paper")).lower()
         if mode != "live":
@@ -491,7 +498,15 @@ class TelegramRapide:
             self.ctx.db.insert("tg_echecs", {"ts": now_ts(), "mint": mint, "symbole": symbole,
                                              "etape": "achat", "erreur": str(exc)[:2000]})
             log.warning("tg: ACHAT ECHOUE sur %s : %s", symbole, str(exc)[:400])
-            return False
+            # DEFINITIF ou PASSAGER ? Les deux refus observes le 13/09 n ont rien a voir :
+            #   « impact 42,7 % > plafond 15,0 % »  -> notre garde-fou, le pool est trop mince,
+            #                                          ca ne s ameliorera pas dans la minute
+            #   « Market ... not found »            -> le pool existe, le routeur ne l a pas encore
+            #                                          indexe ; dix secondes plus tard il l aura
+            # Rendre None demande de rejouer au cycle suivant, tant que la fenetre est ouverte.
+            m = str(exc).lower()
+            definitif = ("impact" in m) or ("aller-retour" in m) or ("non convertible" in m)
+            return False if definitif else None
         self.ctx.db.execute(
             "INSERT OR REPLACE INTO tg_lignes(mint, symbole, pair_id, ts_entree, age_entree,"
             " age_lecture, prix_entree, mise_eur, tx_achat, statut, mode, motif)"
