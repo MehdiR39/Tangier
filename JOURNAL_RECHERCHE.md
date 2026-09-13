@@ -3080,6 +3080,27 @@ nœud disait « je refuse ». `bsc.publicnode.com` répond correctement, gratuit
 il efface la différence entre « rien » et « refusé ». Vérifier la présence d'une erreur AVANT de
 lire un résultat. Même famille que l'IPFS à 429 (§3.72) et que le prix aberrant de HYPE (§5.30).
 
+**LES REPRISES DE NOM, 13/09.** L'opérateur voit deux achats CATGIRL à seize minutes d'écart et
+demande si c'est une erreur. Ce sont **deux jetons différents portant le même nom** — le moteur ne
+raisonne que sur l'adresse, jamais sur le symbole, donc rien de cassé. Mais l'observation vaut une
+mesure : un jeton qui reprend un nom récent est probablement une copie qui surfe sur l'attention du
+premier. 43 % des lancements reprennent un nom vu dans les 24 h.
+
+    groupe                        n     gagnants   médiane   recherche   JUGEMENT
+    nom inédit (24 h)          1 892      45 %      -2,0 %     +0,012     +0,089
+    reprise de nom             1 439      54 %      +0,3 %     -0,045     -0,028
+    TELEGRAM, nom inédit         166      58 %      +3,9 %     +0,242     +0,154
+    TELEGRAM, reprise de nom      40      78 %      +0,8 %     +0,099     +0,208
+
+Sur la population générale, **la reprise de nom est négative des deux côtés** : c'est un signal
+faible mais cohérent. Chez les jetons Telegram, l'effet DISPARAÎT — les deux groupes sont positifs,
+et le groupe « copie » est même légèrement meilleur en jugement. Le filtre Telegram écarte donc déjà
+les mauvaises copies. Rien à changer.
+
+Troisième fois que ce schéma se répète : un signal réel sur la population générale (forme, heure,
+reprise de nom) s'évapore dans le sous-groupe Telegram. C'est ce qui rend ce filtre différent des
+autres — il absorbe les autres.
+
 **LE PÉAGE RÉEL, deux tickets.** C'est désormais le chiffre à surveiller avant tous les autres.
 
     ticket        prix     encaissé   péage
