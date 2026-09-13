@@ -748,3 +748,20 @@ bnb_collecte:
   pas_secondes: 20
   rpc: "https://bsc.publicnode.com"   # `bsc-dataseed` refuse eth_getLogs (limit exceeded)
   max_blocs: 200                      # apres un arret, on ne rattrape pas au-dela
+
+# ---------------------------------------------------------------------------
+# La phase AVANT graduation. LECTURE SEULE, n achete rien, aucune cle.
+#
+# pump.fun cree 30 600 jetons par jour sur sa courbe de bonding, dont 1 100 seulement graduent --
+# et nous ne touchons que ces 1 100. C est pourtant sur la GRADUATION que porte l effet publie
+# (Kamat 2026 : le Telegram multiplie par 8,94 la probabilite de graduer).
+#
+# Premiere mesure visee, sans aucun suivi de prix : quelle part des jetons CREES porte un Telegram ?
+# On sait deja que 6,5 % des DIPLOMES en portent un. Le rapport donne le multiplicateur.
+# Sondage du 13/09 sur 45 creations : 2,2 %, donc x2,9. Trop peu pour conclure.
+pump_courbe:
+  enabled: true
+  pas_secondes: 20
+  slots_par_cycle: 40     # ~16 s de chaine par cycle : on echantillonne, on ne recense pas
+  max_slots: 300          # apres un arret on ne rattrape pas au-dela
+  part_lue: 0.35          # part des creations dont on lit la metadonnee (IPFS sature au-dela)

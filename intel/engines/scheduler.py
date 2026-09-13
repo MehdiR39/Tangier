@@ -324,6 +324,16 @@ class Runtime:
             tasks.append(asyncio.create_task(self._loop(
                 "bnb_collecte", self.bnb.cycle,
                 int(self.ctx.config.get("bnb_collecte.pas_secondes", 20)))))
+        # La phase AVANT graduation : 30 600 creations par jour contre 1 100 graduations. LECTURE
+        # SEULE, aucune cle, table separee. Voir intel/engines/pump_courbe.py.
+        if self.ctx.config.get("pump_courbe.enabled", False):
+            from intel.engines.pump_courbe import PumpCourbe
+            import httpx as _hxp
+            self.courbe = PumpCourbe(self.ctx, _hxp.AsyncClient(
+                headers={"accept": "application/json", "User-Agent": "tangier-intel/courbe"}))
+            tasks.append(asyncio.create_task(self._loop(
+                "pump_courbe", self.courbe.cycle,
+                int(self.ctx.config.get("pump_courbe.pas_secondes", 20)))))
         if self.ctx.config.get("ath.enabled", False):
             from intel.engines.ath import Ath
             self.ath = Ath(self.ctx, self.solana.client if hasattr(self, "solana") else None)
