@@ -692,8 +692,14 @@ telegram_rapide:
   # la bande ont gagne 141,48 EUR, les 10 hors bande en ont perdu 31,71.
   # Sous 60 SOL le pool median fait 1,5 SOL et notre ordre y vaut 29 % d impact. Au-dessus de
   # 100 SOL on gagne 3 fois sur 4 et on ne gagne rien. 0 = pas de borne.
-  pool_min_sol: 60
-  pool_max_sol: 85
+  # RETIRE le 13/09 apres analyse rigoureuse. La bande avait ete choisie en regardant les deux
+  # moities ; choisie honnetement sur la seule moitie de recherche elle vaut 40-100 SOL, et jugee
+  # sur l autre moitie elle rapporte MOINS que tout prendre en euros totaux (0,116 et 0,122 contre
+  # 0,128), parce qu elle jette 40 % du flux pour un gain par euro qui ne compense pas. Test du
+  # hasard a 6,6 %, sous le seuil habituel. Le groupe hors bande vaut zero a l incertitude pres.
+  # 0 = pas de borne.
+  pool_min_sol: 0
+  pool_max_sol: 0
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
   # Heures UTC ou l on n achete pas. 20h-24h UTC porte le plus de lancements (726 sur 3 jours) et
   # le moins de Telegram (3,2 %, contre 10,4 % entre 08h et 12h) : population de createurs
