@@ -677,13 +677,21 @@ telegram_rapide:
   enabled: true
   mode: live                   # paper | live
   pas_secondes: 10
-  mise_eur: 20.0
+  mise_eur: 40.0
   # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
   # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
   # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
   # « c est pas grave je vais alimenter »). Ce nombre ne sert plus qu a borner le pire cas.
   max_lignes_simultanees: 6
   reserve_sol: 0.02            # gardee pour les frais des ventes en cours
+  # LA BANDE DE TAILLE DE POOL, appliquee le 13/09 sur decision de l operateur. Mesure sur 212
+  # jetons Telegram coupes en deux : 60-85 SOL donne +0,441 / +0,274 (sans best +0,238, hasard
+  # 0,0 %) contre +0,176 / +0,179 pour tout prendre. Confirme sur nos 29 tickets reels : les 19 de
+  # la bande ont gagne 141,48 EUR, les 10 hors bande en ont perdu 31,71.
+  # Sous 60 SOL le pool median fait 1,5 SOL et notre ordre y vaut 29 % d impact. Au-dessus de
+  # 100 SOL on gagne 3 fois sur 4 et on ne gagne rien. 0 = pas de borne.
+  pool_min_sol: 60
+  pool_max_sol: 85
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
   # Heures UTC ou l on n achete pas. 20h-24h UTC porte le plus de lancements (726 sur 3 jours) et
   # le moins de Telegram (3,2 %, contre 10,4 % entre 08h et 12h) : population de createurs

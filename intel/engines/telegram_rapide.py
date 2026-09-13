@@ -154,17 +154,18 @@ class TelegramRapide:
         """
         if pair:
             r = self.ctx.db.query(
-                "SELECT prix_sol, age_s, pair_id, ts FROM solana_prix_chaine"
+                "SELECT prix_sol, age_s, pair_id, ts, reserve_sol FROM solana_prix_chaine"
                 " WHERE pair_id=? AND prix_sol>0 ORDER BY ts DESC LIMIT 1", (pair,))
         else:
             r = self.ctx.db.query(
-                "SELECT prix_sol, age_s, pair_id, ts FROM solana_prix_chaine"
+                "SELECT prix_sol, age_s, pair_id, ts, reserve_sol FROM solana_prix_chaine"
                 " WHERE mint=? AND prix_sol>0 ORDER BY ts DESC LIMIT 1", (mint,))
         if not r:
             return None
         if now - int(r[0]["ts"] or 0) > fraicheur:
             return None
-        return float(r[0]["prix_sol"]), int(r[0]["age_s"] or 0), str(r[0]["pair_id"] or "")
+        return (float(r[0]["prix_sol"]), int(r[0]["age_s"] or 0), str(r[0]["pair_id"] or ""),
+                float(r[0]["reserve_sol"] or 0))
 
     # ------------------------------------------------------------- metadonnee
     async def _telegram(self, mint: str):
@@ -396,7 +397,32 @@ class TelegramRapide:
             p = self._prix(mint, now)
             if not p:
                 continue                     # pas de courbe : on ne sait pas a quel prix on entre
-            prix, age, pair = p
+            prix, age, pair, pool = p
+            # LA TAILLE DU POOL A L ENTREE. Applique le 13/09 sur decision de l operateur. Mesure
+            # sur 212 jetons Telegram, coupes en deux, et confirmee sur nos 29 tickets reels :
+            #
+            #     pool a l entree    n   gagnants  recherche  JUGEMENT  sans best
+            #     0-60 SOL          38     37 %     -0,124    +0,141     +0,041
+            #     60-85 SOL        110     65 %     +0,441    +0,274     +0,238
+            #     100 SOL et plus   57     74 %     -0,023    +0,020     +0,000
+            #
+            # Les deux extremes sont mauvais pour des raisons opposees. Sous 60 SOL le pool median
+            # ne fait que 1,5 SOL : un ordre de 40 EUR y vaut 29 % d impact, et le garde-fou les
+            # refuse deja. Au-dessus de 100 SOL on gagne trois fois sur quatre et on ne gagne RIEN
+            # -- ce sont des jetons deja installes, qui immobilisent quatre minutes de capital pour
+            # +0,80 EUR. Sur nos tickets reels, les dix hors bande ont perdu 31,71 EUR quand les
+            # dix-neuf de la bande en gagnaient 141,48.
+            #
+            # Ce filtre ne reduit PAS les grosses pertes -- huit des douze pires tickets sont DANS
+            # la bande. Il supprime le grignotage, ce qui suffit a rendre la JOURNEE meilleure :
+            # pire centile a -6 EUR au lieu de -80, malgre une mise doublee.
+            pmin = float(self._cfg("pool_min_sol", 0) or 0)
+            pmax = float(self._cfg("pool_max_sol", 0) or 0)
+            if (pmin and pool < pmin) or (pmax and pool > pmax):
+                self.ctx.db.execute(
+                    "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
+                    (mint, now, None, None, None, "pool hors bande (%.0f SOL)" % pool))
+                continue
             fiche = await self._telegram(mint)
             if fiche is None:
                 self.ctx.db.execute(

@@ -553,6 +553,39 @@ def test_un_refus_passager_se_rejoue_un_refus_definitif_non():
             assert verdicts and verdicts[0]["verdict"] == "telegram mais achat refuse", erreur
 
 
+def test_la_bande_de_taille_de_pool_ecarte_les_deux_extremes():
+    """Applique le 13/09 : on n achete que si le pool tient entre 60 et 85 SOL. Sous 60, le pool
+    median fait 1,5 SOL et notre ordre y vaut 29 % d impact ; au-dessus de 100, on gagne trois fois
+    sur quatre et on ne gagne rien. Sur nos 29 tickets reels, les 10 hors bande ont perdu 31,71 EUR.
+
+    Le refus doit couter ZERO appel reseau : la taille du pool est deja en base."""
+    for pool, achete in ((1.5, False), (57.0, False), (60.0, True), (76.0, True),
+                         (85.0, True), (85.1, False), (470.0, False)):
+        ctx = _ctx(**{"telegram_rapide.pool_min_sol": 60, "telegram_rapide.pool_max_sol": 85})
+        ctx.db.execute("INSERT OR REPLACE INTO solana_stream_launches(mint, ts) VALUES(?,?)",
+                       (MINT_TG, NOW - AGE_MIN - 10))
+        ctx.db.execute("INSERT OR REPLACE INTO solana_prix_chaine"
+                       "(pair_id, mint, ts, age_s, prix_sol, reserve_sol) VALUES(?,?,?,?,?,?)",
+                       ("p", MINT_TG, NOW, 70, 1.0, pool))
+        m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+        r = _cycle(m, NOW)
+        assert r["achetes"] == (1 if achete else 0), "pool de %.1f SOL" % pool
+        if not achete:
+            assert m.lectures == [], "un refus sur la taille ne doit couter aucun appel reseau"
+            v = ctx.db.query("SELECT verdict FROM tg_juges WHERE mint=?", (MINT_TG,))
+            assert v and "hors bande" in v[0]["verdict"]
+
+    # bornes a zero : la regle est annulee, on achete tout
+    ctx = _ctx(**{"telegram_rapide.pool_min_sol": 0, "telegram_rapide.pool_max_sol": 0})
+    ctx.db.execute("INSERT OR REPLACE INTO solana_stream_launches(mint, ts) VALUES(?,?)",
+                   (MINT_TG, NOW - AGE_MIN - 10))
+    ctx.db.execute("INSERT OR REPLACE INTO solana_prix_chaine"
+                   "(pair_id, mint, ts, age_s, prix_sol, reserve_sol) VALUES(?,?,?,?,?,?)",
+                   ("p", MINT_TG, NOW, 70, 1.0, 470.0))
+    m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    assert _cycle(m, NOW)["achetes"] == 1
+
+
 def test_le_portefeuille_est_le_frein_et_suit_les_fonds():
     """Un plafond de lignes fixe se regle sur le solde d un jour et se trompe le lendemain. Avant
     chaque achat reel le moteur verifie que le portefeuille peut payer, donc la capacite suit les
