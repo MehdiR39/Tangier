@@ -707,7 +707,15 @@ telegram_rapide:
   # Elle porte sur 39 % du flux au lieu de 6 % pour Telegram, donc cinq fois plus d euros au total.
   # MAIS sa forme est inverse : 37 % de gagnants, mediane -12 %, meilleur ticket x30 -- une loterie.
   # D ou une mise separee et plus petite, et des comptes separes dans les messages.
-  regle_hausse: true
+  # COUPEE le 13/09 au soir, deux heures apres son activation. Le signal est reel sur le PRIX des
+  # reserves, mais il vit dans des pools qu on ne peut pas acheter : pool median 0,3 SOL, soit 28
+  # EUR, ou un ordre de 10 EUR vaut 36 %% du pool. Une fois exigee une taille achetable :
+  #     pool >= 0       JUGEMENT +0,148   sans best +0,105   (theorique, non executable)
+  #     pool >= 1,5 SOL JUGEMENT +0,076   sans best +0,027
+  #     pool >= 5 SOL   JUGEMENT +0,046   sans best -0,006
+  # Les trois premiers candidats reels ont ete refuses a 61, 73 et 81 %% d impact. Le backtest est
+  # un majorant : il ignore qu on ne peut pas transiger la ou il mesure (discipline, S6).
+  regle_hausse: false
   hausse_max: 0.0          # on achete si le prix a l entree est <= au premier releve
   mise_hausse_eur: 10.0    # mise pour un signal « n a pas monte » (50 EUR pour Telegram)
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
