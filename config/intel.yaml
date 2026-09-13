@@ -744,7 +744,11 @@ telegram_rapide:
 # chaine, puis relever les liens NOUS-MEMES a T+60 et horodater ce relevé. Apres deux ou trois
 # jours l historique ainsi constitue est honnete. Voir intel/engines/bnb_collecte.py.
 bnb_collecte:
-  enabled: true
+  # ARRETE le 13/09 : la question est repondue. 11,5 h, 6 766 creations, 53 928 releves horodates,
+  # ZERO lien social a tous les ages jusqu a 9 minutes. L information n existe pas au moment de
+  # decider, donc on ne pourrait ni mesurer ni executer. Le collecteur saturait en plus les
+  # passerelles IPFS dont le bot a besoin. Les donnees restent dans bnb_lancements et bnb_releves.
+  enabled: false
   pas_secondes: 20
   rpc: "https://bsc.publicnode.com"   # `bsc-dataseed` refuse eth_getLogs (limit exceeded)
   max_blocs: 200                      # apres un arret, on ne rattrape pas au-dela
