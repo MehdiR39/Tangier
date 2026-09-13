@@ -416,13 +416,14 @@ class TelegramRapide:
             # Ce filtre ne reduit PAS les grosses pertes -- huit des douze pires tickets sont DANS
             # la bande. Il supprime le grignotage, ce qui suffit a rendre la JOURNEE meilleure :
             # pire centile a -6 EUR au lieu de -80, malgre une mise doublee.
-            pmin = float(self._cfg("pool_min_sol", 0) or 0)
-            pmax = float(self._cfg("pool_max_sol", 0) or 0)
-            if (pmin and pool < pmin) or (pmax and pool > pmax):
-                self.ctx.db.execute(
-                    "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
-                    (mint, now, None, None, None, "pool hors bande (%.0f SOL)" % pool))
-                continue
+            # LE TELEGRAM SE LIT EN PREMIER, LA TAILLE DU POOL ENSUITE. L ordre inverse economisait
+            # un appel reseau et coutait la mesure : le 13/09 le carnet portait 142 « pool hors
+            # bande » pour 19 « pas de telegram », parce qu on ecartait sur la taille sans jamais
+            # regarder la metadonnee. On ne savait donc plus compter les jetons TELEGRAM refuses par
+            # la bande -- le seul chiffre qui permette de juger la bande. Un filtre qui empeche de
+            # se mesurer lui-meme ne peut plus etre remis en cause.
+            #
+            # Le cout est d une lecture de metadonnee par lancement, soit ~40 par heure : rien.
             fiche = await self._telegram(mint)
             if fiche is None:
                 self.ctx.db.execute(
@@ -433,6 +434,16 @@ class TelegramRapide:
                 self.ctx.db.execute(
                     "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
                     (mint, now, 0, fiche["twitter"], fiche["site"], "pas de telegram"))
+                continue
+            # Le jeton A un Telegram : la bande decide maintenant, et le verdict porte `telegram=1`
+            # pour qu on puisse compter exactement ce qu elle refuse.
+            pmin = float(self._cfg("pool_min_sol", 0) or 0)
+            pmax = float(self._cfg("pool_max_sol", 0) or 0)
+            if (pmin and pool < pmin) or (pmax and pool > pmax):
+                self.ctx.db.execute(
+                    "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
+                    (mint, now, 1, fiche["twitter"], fiche["site"],
+                     "telegram mais pool hors bande (%.0f SOL)" % pool))
                 continue
             # Le verdict s ecrit APRES l ouverture et dit ce qui s est REELLEMENT passe. L ecrire
             # avant ferait compter comme achete un jeton refuse par le garde « peut-on ressortir »,

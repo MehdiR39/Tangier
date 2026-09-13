@@ -571,9 +571,13 @@ def test_la_bande_de_taille_de_pool_ecarte_les_deux_extremes():
         r = _cycle(m, NOW)
         assert r["achetes"] == (1 if achete else 0), "pool de %.1f SOL" % pool
         if not achete:
-            assert m.lectures == [], "un refus sur la taille ne doit couter aucun appel reseau"
-            v = ctx.db.query("SELECT verdict FROM tg_juges WHERE mint=?", (MINT_TG,))
-            assert v and "hors bande" in v[0]["verdict"]
+            # Le Telegram est lu AVANT la bande : sans ca, le carnet ne distingue plus « ecarte
+            # faute de Telegram » de « ecarte par la bande », et on ne peut plus compter ce que la
+            # bande refuse -- le seul chiffre qui permette de la remettre en cause.
+            v = ctx.db.query("SELECT verdict, telegram FROM tg_juges WHERE mint=?", (MINT_TG,))
+            assert v and "hors bande" in v[0]["verdict"], "pool de %.1f SOL" % pool
+            assert v[0]["telegram"] == 1, "le verdict doit dire que le jeton AVAIT un Telegram"
+            assert m.lectures == [MINT_TG], "la metadonnee doit avoir ete lue"
 
     # bornes a zero : la regle est annulee, on achete tout
     ctx = _ctx(**{"telegram_rapide.pool_min_sol": 0, "telegram_rapide.pool_max_sol": 0})
