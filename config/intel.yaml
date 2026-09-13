@@ -646,7 +646,9 @@ ath:
 # DexScreener ne conviendrait pas -- il se rafraichit toutes les 30 a 60 s, donc verifier a 5 s sur
 # sa cotation reviendrait a relire douze fois la meme valeur perimee (S3.61).
 paliers_vente:
-  enabled: true
+  # COUPE le 13/09 : l operateur a demande de vendre tout sauf DOGSHIT, STOCKLANA compris.
+  # La ligne n existe plus, la regle x3 / x4 n a plus d objet.
+  enabled: false
   pas_secondes: 5
   lignes:
     - nom: STOCKLANA
@@ -677,7 +679,7 @@ telegram_rapide:
   enabled: true
   mode: live                   # paper | live
   pas_secondes: 10
-  mise_eur: 40.0
+  mise_eur: 50.0
   # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
   # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
   # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
