@@ -3101,6 +3101,38 @@ Troisième fois que ce schéma se répète : un signal réel sur la population g
 reprise de nom) s'évapore dans le sous-groupe Telegram. C'est ce qui rend ce filtre différent des
 autres — il absorbe les autres.
 
+**LES AUTRES CHAÎNES, REVUE COMPLÈTE, 13/09.** Quatre candidates passées au même crible : du volume,
+et un lien Telegram **gelé à la création et lisible à T+60**.
+
+    chaîne / rampe     volume        lien social             verdict
+    Solana pump.fun   ~1 100 grad/j  gravé dans le jeton     LA SEULE QUI MARCHE
+    BNB four.meme    >20 000 créa/j  base de four.meme       absent à T+60
+    Robinhood Chain      211 /j      fiche DexScreener       ajouté après coup
+    TON                  faible      hors standard TEP-64    pas de champ social
+    Base / Clanker       moyen       Farcaster, pas Telegram autre réseau
+
+**BNB, le meilleur candidat, échoue sur un point plus grave que la contamination.** Le collecteur
+monté le 13/09 (`intel/engines/bnb_collecte.py`) capte bien les créations — 27 en trois minutes,
+noms décodés depuis l'événement — mais sur **118 relevés à T+55 à T+202 s, zéro lien social**.
+DexScreener indexe pourtant ces jetons (`dexId: fourmeme`) : il rend `socials: []`. L'information
+n'existe donc pas encore au moment où il faudrait décider. Ce n'est plus seulement qu'on ne peut pas
+VALIDER la stratégie, c'est qu'on ne pourrait pas l'EXÉCUTER. L'API de four.meme, qui affiche bien
+ces liens sur leur site, rend 404 depuis notre serveur.
+
+**TON, la candidate intuitive, n'a pas de champ social.** C'est la chaîne de Telegram, mais TEP-64
+ne définit que `name`, `description`, `image`, `symbol`, `decimals`, `amount_style`, `render_type`.
+Un projet peut mettre ses liens dans le JSON externe pointé par `uri`, donc hors chaîne et
+modifiable sauf adressage par empreinte. Et le volume est sans commune mesure.
+
+**Base / Clanker est natif FARCASTER, pas Telegram.** Le signal mesuré porte sur Telegram
+précisément — Twitter seul ne marche pas (1 070 jetons, jugement −0,019). Rien ne dit qu'un autre
+réseau porterait le même effet, et il faudrait tout remesurer.
+
+**Conclusion.** Solana n'est pas la meilleure chaîne par hasard ni par volume : elle est la seule où
+l'intention du créateur est inscrite publiquement, irrévocablement, à la seconde zéro. C'est une
+propriété de structure, pas de marché. Le collecteur BNB reste en marche : il dira à quel âge les
+liens apparaissent là-bas, ce qui fermera ou rouvrira la porte.
+
 **LE PÉAGE RÉEL, deux tickets.** C'est désormais le chiffre à surveiller avant tous les autres.
 
     ticket        prix     encaissé   péage
