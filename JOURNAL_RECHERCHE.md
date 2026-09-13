@@ -3160,6 +3160,61 @@ d'acheter (`isMutable`), donc les 4 sur 14 modifiables s'écartent d'eux-mêmes.
 quelle part porte un Telegram dans son JSON. Si le volume suit, la règle s'étend sans changer de
 chaîne, de portefeuille, ni de chemin d'exécution — le risque marginal est nul.
 
+**DEUX QUESTIONS DE L'OPÉRATEUR, 13/09 : SORTIR PLUS TÔT, ET MISER PLUS FORT.** Posées comme
+questions, avec la consigne explicite de tester avant de changer quoi que ce soit.
+
+**1. Sortir sur une anomalie avant les 4 minutes : NON, et pour une raison physique.**
+
+    seuil de chute de liquidité   aucun   -10 %   -20 %   -30 %   -40 %   -50 %
+    JUGEMENT                     +0,169  +0,063  +0,080  +0,109  +0,148  +0,160
+    pire décile                    -76 %   —       -72 %   -77 %   -78 %    —
+
+Dégrade à tous les seuils, monotone, et **ne protège même pas les gros perdants** : le pire décile
+reste à -72/-78 % quoi qu'on fasse. La cause est observationnelle -- la chute de liquidité et
+l'effondrement du prix tombent dans le MÊME relevé de dix secondes (batonfly : 82 → 29,5 SOL et
+x1,06 → x0,18 en un pas). On ne peut pas réagir plus vite qu'on n'observe. La seule voie serait
+d'écouter le flux de swaps en direct au lieu de sonder les réserves toutes les dix secondes.
+
+**2. Une probabilité de réussite pour miser plus : le signal existe, mais ce n'est PAS une
+probabilité.** Ce qui varie n'est pas la chance de gagner, c'est la TAILLE du gain :
+
+    gros pools    68 % de gagnants · gain moyen quand ça gagne +30 % · perte moyenne -47 %
+    petits pools  57 % de gagnants · gain moyen quand ça gagne +85 % · perte moyenne -42 %
+
+Les jetons qui gagnent le plus SOUVENT sont ceux qui rapportent le MOINS. Miser sur la probabilité
+reviendrait à miser sur ce qui ne paie pas.
+
+**En revanche la taille du pool à l'entrée sépare très nettement**, et les deux moitiés sont
+d'accord :
+
+    pool à l'entrée      n   gagnants   médiane   recherche   JUGEMENT   sans best
+    0-60 SOL            38     37 %     -10,0 %    -0,124     +0,141      +0,041
+    60-75 SOL           55     67 %     +49,0 %    +0,575     +0,377      +0,298
+    75-85 SOL           52     63 %     +33,5 %    +0,236     +0,193      +0,146
+    100 SOL et plus     57     74 %      +0,6 %    -0,023     +0,020      +0,000
+
+Les deux extrêmes sont mauvais pour des raisons opposées. Sous 60 SOL, le pool médian ne fait que
+**1,5 SOL** : un ordre de 20 € y vaut 14,5 % du pool, soit ~29 % d'impact — le garde-fou les refuse
+déjà. Au-dessus de 100 SOL, on gagne trois fois sur quatre et on ne gagne rien.
+
+**La bande 60-85 SOL comme filtre**, avec toute la discipline :
+
+    filtre           part du flux   recherche   JUGEMENT   sans best   hasard
+    tout                  100 %      +0,176     +0,179     +0,157     100,0 %
+    60-85 SOL              52 %      +0,441     +0,274     +0,238       0,0 %
+    >= 60 SOL              81 %      +0,254     +0,186     +0,161       3,7 %
+
+Au péage réel de 6,5 % : **+0,216 par euro contre +0,125** pour tout prendre.
+
+**MAIS l'arithmétique du débit change la conclusion.** Le filtre double le gain par euro et divise
+les tickets par deux : 1,3 ticket/h × 20 € × 0,216 = 5,6 €/h, contre 2,5 × 20 × 0,125 = 6,3 €/h
+aujourd'hui. **Filtrer seul fait perdre de l'argent.** Il ne vaut que combiné à une mise plus forte :
+1,3 × 40 € × 0,216 = 11,2 €/h, pour le même capital immobilisé, puisque les lignes durent 4 minutes.
+
+C'est donc la réponse à la question telle qu'elle était posée : oui, on peut miser plus fort sur un
+sous-ensemble, mais le critère est la TAILLE DU POOL et non une probabilité, et filtrer sans
+augmenter la mise serait un recul. n = 107 jetons dans la bande. Rien n'est changé.
+
 **LE PÉAGE RÉEL, deux tickets.** C'est désormais le chiffre à surveiller avant tous les autres.
 
     ticket        prix     encaissé   péage
