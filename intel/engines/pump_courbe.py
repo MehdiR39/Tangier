@@ -26,8 +26,14 @@ metadonnee, gelee a la creation comme pour les diplomes.
 
 CE MODULE N ACHETE RIEN, NE VEND RIEN, NE SIGNE RIEN. Il ecrit dans `pump_creations`.
 
-CE QU IL NE FAIT PAS ENCORE : suivre le prix sur la courbe. Trente mille jetons a surveiller est un
-autre probleme, et il ne se pose que si la premiere mesure confirme l effet.
+IL SUIT AUSSI LE PRIX SUR LA COURBE, pour l echantillon dont il a lu la metadonnee. La courbe est
+un compte derive du mint et son etat porte les reserves virtuelles : prix = SOL virtuel divise par
+jetons virtuels. Cent comptes par appel, donc suivre cinquante jetons en parallele ne coute rien.
+
+UNE PROPRIETE QUI CHANGE TOUT par rapport aux diplomes : sur la courbe la liquidite est
+ALGORITHMIQUE. On peut toujours ressortir, a un prix qui peut etre mauvais mais qui existe. Apres
+graduation, cinq pools sur vingt-cinq sont invendables a notre taille (S3.36) et c est la cause de
+25 % des tickets aneantis. Ce risque-la disparait ici.
 """
 from __future__ import annotations
 
@@ -56,6 +62,15 @@ class PumpCourbe:
             "CREATE TABLE IF NOT EXISTS pump_creations("
             "  mint TEXT PRIMARY KEY, ts INTEGER, slot INTEGER,"
             "  telegram INTEGER, twitter INTEGER, site INTEGER, n_descr INTEGER, lu INTEGER)")
+        # Le prix SUR LA COURBE, avant toute graduation. La courbe est un compte derive du mint et
+        # son etat porte les reserves virtuelles : prix = SOL virtuel / jetons virtuels. Rien a
+        # deviner, rien a interroger chez un tiers -- et la liquidite y est algorithmique, donc on
+        # peut toujours ressortir, ce qui n est pas vrai apres graduation.
+        self.ctx.db.execute(
+            "CREATE TABLE IF NOT EXISTS pump_prix("
+            "  mint TEXT NOT NULL, ts INTEGER NOT NULL, age_s INTEGER,"
+            "  prix_sol REAL, sol_reel REAL, complet INTEGER,"
+            "  PRIMARY KEY (mint, ts))")
 
     async def _rpc(self, methode: str, params: list) -> Any:
         """Une erreur est JOURNALISEE, jamais rendue comme un resultat vide (S3.74)."""
@@ -135,6 +150,59 @@ class PumpCourbe:
                     pass
         return faits
 
+    async def _suivre_prix(self, now: int) -> int:
+        """Le prix sur la courbe des jetons encore jeunes, lu en lots de cent.
+
+        On ne suit que ceux dont la metadonnee a ete lue : ce sont les seuls sur lesquels une
+        mesure sera possible, puisqu il faudra croiser le prix avec la presence d un Telegram.
+        """
+        import base64
+        import struct
+
+        from solders.pubkey import Pubkey
+        fenetre = int(self._cfg("suivi_minutes", 15)) * 60
+        cibles = self.ctx.db.query(
+            "SELECT mint, ts FROM pump_creations WHERE lu=1 AND ts >= ? ORDER BY ts DESC LIMIT 300",
+            (now - fenetre,))
+        if not cibles:
+            return 0
+        prog = Pubkey.from_string(PUMP)
+        pdas: dict[str, tuple[str, int]] = {}
+        for c in cibles:
+            try:
+                pda, _ = Pubkey.find_program_address(
+                    [b"bonding-curve", bytes(Pubkey.from_string(c["mint"]))], prog)
+            except Exception:  # noqa: BLE001
+                continue
+            pdas[str(pda)] = (c["mint"], int(c["ts"]))
+        cles = list(pdas)
+        ecrits = 0
+        for i in range(0, len(cles), 100):
+            lot = cles[i:i + 100]
+            res = await self._rpc("getMultipleAccounts", [lot, {"encoding": "base64"}])
+            for k, v in zip(lot, (res or {}).get("value") or []):
+                if not v:
+                    continue
+                try:
+                    d = base64.b64decode(v["data"][0])
+                    vt, vs, _rt, rs, _tot = struct.unpack_from("<QQQQQ", d, 8)
+                    if vt <= 0:
+                        continue
+                    prix = (vs / 1e9) / (vt / 1e6)
+                    complet = int(bool(d[8 + 40])) if len(d) > 48 else 0
+                except Exception:  # noqa: BLE001
+                    continue
+                mint, ne = pdas[k]
+                try:
+                    self.ctx.db.execute(
+                        "INSERT OR IGNORE INTO pump_prix(mint, ts, age_s, prix_sol, sol_reel,"
+                        " complet) VALUES(?,?,?,?,?,?)",
+                        (mint, now, now - ne, prix, rs / 1e9, complet))
+                    ecrits += 1
+                except Exception:  # noqa: BLE001
+                    pass
+        return ecrits
+
     async def cycle(self) -> dict[str, Any]:
         if not bool(self._cfg("enabled", False)):
             return {"status": "disabled"}
@@ -174,5 +242,6 @@ class PumpCourbe:
         part = float(self._cfg("part_lue", 0.35))
         a_lire = [m for i, m in enumerate(neufs) if (hash(m) % 100) < part * 100]
         lus = await self._lire_social(a_lire) if a_lire else 0
-        return {"status": "ok", "crees": len(neufs), "lus": lus,
+        prix = await self._suivre_prix(now)
+        return {"status": "ok", "crees": len(neufs), "lus": lus, "prix": prix,
                 "total": self.ctx.db.scalar("SELECT COUNT(*) FROM pump_creations", (), 0) or 0}

@@ -765,3 +765,4 @@ pump_courbe:
   slots_par_cycle: 40     # ~16 s de chaine par cycle : on echantillonne, on ne recense pas
   max_slots: 300          # apres un arret on ne rattrape pas au-dela
   part_lue: 0.35          # part des creations dont on lit la metadonnee (IPFS sature au-dela)
+  suivi_minutes: 15       # duree de suivi du prix SUR LA COURBE apres creation
