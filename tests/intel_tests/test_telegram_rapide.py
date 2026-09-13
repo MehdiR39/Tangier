@@ -550,7 +550,7 @@ def test_un_refus_passager_se_rejoue_un_refus_definitif_non():
         if rejouable:
             assert not verdicts, "un refus passager ne doit PAS clore le jeton : %s" % erreur
         else:
-            assert verdicts and verdicts[0]["verdict"] == "telegram mais achat refuse", erreur
+            assert verdicts and "achat refuse" in verdicts[0]["verdict"], erreur
 
 
 def test_la_bande_de_taille_de_pool_ecarte_les_deux_extremes():
@@ -588,6 +588,63 @@ def test_la_bande_de_taille_de_pool_ecarte_les_deux_extremes():
                    ("p", MINT_TG, NOW, 70, 1.0, 470.0))
     m = _moteur(ctx, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
     assert _cycle(m, NOW)["achetes"] == 1
+
+
+def _deux_releves(ctx, mint, now, premier, entree):
+    """Un lancement avec DEUX releves : le premier sert de reference a la regle de hausse."""
+    ctx.db.execute("INSERT OR REPLACE INTO solana_stream_launches(mint, ts) VALUES(?,?)",
+                   (mint, now - AGE_MIN - 10))
+    ctx.db.execute("INSERT OR REPLACE INTO solana_prix_chaine"
+                   "(pair_id, mint, ts, age_s, prix_sol, reserve_sol) VALUES(?,?,?,?,?,?)",
+                   ("p-" + mint[:6], mint, now - 40, 20, premier, 76.0))
+    ctx.db.execute("INSERT OR REPLACE INTO solana_prix_chaine"
+                   "(pair_id, mint, ts, age_s, prix_sol, reserve_sol) VALUES(?,?,?,?,?,?)",
+                   ("p-" + mint[:6], mint, now, 62, entree, 76.0))
+
+
+def test_la_regle_hausse_achete_ce_qui_n_a_pas_monte_et_seulement_ca():
+    """Seconde regle, 13/09 : « ne pas acheter ce qui monte deja ». Mesuree sur 3 447 lancements,
+    +0,050 en recherche et +0,118 en jugement, hasard 0,1 %. Elle porte sur 39 % du flux contre 6 %
+    pour Telegram, mais gagne seulement 37 % du temps : d ou une mise separee et plus petite."""
+    cfg = {"telegram_rapide.regle_hausse": True, "telegram_rapide.hausse_max": 0.0,
+           "telegram_rapide.mise_hausse_eur": 10.0, "telegram_rapide.mise_eur": 50.0}
+    # prix a l entree SOUS le premier releve : la regle dit oui, meme sans Telegram
+    ctx = _ctx(**cfg)
+    _deux_releves(ctx, MINT_SANS, NOW, premier=1.0, entree=0.95)
+    m = _moteur(ctx, {MINT_SANS: {"telegram": 0, "twitter": 0, "site": 0, "nom": "NO"}})
+    assert _cycle(m, NOW)["achetes"] == 1
+    l = ctx.db.query("SELECT methode, mise_eur, hausse FROM tg_lignes")[0]
+    assert l["methode"] == "hausse"
+    assert l["mise_eur"] == 10.0, "la mise de la regle de hausse est distincte"
+    assert l["hausse"] == pytest.approx(-0.05)
+
+    # prix a l entree AU-DESSUS : la regle dit non, et sans Telegram on n achete pas
+    ctx2 = _ctx(**cfg)
+    _deux_releves(ctx2, MINT_SANS, NOW, premier=1.0, entree=1.08)
+    m2 = _moteur(ctx2, {MINT_SANS: {"telegram": 0, "twitter": 0, "site": 0, "nom": "NO"}})
+    assert _cycle(m2, NOW)["achetes"] == 0
+
+    # le meme jeton monte, mais avec un Telegram : Telegram decide seul, mise pleine
+    ctx3 = _ctx(**cfg)
+    _deux_releves(ctx3, MINT_TG, NOW, premier=1.0, entree=1.08)
+    m3 = _moteur(ctx3, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    assert _cycle(m3, NOW)["achetes"] == 1
+    l3 = ctx3.db.query("SELECT methode, mise_eur FROM tg_lignes")[0]
+    assert l3["methode"] == "telegram" and l3["mise_eur"] == 50.0
+
+    # les DEUX signaux : la mise la plus forte l emporte
+    ctx4 = _ctx(**cfg)
+    _deux_releves(ctx4, MINT_TG, NOW, premier=1.0, entree=0.95)
+    m4 = _moteur(ctx4, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
+    assert _cycle(m4, NOW)["achetes"] == 1
+    l4 = ctx4.db.query("SELECT methode, mise_eur FROM tg_lignes")[0]
+    assert l4["methode"] == "les deux" and l4["mise_eur"] == 50.0
+
+    # regle coupee : on revient au comportement Telegram seul
+    ctx5 = _ctx(**{"telegram_rapide.regle_hausse": False})
+    _deux_releves(ctx5, MINT_SANS, NOW, premier=1.0, entree=0.95)
+    m5 = _moteur(ctx5, {MINT_SANS: {"telegram": 0, "twitter": 0, "site": 0, "nom": "NO"}})
+    assert _cycle(m5, NOW)["achetes"] == 0
 
 
 def test_le_portefeuille_est_le_frein_et_suit_les_fonds():
@@ -661,7 +718,7 @@ def test_un_achat_refuse_ne_se_compte_pas_comme_achete():
     assert _cycle(m, NOW)["achetes"] == 0
     v = ctx.db.query("SELECT verdict, telegram FROM tg_juges WHERE mint=?", (MINT_TG,))[0]
     assert v["telegram"] == 1
-    assert v["verdict"] == "telegram mais achat refuse"
+    assert "achat refuse" in v["verdict"]
     assert ctx.db.scalar("SELECT COUNT(*) FROM tg_lignes", (), 0) == 0
 
 

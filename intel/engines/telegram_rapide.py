@@ -1,4 +1,21 @@
-"""Acheter un lancement qui a un Telegram, le revendre quatre minutes plus tard.
+"""Acheter un lancement sur DEUX REGLES independantes, le revendre quatre minutes plus tard.
+
+DEPUIS LE 13/09 IL Y EN A DEUX, et elles ne se ressemblent pas :
+
+    regle              part du flux   par euro   gagnants   meilleur ticket
+    Telegram present         6 %       +0,133      56 %          x3,5
+    n a pas monte           39 %       +0,118      37 %         x30,4
+
+Par euro elles rapportent presque pareil. La seconde se presente simplement six fois plus souvent,
+donc cinq fois plus d euros au total -- mais elle perd deux tickets sur trois et sa moyenne tient
+sur quelques monstres. D ou deux mises differentes (50 EUR contre 10) et deux comptes separes dans
+les messages : un total commun masquerait qu une des deux est morte.
+
+La seconde regle vient d un balayage SYSTEMATIQUE de toutes les variables disponibles, fait le
+13/09 apres un reproche juste de l operateur : « tu parles surtout avec ton intuition mais tu testes
+jamais ». J avais mesure trois fois que poursuivre le prix perd de l argent, sans jamais retourner
+la regle pour en faire une strategie. Le balayage l a trouvee en une passe.
+
 
 C EST LA PREMIERE REGLE DE CE PROJET QUI GAGNE SUR UNE MESURE HORS ECHANTILLON.
 
@@ -130,6 +147,14 @@ class TelegramRapide:
                 self.ctx.db.execute("ALTER TABLE tg_lignes ADD COLUMN echecs INTEGER DEFAULT 0")
             if "age_lecture" not in cols:
                 self.ctx.db.execute("ALTER TABLE tg_lignes ADD COLUMN age_lecture INTEGER")
+            # `methode` dit QUELLE regle a declenche l achat. Deux regles tournent depuis le 13/09
+            # et leurs comptes doivent rester separes : elles n ont ni le meme rythme, ni la meme
+            # mise, ni la meme forme de ticket. Les melanger rendrait chacune illisible.
+            if "methode" not in cols:
+                self.ctx.db.execute(
+                    "ALTER TABLE tg_lignes ADD COLUMN methode TEXT DEFAULT 'telegram'")
+            if "hausse" not in cols:
+                self.ctx.db.execute("ALTER TABLE tg_lignes ADD COLUMN hausse REAL")
         except Exception as exc:  # noqa: BLE001
             log.info("tg: colonne non ajoutee (%s)", str(exc)[:80])
 
@@ -166,6 +191,36 @@ class TelegramRapide:
             return None
         return (float(r[0]["prix_sol"]), int(r[0]["age_s"] or 0), str(r[0]["pair_id"] or ""),
                 float(r[0]["reserve_sol"] or 0))
+
+    def _hausse(self, pair: str, prix_entree: float):
+        """De combien le prix a-t-il bouge entre le PREMIER releve et l entree ? None si inconnu.
+
+        LA SECONDE REGLE, mesuree le 13/09 sur 3 447 lancements coupes en deux :
+
+            regle            n      recherche  JUGEMENT  sans best  hasard
+            tout          3 447      -0,006    +0,028     +0,011    100 %
+            hausse <= 0   1 322      +0,050    +0,118     +0,074     0,1 %
+
+        Elle porte sur 39 % du flux au lieu de 6 % pour Telegram, donc CINQ FOIS plus d euros au
+        total (0,046 contre 0,0086) pour un gain par euro comparable. Trois quarts de periode sur
+        quatre sont positifs et elle survit a 10 % de peage (+0,030).
+
+        MAIS SA FORME EST L INVERSE de Telegram : 37 % de gagnants, mediane a -12 %, et le meilleur
+        ticket fait x30. C est une loterie -- retirer une seule ligne sur 672 coute un tiers de
+        l avantage. D ou une mise separee et plus petite.
+
+        Le mecanisme est celui deja mesure a l envers (S3.74) : la montee visible avant T+60 est
+        fabriquee, et on paie pour entrer dedans. Ne pas poursuivre le prix.
+        """
+        r = self.ctx.db.query(
+            "SELECT prix_sol FROM solana_prix_chaine WHERE pair_id=? AND prix_sol>0"
+            " ORDER BY age_s LIMIT 1", (pair,))
+        if not r or prix_entree <= 0:
+            return None
+        p0 = float(r[0]["prix_sol"])
+        if p0 <= 0:
+            return None
+        return prix_entree / p0 - 1
 
     # ------------------------------------------------------------- metadonnee
     async def _telegram(self, mint: str):
@@ -424,17 +479,32 @@ class TelegramRapide:
             # se mesurer lui-meme ne peut plus etre remis en cause.
             #
             # Le cout est d une lecture de metadonnee par lancement, soit ~40 par heure : rien.
+            # DEUX REGLES INDEPENDANTES decident maintenant, et le jeton est achete si l une des
+            # deux dit oui. Elles ne se ressemblent pas : Telegram gagne souvent et petit (56 % de
+            # gagnants, meilleur ticket x3,5), « hausse <= 0 » gagne rarement et gros (37 %,
+            # meilleur x30,4). Par euro elles rapportent presque pareil ; la seconde se presente
+            # simplement six fois plus souvent. D ou deux mises differentes et deux comptes separes.
+            hausse = self._hausse(pair, prix)
+            seuil = float(self._cfg("hausse_max", 0.0))
+            sig_h = bool(self._cfg("regle_hausse", False)) and hausse is not None and hausse <= seuil
+
             fiche = await self._telegram(mint)
             if fiche is None:
+                # Metadonnee illisible : on ne sait rien du Telegram, mais la regle de hausse, elle,
+                # ne depend d aucune lecture externe. Elle peut donc decider seule.
+                if not sig_h:
+                    self.ctx.db.execute(
+                        "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
+                        (mint, now, None, None, None, "illisible"))
+                    continue
+                fiche = {"telegram": 0, "twitter": 0, "site": 0, "nom": mint[:8]}
+            if not fiche["telegram"] and not sig_h:
                 self.ctx.db.execute(
                     "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
-                    (mint, now, None, None, None, "illisible"))
+                    (mint, now, 0, fiche["twitter"], fiche["site"], "aucun signal"))
                 continue
-            if not fiche["telegram"]:
-                self.ctx.db.execute(
-                    "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
-                    (mint, now, 0, fiche["twitter"], fiche["site"], "pas de telegram"))
-                continue
+            methode = ("les deux" if (fiche["telegram"] and sig_h)
+                       else ("telegram" if fiche["telegram"] else "hausse"))
             # Le jeton A un Telegram : la bande decide maintenant, et le verdict porte `telegram=1`
             # pour qu on puisse compter exactement ce qu elle refuse.
             pmin = float(self._cfg("pool_min_sol", 0) or 0)
@@ -453,7 +523,8 @@ class TelegramRapide:
             # moment de la LECTURE DU PRIX, qui peut dater de 30 s ; l age vrai a l achat se compte
             # depuis le lancement. Le livre doit porter les deux, sinon toute relecture est fausse.
             age_vrai = max(0, now - int(c["ts"] or now))
-            pris = await self._ouvrir(mint, fiche["nom"], pair, prix, age_vrai, age, now)
+            pris = await self._ouvrir(mint, fiche["nom"], pair, prix, age_vrai, age, now,
+                                      methode=methode, hausse=hausse)
             if pris is None:
                 # REFUS PASSAGER : on n ecrit aucun verdict, donc le jeton revient au cycle suivant
                 # tant qu il est dans la fenetre. Le 13/09 a 19h55, HUNTRUMP a ete perdu sur
@@ -462,24 +533,33 @@ class TelegramRapide:
                 continue
             self.ctx.db.execute(
                 "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
-                (mint, now, 1, fiche["twitter"], fiche["site"],
-                 "achete" if pris else "telegram mais achat refuse"))
+                (mint, now, int(bool(fiche["telegram"])), fiche["twitter"], fiche["site"],
+                 ("achete (%s)" % methode) if pris else ("achat refuse (%s)" % methode)))
             if pris:
                 ouverts += 1
         return ouverts
 
     async def _ouvrir(self, mint: str, symbole: str, pair: str, prix: float, age: int,
-                      age_lecture: int, now: int):
-        """True si la ligne est ouverte, False si le refus est DEFINITIF, None s il est PASSAGER."""
-        mise = float(self._cfg("mise_eur", 10.0))
+                      age_lecture: int, now: int, methode: str = "telegram",
+                      hausse: float | None = None):
+        """True si la ligne est ouverte, False si le refus est DEFINITIF, None s il est PASSAGER.
+
+        La MISE depend de la regle qui a declenche. « hausse <= 0 » se presente six fois plus
+        souvent et perd deux tickets sur trois : la meme mise ferait bouger le compte six fois plus
+        fort chaque jour. Un signal reconnu par les DEUX regles prend la mise la plus forte.
+        """
+        if methode == "hausse":
+            mise = float(self._cfg("mise_hausse_eur", 10.0))
+        else:
+            mise = float(self._cfg("mise_eur", 10.0))
         mode = str(self._cfg("mode", "paper")).lower()
         if mode != "live":
             self.ctx.db.execute(
                 "INSERT OR REPLACE INTO tg_lignes(mint, symbole, pair_id, ts_entree, age_entree,"
-                " age_lecture, prix_entree, mise_eur, statut, mode, motif)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                " age_lecture, prix_entree, mise_eur, statut, mode, motif, methode, hausse)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (mint, symbole, pair, now, age, age_lecture, prix, mise, "OUVERTE", "paper",
-                 "telegram present"))
+                 "signal " + methode, methode, hausse))
             log.info("tg: %s ouvert A BLANC a T+%d s (%.2f EUR)", symbole, age, mise)
             return True
 
@@ -546,13 +626,17 @@ class TelegramRapide:
             return False if definitif else None
         self.ctx.db.execute(
             "INSERT OR REPLACE INTO tg_lignes(mint, symbole, pair_id, ts_entree, age_entree,"
-            " age_lecture, prix_entree, mise_eur, tx_achat, statut, mode, motif)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            " age_lecture, prix_entree, mise_eur, tx_achat, statut, mode, motif, methode, hausse)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (mint, symbole, pair, now, age, age_lecture, prix, mise, h, "OUVERTE", "live",
-             "telegram present"))
-        log.info("tg: %s ACHETE POUR DE VRAI a T+%d s (%.2f EUR), tx %s", symbole, age, mise, h[:20])
-        await self._prevenir("🟢 <b>%s</b> achete (Telegram present, T+%d s)\n%.2f EUR · vente dans 4 min"
-                             % (symbole, age, mise))
+             "signal " + methode, methode, hausse))
+        log.info("tg: %s ACHETE POUR DE VRAI a T+%d s (%.2f EUR, %s), tx %s",
+                 symbole, age, mise, methode, h[:20])
+        await self._prevenir(
+            "🟢 <b>%s</b> achete · <i>%s</i> · T+%d s\n%.2f EUR · vente dans 4 min"
+            % (symbole, {"telegram": "signal Telegram",
+                         "hausse": "signal « n a pas monte »",
+                         "les deux": "LES DEUX signaux"}.get(methode, methode), age, mise))
         return True
 
     def _cumul(self) -> str:
@@ -603,6 +687,29 @@ class TelegramRapide:
         lignes.append("<b>Depuis le depart : %+.2f EUR</b>" % g)
         lignes.append("%d tickets · %d gagnants (%.0f %%) · %+.3f par euro mise"
                       % (n, w, 100.0 * w / n, g / m))
+
+        # LE COMPTE DE CHAQUE REGLE, SEPAREMENT. Deux regles tournent et elles n ont ni le meme
+        # rythme, ni la meme mise, ni la meme forme : Telegram gagne souvent et petit, « n a pas
+        # monte » gagne rarement et gros. Un total commun masquerait qu une des deux est morte.
+        try:
+            par = self.ctx.db.query(
+                "SELECT COALESCE(methode,'telegram') meth, COUNT(*) n,"
+                " COALESCE(SUM(gain_eur),0) g, COALESCE(SUM(mise_eur),0) m,"
+                " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w"
+                " FROM tg_lignes WHERE mode='live' AND gain_eur IS NOT NULL"
+                " GROUP BY meth ORDER BY g DESC")
+            if len(par) > 1:
+                lignes.append("")
+                for r in par:
+                    mm = float(r["m"]) or 1.0
+                    lignes.append("  <b>%s</b> %+.2f EUR · %d tickets · %.0f %% gagnants · %+.3f/euro"
+                                  % ({"telegram": "Telegram", "hausse": "n a pas monte",
+                                      "les deux": "les deux"}.get(r["meth"], r["meth"]),
+                                     float(r["g"]), int(r["n"]),
+                                     100.0 * int(r["w"] or 0) / max(int(r["n"]), 1),
+                                     float(r["g"]) / mm))
+        except Exception as exc:  # noqa: BLE001
+            log.info("tg: comptes par methode non calcules (%s)", str(exc)[:80])
         return "━━━━━━━━━━━━━━" + "\n".join(lignes)
 
     async def _prevenir(self, texte: str, critique: bool = False) -> None:

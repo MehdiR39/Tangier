@@ -700,6 +700,16 @@ telegram_rapide:
   # 0 = pas de borne.
   pool_min_sol: 0
   pool_max_sol: 0
+  # ---- SECONDE REGLE, ajoutee le 13/09 : « ne pas acheter ce qui monte deja » ----
+  # Balayage systematique sur 3 447 lancements coupes en deux :
+  #     tout          n=3 447   recherche -0,006  JUGEMENT +0,028  hasard 100 %
+  #     hausse <= 0   n=1 322   recherche +0,050  JUGEMENT +0,118  hasard  0,1 %
+  # Elle porte sur 39 % du flux au lieu de 6 % pour Telegram, donc cinq fois plus d euros au total.
+  # MAIS sa forme est inverse : 37 % de gagnants, mediane -12 %, meilleur ticket x30 -- une loterie.
+  # D ou une mise separee et plus petite, et des comptes separes dans les messages.
+  regle_hausse: true
+  hausse_max: 0.0          # on achete si le prix a l entree est <= au premier releve
+  mise_hausse_eur: 10.0    # mise pour un signal « n a pas monte » (50 EUR pour Telegram)
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
   # Heures UTC ou l on n achete pas. 20h-24h UTC porte le plus de lancements (726 sur 3 jours) et
   # le moins de Telegram (3,2 %, contre 10,4 % entre 08h et 12h) : population de createurs
