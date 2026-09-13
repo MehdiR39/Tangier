@@ -100,17 +100,33 @@ def _cycle(m, now: int) -> dict:
     On remplace l objet `time` VU PAR LE MODULE, et non `time.time` dans tout le processus : figer
     l horloge globale casse la boucle asyncio qui s en sert pour ses echeances.
     """
-    import time as _t
-    import types
-
     import intel.engines.telegram_rapide as mod
     vrai = mod.time
-    # `gmtime` reste la VRAIE : seule l heure courante est figee, pas la conversion des dates.
-    mod.time = types.SimpleNamespace(time=lambda: now, gmtime=_t.gmtime)  # type: ignore[assignment]
+    mod.time = _horloge(now)  # type: ignore[assignment]
     try:
         return asyncio.run(m.cycle())
     finally:
         mod.time = vrai  # type: ignore[assignment]
+
+
+class _horloge:
+    """Le module `time`, avec la seule heure courante figee.
+
+    Un faux objet qui n expose QUE `time()` casse toute autre fonction du module -- et comme le
+    moteur enveloppe ses calculs dans des `except`, la panne devient invisible : le 13/09, l absence
+    de `strftime` faisait disparaitre une ligne entiere du message sans aucune erreur. Deleguer tout
+    le reste au vrai module supprime cette famille de faux negatifs.
+    """
+
+    def __init__(self, fige: int) -> None:
+        self._fige = fige
+
+    def time(self) -> float:
+        return self._fige
+
+    def __getattr__(self, nom: str):
+        import time as _t
+        return getattr(_t, nom)
 
 
 NOW = 1_800_000_000
@@ -420,6 +436,42 @@ def test_chaque_vente_annonce_le_cumul_depuis_le_depart():
     assert "3 tickets" in t
     assert "2 gagnants" in t
     assert "+0.383" in t                          # 19,13 / 50 EUR mises
+
+
+def test_le_message_porte_aussi_le_resultat_du_JOUR():
+    """Demande de l operateur le 13/09 : « ajoute aussi le pnl du dernier jour ». Le jour est la
+    journee calendaire UTC, pas une fenetre glissante : il doit pouvoir rapprocher le chiffre de ce
+    qu il a vu passer depuis minuit."""
+    ctx = _ctx()
+    ctx.db.execute(
+        "CREATE TABLE IF NOT EXISTS tg_lignes("
+        " mint TEXT PRIMARY KEY, symbole TEXT, pair_id TEXT, ts_entree INTEGER, age_entree INTEGER,"
+        " prix_entree REAL, mise_eur REAL, jetons TEXT, tx_achat TEXT, ts_sortie INTEGER,"
+        " prix_sortie REAL, gain_eur REAL, tx_vente TEXT, statut TEXT, mode TEXT, motif TEXT,"
+        " echecs INTEGER DEFAULT 0, age_lecture INTEGER)")
+    minuit = NOW - (NOW % 86400)
+    # deux tickets aujourd hui, un hier : le total doit les compter tous les trois, le jour deux
+    for i, (gain, sortie) in enumerate([(+10.0, minuit + 3600), (-4.0, minuit + 7200),
+                                        (+100.0, minuit - 3600)]):
+        ctx.db.execute(
+            "INSERT INTO tg_lignes(mint, symbole, ts_entree, ts_sortie, mise_eur, gain_eur,"
+            " statut, mode) VALUES(?,?,?,?,?,?,?,?)",
+            ("J%d" % i, "T%d" % i, sortie - 240, sortie, 20.0, gain, "FERMEE", "live"))
+
+    # `_cumul` lit l horloge du module pour trouver minuit : on la fige comme le fait `_cycle`,
+    # sinon la frontiere du jour serait celle du vrai calendrier et le test mesurerait l heure
+    # a laquelle on le lance.
+    import intel.engines.telegram_rapide as mod
+    vrai = mod.time
+    mod.time = _horloge(NOW)  # type: ignore[assignment]
+    try:
+        t = _moteur(ctx, {})._cumul()
+    finally:
+        mod.time = vrai  # type: ignore[assignment]
+    assert "+6.00 EUR" in t, "le jour doit valoir 10 - 4"
+    assert "(2 tickets, 1 gagnants)" in t
+    assert "+106.00 EUR" in t, "le total doit inclure le ticket d hier"
+    assert "3 tickets" in t
 
 
 def test_les_heures_exclues_bloquent_l_achat_mais_jamais_la_vente():

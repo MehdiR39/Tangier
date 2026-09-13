@@ -540,9 +540,33 @@ class TelegramRapide:
             return ""
         n = int(r[0]["n"]); g = float(r[0]["g"]); m = float(r[0]["m"]) or 1.0
         w = int(r[0]["w"] or 0)
-        return ("━━━━━━━━━━━━━━\n<b>Depuis le depart : %+.2f EUR</b>\n"
-                "%d tickets · %d gagnants (%.0f %%) · %+.3f par euro mise"
-                % (g, n, w, 100.0 * w / n, g / m))
+
+        # LE JOUR EN COURS, en plus du cumul. Demande de l operateur le 13/09 : « ajoute aussi le
+        # pnl du dernier jour ». Le jour se compte en UTC, comme tout le reste du moteur, et il
+        # repart a zero a minuit -- pas une fenetre glissante de 24 h, mais la journee calendaire,
+        # pour qu il puisse rapprocher le chiffre de ce qu il a vu passer dans la journee.
+        maintenant = int(time.time())
+        jour = maintenant - (maintenant % 86400)
+        lignes = [""]
+        try:
+            j = self.ctx.db.query(
+                "SELECT COUNT(*) n, COALESCE(SUM(gain_eur), 0) g,"
+                " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w"
+                " FROM tg_lignes WHERE mode='live' AND gain_eur IS NOT NULL AND ts_sortie >= ?",
+                (jour,))
+            if j and int(j[0]["n"] or 0):
+                jn = int(j[0]["n"]); jg = float(j[0]["g"]); jw = int(j[0]["w"] or 0)
+                lignes.append("<b>Aujourd hui %s : %+.2f EUR</b>  (%d tickets, %d gagnants)"
+                              % (time.strftime("%d/%m", time.gmtime(jour)), jg, jn, jw))
+        except Exception as exc:  # noqa: BLE001
+            # On dit pourquoi la ligne du jour manque. Un `pass` muet l a fait disparaitre du
+            # message sans laisser de trace pendant deux essais le 13/09.
+            log.info("tg: resultat du jour non calcule (%s: %s)",
+                     exc.__class__.__name__, str(exc)[:100])
+        lignes.append("<b>Depuis le depart : %+.2f EUR</b>" % g)
+        lignes.append("%d tickets · %d gagnants (%.0f %%) · %+.3f par euro mise"
+                      % (n, w, 100.0 * w / n, g / m))
+        return "━━━━━━━━━━━━━━" + "\n".join(lignes)
 
     async def _prevenir(self, texte: str, critique: bool = False) -> None:
         """Prevenir l operateur, dans SON canal a lui et pas dans le fil du portefeuille.
