@@ -222,6 +222,33 @@ class TelegramRapide:
             return None
         return prix_entree / p0 - 1
 
+    async def _capitalisation(self, mint: str, prix_sol: float):
+        """La capitalisation en dollars a l instant de decider. None si on ne sait pas.
+
+        prix_sol x offre totale x cours du SOL. Verifie le 13/09 contre la valeur de DexScreener
+        sur 25 jetons : erreur mediane 2,8 %, 92 % sous 10 %.
+
+        POURQUOI LA CALCULER plutot que la lire : celle du scanner arrive a T+103 s en mediane,
+        soit APRES notre entree a T+60. Une donnee qui arrive trop tard n est pas une donnee.
+        """
+        from intel.execution import solana as sol
+        rpc = sol.rpc_url()
+        if not rpc or prix_sol <= 0:
+            return None
+        try:
+            r = await self.client.post(rpc, json={"jsonrpc": "2.0", "id": 1,
+                                                  "method": "getTokenSupply", "params": [mint]},
+                                       timeout=20)
+            j = r.json() or {}
+            if j.get("error"):
+                return None
+            offre = float(((j.get("result") or {}).get("value") or {}).get("uiAmountString") or 0)
+            if offre <= 0:
+                return None
+            return prix_sol * float(await sol.sol_eur(self.client)) * 1.08 * offre
+        except Exception:  # noqa: BLE001
+            return None
+
     # ------------------------------------------------------------- metadonnee
     async def _telegram(self, mint: str):
         """Ce lancement a-t-il un canal Telegram ? None si on n a pas pu lire.
@@ -488,6 +515,28 @@ class TelegramRapide:
             seuil = float(self._cfg("hausse_max", 0.0))
             sig_h = bool(self._cfg("regle_hausse", False)) and hausse is not None and hausse <= seuil
 
+            # TROISIEME REGLE, A BLANC depuis le 13/09 : petite capitalisation ET gros pool.
+            # Sortie d un balayage de 1 866 combinaisons, c est la SEULE qui survive au seuil
+            # corrige pour le test multiple (0 sur 100 000 tirages contre un seuil de 0,0027 %).
+            # Quatre quarts de periode positifs, et elle ne depend pas de Telegram : 2 de ses 125
+            # jetons seulement en portent un.
+            #
+            #     sortie   recherche  JUGEMENT  sans best  gagnants
+            #     4 min     +0,210    +0,325     +0,150      50 %
+            #     5 min     +0,334    +0,367     +0,205      50 %
+            #     6 min     +0,191    +0,504     +0,320      41 %
+            #
+            # ELLE RESTE A BLANC tant qu elle n a pas tenu sur des jetons qu elle n a jamais vus.
+            # n=125 sortis de 1 866 essais : meme corrige, un survivant peut etre une coincidence.
+            # C est exactement la verification qui a manque a la regle de hausse, activee trop vite
+            # et coupee deux heures apres.
+            sig_m = False
+            if bool(self._cfg("regle_mcap", False)):
+                pmin_m = float(self._cfg("mcap_pool_min_sol", 468.0))
+                if pool >= pmin_m:
+                    mcap = await self._capitalisation(mint, prix)
+                    sig_m = mcap is not None and mcap < float(self._cfg("mcap_max_usd", 166000.0))
+
             fiche = await self._telegram(mint)
             if fiche is None:
                 # Metadonnee illisible : on ne sait rien du Telegram, mais la regle de hausse, elle,
@@ -498,13 +547,15 @@ class TelegramRapide:
                         (mint, now, None, None, None, "illisible"))
                     continue
                 fiche = {"telegram": 0, "twitter": 0, "site": 0, "nom": mint[:8]}
-            if not fiche["telegram"] and not sig_h:
+            if not fiche["telegram"] and not sig_h and not sig_m:
                 self.ctx.db.execute(
                     "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
                     (mint, now, 0, fiche["twitter"], fiche["site"], "aucun signal"))
                 continue
-            methode = ("les deux" if (fiche["telegram"] and sig_h)
-                       else ("telegram" if fiche["telegram"] else "hausse"))
+            # Le signal `mcap` est A BLANC : il ne doit jamais faire partir un ordre reel. S il est
+            # le SEUL a dire oui, la ligne est ouverte en papier quoi que dise `mode`.
+            methode = ("telegram" if fiche["telegram"]
+                       else ("hausse" if sig_h else "mcap"))
             # Le jeton A un Telegram : la bande decide maintenant, et le verdict porte `telegram=1`
             # pour qu on puisse compter exactement ce qu elle refuse.
             pmin = float(self._cfg("pool_min_sol", 0) or 0)
@@ -524,7 +575,8 @@ class TelegramRapide:
             # depuis le lancement. Le livre doit porter les deux, sinon toute relecture est fausse.
             age_vrai = max(0, now - int(c["ts"] or now))
             pris = await self._ouvrir(mint, fiche["nom"], pair, prix, age_vrai, age, now,
-                                      methode=methode, hausse=hausse)
+                                      methode=methode, hausse=hausse,
+                                      force_papier=(methode == "mcap"))
             if pris is None:
                 # REFUS PASSAGER : on n ecrit aucun verdict, donc le jeton revient au cycle suivant
                 # tant qu il est dans la fenetre. Le 13/09 a 19h55, HUNTRUMP a ete perdu sur
@@ -541,7 +593,7 @@ class TelegramRapide:
 
     async def _ouvrir(self, mint: str, symbole: str, pair: str, prix: float, age: int,
                       age_lecture: int, now: int, methode: str = "telegram",
-                      hausse: float | None = None):
+                      hausse: float | None = None, force_papier: bool = False):
         """True si la ligne est ouverte, False si le refus est DEFINITIF, None s il est PASSAGER.
 
         La MISE depend de la regle qui a declenche. « hausse <= 0 » se presente six fois plus
@@ -550,10 +602,15 @@ class TelegramRapide:
         """
         if methode == "hausse":
             mise = float(self._cfg("mise_hausse_eur", 10.0))
+        elif methode == "mcap":
+            mise = float(self._cfg("mise_mcap_eur", 50.0))
         else:
             mise = float(self._cfg("mise_eur", 10.0))
         mode = str(self._cfg("mode", "paper")).lower()
-        if mode != "live":
+        # `force_papier` : une regle en observation n envoie JAMAIS d ordre reel, quel que soit le
+        # mode du moteur. La verification doit pouvoir tourner sans qu un oubli de configuration
+        # engage de l argent.
+        if mode != "live" or force_papier:
             self.ctx.db.execute(
                 "INSERT OR REPLACE INTO tg_lignes(mint, symbole, pair_id, ts_entree, age_entree,"
                 " age_lecture, prix_entree, mise_eur, statut, mode, motif, methode, hausse)"

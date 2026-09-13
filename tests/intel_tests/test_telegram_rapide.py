@@ -632,19 +632,49 @@ def test_la_regle_hausse_achete_ce_qui_n_a_pas_monte_et_seulement_ca():
     l3 = ctx3.db.query("SELECT methode, mise_eur FROM tg_lignes")[0]
     assert l3["methode"] == "telegram" and l3["mise_eur"] == 50.0
 
-    # les DEUX signaux : la mise la plus forte l emporte
+    # plusieurs signaux a la fois : Telegram est prioritaire, et c est SA mise qui s applique.
+    # La colonne `methode` doit dire quelle regle a paye le ticket, sans ambiguite -- sinon les
+    # comptes separes ne veulent plus rien dire.
     ctx4 = _ctx(**cfg)
     _deux_releves(ctx4, MINT_TG, NOW, premier=1.0, entree=0.95)
     m4 = _moteur(ctx4, {MINT_TG: {"telegram": 1, "twitter": 0, "site": 0, "nom": "TG"}})
     assert _cycle(m4, NOW)["achetes"] == 1
     l4 = ctx4.db.query("SELECT methode, mise_eur FROM tg_lignes")[0]
-    assert l4["methode"] == "les deux" and l4["mise_eur"] == 50.0
+    assert l4["methode"] == "telegram" and l4["mise_eur"] == 50.0
 
     # regle coupee : on revient au comportement Telegram seul
     ctx5 = _ctx(**{"telegram_rapide.regle_hausse": False})
     _deux_releves(ctx5, MINT_SANS, NOW, premier=1.0, entree=0.95)
     m5 = _moteur(ctx5, {MINT_SANS: {"telegram": 0, "twitter": 0, "site": 0, "nom": "NO"}})
     assert _cycle(m5, NOW)["achetes"] == 0
+
+
+def test_une_regle_en_observation_ne_signe_JAMAIS_meme_en_mode_live():
+    """La regle « petite capitalisation, gros pool » tourne a blanc le temps d etre verifiee sur des
+    jetons neufs. Elle ne doit envoyer aucun ordre reel, meme si le moteur est en `live` -- une
+    verification qui engage de l argent n est pas une verification.
+
+    C est la garantie qui a manque a la regle de hausse : activee en reel d emblee, coupee deux
+    heures apres quand la mesure a montre qu elle n etait pas executable."""
+    ctx = _ctx(**{"telegram_rapide.mode": "live", "telegram_rapide.regle_mcap": True,
+                  "telegram_rapide.mcap_max_usd": 1e12, "telegram_rapide.mcap_pool_min_sol": 1.0,
+                  "telegram_rapide.mise_mcap_eur": 50.0})
+    ctx.db.execute("INSERT OR REPLACE INTO solana_stream_launches(mint, ts) VALUES(?,?)",
+                   (MINT_SANS, NOW - AGE_MIN - 10))
+    ctx.db.execute("INSERT OR REPLACE INTO solana_prix_chaine"
+                   "(pair_id, mint, ts, age_s, prix_sol, reserve_sol) VALUES(?,?,?,?,?,?)",
+                   ("p", MINT_SANS, NOW, 62, 1.0, 500.0))
+    m = _moteur(ctx, {MINT_SANS: {"telegram": 0, "twitter": 0, "site": 0, "nom": "NO"}})
+
+    async def _cap(mint, prix):
+        return 1000.0                      # tres petite capitalisation : la regle dit oui
+    m._capitalisation = _cap  # type: ignore[method-assign]
+
+    assert _cycle(m, NOW)["achetes"] == 1
+    l = ctx.db.query("SELECT methode, mode, tx_achat FROM tg_lignes")[0]
+    assert l["methode"] == "mcap"
+    assert l["mode"] == "paper", "une regle en observation ne doit jamais passer en reel"
+    assert not l["tx_achat"], "aucune transaction ne doit avoir ete signee"
 
 
 def test_le_portefeuille_est_le_frein_et_suit_les_fonds():

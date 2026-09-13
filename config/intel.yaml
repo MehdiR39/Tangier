@@ -718,6 +718,21 @@ telegram_rapide:
   regle_hausse: false
   hausse_max: 0.0          # on achete si le prix a l entree est <= au premier releve
   mise_hausse_eur: 10.0    # mise pour un signal « n a pas monte » (50 EUR pour Telegram)
+  # ---- TROISIEME REGLE, EN OBSERVATION A BLANC depuis le 13/09 au soir ----
+  # « petite capitalisation ET gros pool » : un jeton dont la liquidite est enorme par rapport a ce
+  # qu il vaut. Sortie d un balayage de 1 866 combinaisons, SEULE a survivre au seuil corrige pour
+  # le test multiple : 0 sur 100 000 tirages contre un seuil de 0,0027 %%.
+  #     sortie 4 min  recherche +0,210  JUGEMENT +0,325  sans best +0,150
+  #     sortie 5 min  recherche +0,334  JUGEMENT +0,367  sans best +0,205
+  #     sortie 6 min  recherche +0,191  JUGEMENT +0,504  sans best +0,320
+  # Quatre quarts de periode positifs, et independante de Telegram (2 de ses 125 jetons en ont un).
+  # ELLE RESTE A BLANC tant qu elle n a pas tenu sur des jetons neufs : n=125 sortis de 1 866
+  # essais, meme corrige un survivant peut etre une coincidence. C est la verification qui a manque
+  # a la regle de hausse, activee trop vite et coupee deux heures apres.
+  regle_mcap: true
+  mcap_max_usd: 166000
+  mcap_pool_min_sol: 468
+  mise_mcap_eur: 50.0      # mise FICTIVE : cette regle ne signe jamais
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
   # Heures UTC ou l on n achete pas. 20h-24h UTC porte le plus de lancements (726 sur 3 jours) et
   # le moins de Telegram (3,2 %, contre 10,4 % entre 08h et 12h) : population de createurs
