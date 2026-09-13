@@ -718,3 +718,17 @@ telegram_rapide:
   # ici un chemin de fichier designerait un autre portefeuille. Le portefeuille manuel de
   # l operateur n est pas utilise : une erreur du robot ne doit pas pouvoir y toucher.
   cle_fichier: null
+
+# ---------------------------------------------------------------------------
+# Collecte BNB Chain, LECTURE SEULE. N achete rien, ne signe rien, aucune cle BNB.
+#
+# Raison d etre : on ne peut PAS rejouer l historique de four.meme, parce que les liens Telegram
+# y vivent dans leur base de donnees et que le createur peut les ajouter apres coup -- un backtest
+# y lirait le futur. La seule sortie est de fabriquer la donnee propre : voir la creation sur la
+# chaine, puis relever les liens NOUS-MEMES a T+60 et horodater ce relevé. Apres deux ou trois
+# jours l historique ainsi constitue est honnete. Voir intel/engines/bnb_collecte.py.
+bnb_collecte:
+  enabled: true
+  pas_secondes: 20
+  rpc: "https://bsc.publicnode.com"   # `bsc-dataseed` refuse eth_getLogs (limit exceeded)
+  max_blocs: 200                      # apres un arret, on ne rattrape pas au-dela

@@ -313,6 +313,17 @@ class Runtime:
             tasks.append(asyncio.create_task(self._loop(
                 "telegram_rapide", self.tg_rapide.cycle,
                 int(self.ctx.config.get("telegram_rapide.pas_secondes", 10)))))
+        # Collecte BNB Chain, LECTURE SEULE. Aucune cle, aucun ordre, tables separees. Sert a
+        # constituer une donnee honnete -- liens sociaux horodates par nous a T+60 -- pour pouvoir
+        # un jour tester la regle Telegram ailleurs que sur Solana. Voir bnb_collecte.py.
+        if self.ctx.config.get("bnb_collecte.enabled", False):
+            from intel.engines.bnb_collecte import BnbCollecte
+            import httpx as _hxb
+            self.bnb = BnbCollecte(self.ctx, _hxb.AsyncClient(
+                headers={"accept": "application/json", "User-Agent": "tangier-intel/bnb"}))
+            tasks.append(asyncio.create_task(self._loop(
+                "bnb_collecte", self.bnb.cycle,
+                int(self.ctx.config.get("bnb_collecte.pas_secondes", 20)))))
         if self.ctx.config.get("ath.enabled", False):
             from intel.engines.ath import Ath
             self.ath = Ath(self.ctx, self.solana.client if hasattr(self, "solana") else None)
