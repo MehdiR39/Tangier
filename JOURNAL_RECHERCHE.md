@@ -3133,6 +3133,33 @@ l'intention du créateur est inscrite publiquement, irrévocablement, à la seco
 propriété de structure, pas de marché. Le collecteur BNB reste en marche : il dira à quel âge les
 liens apparaissent là-bas, ce qui fermera ou rouvrira la porte.
 
+**BNB EST CLOS, MAIS UNE PORTE S'OUVRE SUR SOLANA MÊME, 13/09 nuit.**
+
+Le collecteur BNB a tourné une heure : **663 créations captées, soit 649 par heure**, ce qui confirme
+le volume annoncé. Et **4 853 relevés sociaux, zéro Telegram, zéro liquidité**, à tous les âges
+jusqu'à quinze minutes. DexScreener indexe pourtant ces jetons (`dexId: fourmeme`). L'information
+n'existe pas au moment de décider : la piste est fermée, pas entrouverte.
+
+**En revanche je m'étais trompé sur les autres rampes SOLANA.** J'avais écrit qu'elles pesaient 5 %
+du flux, mesuré sur `solana_observations` — une source biaisée, puisque notre flux écoute
+spécifiquement les migrations pump.fun. Notre collecte est d'ailleurs **à 97 % pump.fun** (3 328
+mints sur 3 440 finissent par `pump`), donc elle ne peut rien dire des autres.
+
+La vraie question n'est pas le volume mais la métadonnée. Testé sur 14 jetons Solana NON-pump.fun :
+
+    aucun ne porte de metadonnee Token-2022 dans le mint          14 / 14
+    mais leur fiche METAPLEX separee est IMMUABLE                 10 / 14
+    modifiable                                                     4 / 14
+
+**L'immuabilité n'est donc pas une propriété de pump.fun, c'est une propriété courante de Solana.**
+Le lien Telegram de ces jetons vit dans le JSON pointé par la fiche Metaplex, exactement comme chez
+pump.fun — seul l'endroit où lire change. Et la mutabilité se vérifie jeton par jeton AVANT
+d'acheter (`isMutable`), donc les 4 sur 14 modifiables s'écartent d'eux-mêmes.
+
+**Ce qui reste à mesurer, et c'est bon marché :** combien de graduations non-pump.fun par jour, et
+quelle part porte un Telegram dans son JSON. Si le volume suit, la règle s'étend sans changer de
+chaîne, de portefeuille, ni de chemin d'exécution — le risque marginal est nul.
+
 **LE PÉAGE RÉEL, deux tickets.** C'est désormais le chiffre à surveiller avant tous les autres.
 
     ticket        prix     encaissé   péage
