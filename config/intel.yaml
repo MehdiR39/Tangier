@@ -730,9 +730,22 @@ telegram_rapide:
   # raisonnement est le bon et il est deja ecrit plus haut : ON APPREND AU NOMBRE DE TICKETS, PAS
   # AU NOMBRE D EUROS. Les 35 tickets qui manquent pour trancher l avantage arrivent a la meme
   # date a 20 EUR qu a 120, et une journee comme celle du 14/09 y coute 49 EUR au lieu de 293.
-  # Le cout de cette prudence est connu : ~108 EUR de gain espere par jour abandonnes SI
-  # l avantage mesure est reel -- et c est precisement ce qui n est pas encore etabli.
-  mise_eur: 20.0
+  #
+  # 20 -> 120 EUR le meme jour, avec le filtre « trois signes » active en meme temps. Les quatre
+  # combinaisons, avantage du groupe filtre mesure sur nos 35 tickets reels (+0,128 par euro),
+  # impact du passage a 120 EUR retire (l ordre pese alors 3,2 % du pool median au lieu de 0,5) :
+  #
+  #     combinaison               tickets/j   EUR/jour   journee 14/09   jours pour 100
+  #     sans filtre ·  20 EUR        22,0      +18,29       -78,62           1,5
+  #     AVEC filtre ·  20 EUR        12,8      +32,73       -44,58           2,6
+  #     sans filtre · 120 EUR        22,0      +39,46      -471,71           1,5
+  #     AVEC filtre · 120 EUR        12,8     +155,39      -267,46           2,6
+  #
+  # J avais recommande « filtre a 20 EUR » : elle domine « sans filtre a 20 » sur les deux criteres
+  # a la fois, et ne parie que sur une chose. L operateur a choisi 120 apres avoir lu ce tableau et
+  # la reserve qui l accompagnait -- que le filtre a UN JOUR d existence et que l avantage de base
+  # n est pas etabli avant 100 tickets. C est sa decision, elle est prise en connaissance de cause.
+  mise_eur: 120.0
   # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
   # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
   # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
@@ -801,6 +814,34 @@ telegram_rapide:
   # le journal (S3.74) reste lisible.
   regle_mcap: false
   mcap_max_usd: 166000
+  # ---- QUATRIEME REGLE, ACTIVEE le 14/09 : le filtre « TROIS SIGNES » (S3.79) ----
+  # Trois verifications faites AVANT T+90 s sur les reserves que le collecteur lit deja, donc
+  # aucun appel de plus et aucune latence :
+  #     P  le prix a l entree est au-dessus de son premier releve, d au moins +0,7 %
+  #     C  il n est JAMAIS descendu sous ce premier releve
+  #     L  la liquidite du pool a grossi d au moins +0,35 %
+  # On n achete que si les TROIS sont vrais. Le verdict note lesquels manquent (ex. « P-L »).
+  #
+  # L INVERSION EST LE POINT. Sur la population generale ces signes designent les lancements qui
+  # se font VIDER cinq fois plus (S3.66) : monter tout droit sans jamais reculer ressemble a une
+  # mise en scene. Chez les jetons porteurs d un Telegram, le meme profil designe les BONS.
+  #
+  # Contraste entre ce qui est garde et ce qui est jete, quatre echantillons :
+  #     nos tickets REELS     35 a +0,128  contre  25 a -0,079    +0,206
+  #     simules Telegram      26 a +0,202  contre  36 a -0,082    +0,285
+  #       dont recherche      11 a +0,227  contre  20 a -0,163    +0,389
+  #       dont JUGEMENT       15 a +0,184  contre  16 a +0,018    +0,166
+  # Meme signe partout, jugement compris. Hasard porte sur le contraste : 1,8 % tout reuni.
+  #
+  # Jour par jour il change de +15 et +3 EUR les deux bons jours et de +202 EUR le mauvais : il
+  # coupe la traine sans rogner les ailes, l inverse de tous les filtres enterres cette semaine.
+  # COUT : 58 % des achats conserves, donc pres de deux fois plus de temps pour trancher
+  # l avantage de base.
+  #
+  # RESERVE, ecrite le jour meme de l activation : ce filtre a UN JOUR d existence. Il ne s applique
+  # qu a la methode `telegram`. Un historique trop court ne fait PAS refuser -- « pas mesurable »
+  # n est pas « pas propre », et les confondre fausserait le comptage de ce que le filtre ecarte.
+  regle_propre: true
   mcap_pool_min_sol: 468
   mise_mcap_eur: 50.0      # mise FICTIVE : cette regle ne signe jamais
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille

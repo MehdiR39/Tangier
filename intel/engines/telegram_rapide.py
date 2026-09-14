@@ -158,6 +158,45 @@ class TelegramRapide:
         except Exception as exc:  # noqa: BLE001
             log.info("tg: colonne non ajoutee (%s)", str(exc)[:80])
 
+    def _signes_propre(self, pair: str, now: int):
+        """Les trois signes du filtre « trop propre » (S3.66), lus sur l historique du pool.
+
+            1. le prix a l entree est au-dessus de son premier releve, d au moins +0,7 %
+            2. il n est JAMAIS descendu sous ce premier releve
+            3. la liquidite du pool a grossi d au moins +0,35 %
+
+        POURQUOI CE SENS-LA. Sur la population generale ces memes signes designent les lancements
+        qui se font VIDER cinq fois plus : un jeton qui monte tout droit sans jamais reculer, avec
+        de la liquidite qui arrive, ressemble a une mise en scene. Mais chez les jetons porteurs
+        d un Telegram le meme profil designe les BONS -- contraste +0,206 sur nos 35 tickets reels,
+        +0,285 sur les simules, du meme signe dans les deux moities, hasard 1,8 % (S3.79).
+
+        Renvoie (None, "") quand l historique est trop court : « pas mesurable » n est pas
+        « pas propre », et l appelant ne doit pas les confondre.
+
+        Aucun appel reseau : tout vient de `solana_prix_chaine`, que le collecteur remplit deja.
+        """
+        try:
+            lignes = self.ctx.db.query(
+                "SELECT prix_sol, reserve_sol FROM solana_prix_chaine"
+                " WHERE pair_id=? AND ts<=? AND prix_sol>0 ORDER BY ts", (pair, now))
+        except Exception:  # noqa: BLE001
+            return None, ""
+        if not lignes or len(lignes) < 3:
+            return None, ""
+        p0 = float(lignes[0]["prix_sol"] or 0)
+        l0 = float(lignes[0]["reserve_sol"] or 0)
+        pe = float(lignes[-1]["prix_sol"] or 0)
+        le = float(lignes[-1]["reserve_sol"] or 0)
+        if p0 <= 0 or pe <= 0:
+            return None, ""
+        creux = min(float(x["prix_sol"] or 0) for x in lignes)
+        s1 = pe / p0 - 1 >= 0.007
+        s2 = creux / p0 - 1 >= 0
+        s3 = (le / l0 - 1 if l0 > 0 else 0) >= 0.0035
+        detail = "%s%s%s" % ("P" if s1 else "-", "C" if s2 else "-", "L" if s3 else "-")
+        return int(s1) + int(s2) + int(s3), detail
+
     def _prix(self, mint: str, now: int, fraicheur: int = LECTURE_MAX, pair: str | None = None):
         """Le dernier prix lu EN CHAINE pour ce mint, et l age du pool a ce moment-la.
 
@@ -566,6 +605,20 @@ class TelegramRapide:
                     (mint, now, 1, fiche["twitter"], fiche["site"],
                      "telegram mais pool hors bande (%.0f SOL)" % pool))
                 continue
+            # LE FILTRE « TROIS SIGNES » (S3.79), active le 14/09 sur decision de l operateur.
+            if bool(self._cfg("regle_propre", False)) and methode == "telegram":
+                sg, detail = self._signes_propre(pair, now)
+                if sg is None:
+                    # Historique trop court pour juger. On NE REFUSE PAS : confondre « pas propre »
+                    # et « pas mesurable » ferait perdre des tickets pour une raison qui n est pas
+                    # celle du filtre, et fausserait le comptage de ce qu il ecarte.
+                    pass
+                elif sg < 3:
+                    self.ctx.db.execute(
+                        "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
+                        (mint, now, 1, fiche["twitter"], fiche["site"],
+                         "telegram mais %d/3 signes (%s)" % (sg, detail)))
+                    continue
             # Le verdict s ecrit APRES l ouverture et dit ce qui s est REELLEMENT passe. L ecrire
             # avant ferait compter comme achete un jeton refuse par le garde « peut-on ressortir »,
             # et le carnet annoncerait des achats qui n ont pas eu lieu (S5.16).
