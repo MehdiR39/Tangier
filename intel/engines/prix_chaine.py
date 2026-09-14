@@ -201,6 +201,23 @@ class PrixChaine:
                 if k >= len(plan) or j + 1 >= len(vals) or not vals[j] or not vals[j + 1]:
                     continue
                 pool, mint, cree = plan[k]
+                # VERIFIER QUE LE SECOND COMPTE EST BIEN DU SOL. Le 14/09 : 36 % des relevés
+                # d entree annonçaient plus de 200 SOL dans le pool, et certains plus de deux
+                # millions -- soit 200 M EUR pour un jeton a 43 000 $. Ces pools ont un second
+                # jeton qui N EST PAS du WSOL, et la colonne `reserve_sol` comptait donc des
+                # unites d autre chose. Une regle batie la-dessus mesure une illusion : c est
+                # exactement ce qui a produit la fausse decouverte « petite capitalisation et gros
+                # pool », seule survivante apparente d un balayage de 1 866 combinaisons.
+                #
+                # Le rapport des deux reserves reste juste (il s annule entre entree et sortie),
+                # donc les rendements deja mesures ne sont pas touches -- mais toute regle portant
+                # sur la TAILLE du pool l etait.
+                try:
+                    from intel.execution.solana import SOL_MINT
+                    if vals[j + 1]["data"]["parsed"]["info"].get("mint") != SOL_MINT:
+                        continue
+                except Exception:  # noqa: BLE001
+                    continue
                 try:
                     b = float(vals[j]["data"]["parsed"]["info"]["tokenAmount"]["uiAmountString"])
                     q = float(vals[j + 1]["data"]["parsed"]["info"]["tokenAmount"]["uiAmountString"])

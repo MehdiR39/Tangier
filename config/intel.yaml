@@ -729,7 +729,13 @@ telegram_rapide:
   # ELLE RESTE A BLANC tant qu elle n a pas tenu sur des jetons neufs : n=125 sortis de 1 866
   # essais, meme corrige un survivant peut etre une coincidence. C est la verification qui a manque
   # a la regle de hausse, activee trop vite et coupee deux heures apres.
-  regle_mcap: true
+  # COUPEE le 14/09 : la decouverte etait un ARTEFACT DE DONNEE. Les pools « geants » qui la
+  # portaient ont un second jeton qui n est pas du SOL, donc `reserve_sol` comptait des unites
+  # d autre chose -- 2 060 964 « SOL » soit 200 M EUR pour un jeton a 43 000 $. Verifie sur la
+  # chaine. Les deux conditions sont en realite incompatibles : 0 des 14 jetons a gros pool de la
+  # nuit avait une capitalisation sous 166 000 $. La regle n a d ailleurs jamais tire en 9 h.
+  # Le collecteur verifie desormais que le second compte est bien du WSOL (prix_chaine.py).
+  regle_mcap: false
   mcap_max_usd: 166000
   mcap_pool_min_sol: 468
   mise_mcap_eur: 50.0      # mise FICTIVE : cette regle ne signe jamais
