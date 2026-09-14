@@ -745,7 +745,31 @@ telegram_rapide:
   # a la fois, et ne parie que sur une chose. L operateur a choisi 120 apres avoir lu ce tableau et
   # la reserve qui l accompagnait -- que le filtre a UN JOUR d existence et que l avantage de base
   # n est pas etabli avant 100 tickets. C est sa decision, elle est prise en connaissance de cause.
-  mise_eur: 120.0
+  #
+  # 120 -> 60 EUR le 14/09 au soir. L OPERATEUR A POSE LA QUESTION QUE JE N AVAIS JAMAIS TRAITEE :
+  # « il reste 475 EUR, trois positions a 120 qui vont a zero et on a plus rien ». Tous mes calculs
+  # precedents maximisaient une ESPERANCE, et une esperance ne voit pas la ruine : une strategie
+  # gagnante peut tuer le capital avant d avoir eu le temps de gagner, et alors elle n a plus de
+  # support pour s exprimer.
+  #
+  # Tirage de 20 000 semaines dans la distribution REELLE de nos tickets, en partant de 475 EUR,
+  # avec arret des que le capital ne permet plus de jouer (gain net, hors capital de depart) :
+  #
+  #     mises TG/propre   ruine   gain median   gain/jour   pire 5 %
+  #     120 / 30 EUR      9,8 %      +2 647       +378        -424
+  #      90 / 30 EUR      4,9 %      +2 625       +375        +262
+  #      60 / 30 EUR      1,9 %      +2 563       +366      +1 211   <-- retenu
+  #      40 / 20 EUR      0,2 %      +1 710       +244        +877
+  #
+  # 84 EUR de gain median abandonnes sur la semaine -- 3 % -- pour faire passer le mauvais scenario
+  # de -424 a +1 211 EUR et diviser le risque de ruine par cinq. Ce n est pas un arbitrage, c est
+  # un cadeau qu il fallait juste penser a demander.
+  #
+  # LA RAISON EST MECANIQUE : le gain vient surtout du carnet propre, 166 tickets par jour, que ce
+  # changement ne touche pas. Telegram n en fait que 13 : il porte tout le risque de ruine sans
+  # porter l essentiel du gain. Descendre plus bas coute vraiment, parce qu il faudrait alors
+  # descendre aussi le carnet propre (1 710 au lieu de 2 563 a 40/20).
+  mise_eur: 60.0
   # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
   # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
   # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
