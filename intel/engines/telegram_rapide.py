@@ -117,18 +117,22 @@ NOMS = {"telegram": "Telegram", "propre": "Clean (no TG)",
 
 
 def _diff(libelle: str, montant: float, suffixe: str = "") -> str:
-    """Une ligne de bloc `diff`, coloree par le SIGNE du montant.
+    """Une ligne de compte, signalee par une pastille de couleur.
 
-    Telegram colore en vert les lignes qui commencent par « + » et en rouge celles qui commencent
-    par « - ». C est le seul moyen d avoir de la couleur dans un message : l API n accepte aucune
-    balise de style, seulement la coloration syntaxique des blocs de code.
+    PREMIERE TENTATIVE ABANDONNEE, et la raison vaut d etre notee. On passait par un bloc
+    `<pre><code class="language-diff">`, seul moyen d obtenir de la COULEUR puisque l API Telegram
+    n accepte aucune balise de style. Mais un bloc de code impose une chasse fixe plus petite, et
+    la coloration syntaxique choisit elle-meme ses teintes : sur le fond noir de l operateur, vert
+    et rose vif etaient illisibles. La couleur n a de valeur que si le texte se lit.
 
-    Le caractere de tete porte donc l information, et le montant est ecrit SANS son signe pour ne
-    pas le repeter. Un montant nul prend « + » : ne rien perdre se lit du bon cote.
+    On revient donc a du texte normal -- taille et couleur du theme, gras disponible -- et la
+    couleur vient des emoji, qui s affichent pareil partout et ne dependent d aucun theme.
+
+    Un montant nul prend la pastille verte : ne rien perdre se lit du bon cote.
     """
-    tete = "-" if montant < 0 else "+"
-    corps = "%s %-18s %9.2f eur" % (tete, libelle[:18], abs(montant))
-    return corps + ("   %s" % suffixe if suffixe else "")
+    pastille = "🔴" if montant < 0 else "🟢"
+    ligne = "%s <b>%s</b>  <b>%+.2f EUR</b>" % (pastille, libelle, montant)
+    return ligne + ("\n      <i>%s</i>" % suffixe if suffixe else "")
 
 
 class TelegramRapide:
@@ -834,7 +838,7 @@ class TelegramRapide:
         # pour qu il puisse rapprocher le chiffre de ce qu il a vu passer dans la journee.
         maintenant = int(time.time())
         jour = maintenant - (maintenant % 86400)
-        lignes = [""]
+        lignes = ["", "━━━━━━━━━━━━━━"]
         try:
             j = self.ctx.db.query(
                 "SELECT COUNT(*) n, COALESCE(SUM(gain_eur), 0) g,"
@@ -864,7 +868,7 @@ class TelegramRapide:
                 " FROM tg_lignes WHERE mode='live' AND gain_eur IS NOT NULL"
                 " GROUP BY meth ORDER BY g DESC")
             if len(par) > 1:
-                lignes.append("  ")
+                lignes.append("")
                 for r in par:
                     mm = float(r["m"]) or 1.0
                     lignes.append(_diff(
@@ -901,23 +905,16 @@ class TelegramRapide:
                 detail = ", ".join(
                     "%s %s" % (NOMS.get(m, m), sum(1 for o in ouvertes if o["meth"] == m))
                     for m in sorted({o["meth"] for o in ouvertes}))
-                lignes.append("  ")
-                lignes.append("! %-18s %d open, %.0f eur at work%s"
-                              % ("Still running", len(ouvertes), engage,
-                                 ("  (%s)" % detail) if detail else ""))
+                lignes.append("")
+                lignes.append("⏳ <b>Still running</b>  %d open, %.0f EUR at work%s"
+                              % (len(ouvertes), engage, ("  (%s)" % detail) if detail else ""))
                 if connus:
                     lignes.append(_diff("  unrealised", latent,
                                         "estimate from quote, %d/%d read" % (connus, len(ouvertes))))
         except Exception as exc:  # noqa: BLE001
             log.info("tg: positions ouvertes non listees (%s: %s)",
                      exc.__class__.__name__, str(exc)[:100])
-        # BLOC `diff` : Telegram y colore en VERT les lignes qui commencent par « + » et en ROUGE
-        # celles qui commencent par « - ». C est le seul moyen d obtenir de la couleur dans un
-        # message, l API n acceptant aucune balise de style. Demande de l operateur le 14/09.
-        # Consequence a ne pas oublier : a l interieur de ce bloc aucune balise HTML n est rendue,
-        # donc plus de <b> nulle part -- l alignement en chasse fixe remplace le gras.
-        return ('<pre><code class="language-diff">\n' + "\n".join(lignes).strip("\n")
-                + "\n</code></pre>")
+        return "\n".join(lignes)
 
     async def _prevenir(self, texte: str, critique: bool = False) -> None:
         """Prevenir l operateur, dans SON canal a lui et pas dans le fil du portefeuille.

@@ -82,7 +82,7 @@ def test_le_nombre_de_positions_ouvertes_apparait():
                 prix=(1.1, 20, "pool1", 80.0))
     t = m._cumul()
     assert "2 open" in t
-    assert "150 eur at work" in t
+    assert "150 EUR at work" in t
 
 
 def test_le_detail_par_carnet_apparait():
@@ -101,7 +101,7 @@ def test_le_resultat_latent_est_marque_comme_estime():
                 prix=(1.2, 20, "pool1", 80.0))
     t = m._cumul()
     assert "estimate from quote" in t
-    assert "20.00 eur" in t, "100 EUR a x1,2 doit donner 20 EUR de latent"
+    assert "+20.00 EUR" in t, "100 EUR a x1,2 doit donner +20 EUR de latent"
 
 
 def test_sans_cotation_lisible_on_annonce_le_nombre_sans_inventer_de_chiffre():
@@ -117,24 +117,24 @@ def test_aucune_position_ouverte_n_ajoute_rien():
     assert " open," not in t
 
 
-def test_le_bloc_est_un_diff_colore():
-    """Telegram ne colore que les blocs de code `diff` : sans cet emballage, aucun message n a de
-    couleur, et le « + » de tete se lirait comme une coquille."""
+def test_le_message_reste_du_texte_normal():
+    """Un bloc de code impose une chasse fixe plus petite et une coloration syntaxique illisible
+    sur fond noir : essaye le 14/09, abandonne le jour meme. Le message doit rester du texte."""
     m = _moteur(FERMEES, [])
     t = m._cumul()
-    assert t.startswith('<pre><code class="language-diff">')
-    assert t.endswith("</code></pre>")
-    assert "<b>" not in t, "aucune balise HTML n est rendue dans un bloc de code"
+    assert "<pre>" not in t and "<code" not in t
+    assert "<b>" in t, "le gras doit etre disponible, c est tout l interet du texte normal"
 
 
-def test_un_gain_commence_par_plus_et_une_perte_par_moins():
-    """C est le signe de tete qui porte la couleur, pas le montant."""
+def test_un_gain_est_vert_et_une_perte_rouge():
+    """La couleur vient des emoji : ils s affichent pareil sur tous les clients et ne dependent
+    d aucun theme, contrairement a la coloration syntaxique."""
     from intel.engines.telegram_rapide import _diff
-    assert _diff("gagne", 12.5).startswith("+")
-    assert _diff("perdu", -12.5).startswith("-")
-    assert _diff("rien", 0.0).startswith("+"), "zero n est pas une perte"
-    assert "12.50" in _diff("perdu", -12.5)
-    assert "-12.50" not in _diff("perdu", -12.5), "le signe ne doit pas etre repete"
+    assert _diff("gagne", 12.5).startswith("🟢")
+    assert _diff("perdu", -12.5).startswith("🔴")
+    assert _diff("rien", 0.0).startswith("🟢"), "zero n est pas une perte"
+    assert "+12.50 EUR" in _diff("gagne", 12.5)
+    assert "-12.50 EUR" in _diff("perdu", -12.5), "en texte normal le signe revient au montant"
 
 
 def test_une_base_qui_leve_ne_casse_pas_le_message():

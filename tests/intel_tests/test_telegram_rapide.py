@@ -432,9 +432,8 @@ def test_chaque_vente_annonce_le_cumul_depuis_le_depart():
             " VALUES(?,?,?,?,?,?,?)", ("M%d" % i, "T%d" % i, NOW, mise, gain, "FERMEE", mode))
 
     t = m._cumul()
-    # Messages passes en anglais et colores le 14/09 : le signe est porte par le caractere de tete
-    # du bloc `diff`, pas par le montant, qui s ecrit en valeur absolue.
-    assert "+ All time" in t and "19.13 eur" in t  # 14,79 - 3,35 + 7,69, sans le papier ni l attente
+    # Messages passes en anglais le 14/09, avec une pastille de couleur en tete de ligne.
+    assert "🟢 <b>All time</b>" in t and "+19.13 EUR" in t  # 14,79 - 3,35 + 7,69, hors papier
     assert "3 trades" in t
     assert "67 % won" in t                        # 2 gagnants sur 3
     assert "+0.383" in t                          # 19,13 / 50 EUR mises
@@ -470,11 +469,10 @@ def test_le_message_porte_aussi_le_resultat_du_JOUR():
         t = _moteur(ctx, {})._cumul()
     finally:
         mod.time = vrai  # type: ignore[assignment]
-    # Messages passes en anglais et colores le 14/09 : le montant s ecrit sans son signe, c est le
-    # caractere de tete du bloc `diff` qui porte le signe et donc la couleur.
-    assert "+ Today" in t and "6.00 eur" in t, "le jour doit valoir 10 - 4"
+    # Messages passes en anglais le 14/09, avec une pastille de couleur en tete de ligne.
+    assert "🟢 <b>Today" in t and "+6.00 EUR" in t, "le jour doit valoir 10 - 4"
     assert "2 trades, 1 winners" in t
-    assert "+ All time" in t and "106.00 eur" in t, "le total doit inclure le ticket d hier"
+    assert "🟢 <b>All time</b>" in t and "+106.00 EUR" in t, "le total doit inclure le ticket d hier"
     assert "3 trades" in t
 
 
