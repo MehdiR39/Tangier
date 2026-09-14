@@ -110,6 +110,11 @@ AGE_MAX = 180            # s : au-dela on a rate le train, on n entre pas
 TENUE_S = 240            # s : quatre minutes, le point stable des deux moities
 LECTURE_MAX = 30         # s : au-dela, la lecture de reserve est perimee, on ne paye pas dessus
 
+# Le nom lisible de chaque carnet, pour les messages. Une methode inconnue s affiche telle quelle
+# plutot que de disparaitre : un carnet ajoute et oublie ici doit rester visible dans le compte.
+NOMS = {"telegram": "Telegram", "propre": "Propre (sans TG)",
+        "hausse": "n a pas monte", "mcap": "capitalisation", "les deux": "les deux"}
+
 
 class TelegramRapide:
     def __init__(self, ctx, client) -> None:
@@ -846,13 +851,48 @@ class TelegramRapide:
                 for r in par:
                     mm = float(r["m"]) or 1.0
                     lignes.append("  <b>%s</b> %+.2f EUR · %d tickets · %.0f %% gagnants · %+.3f/euro"
-                                  % ({"telegram": "Telegram", "hausse": "n a pas monte",
-                                      "les deux": "les deux"}.get(r["meth"], r["meth"]),
+                                  % (NOMS.get(r["meth"], r["meth"]),
                                      float(r["g"]), int(r["n"]),
                                      100.0 * int(r["w"] or 0) / max(int(r["n"]), 1),
                                      float(r["g"]) / mm))
         except Exception as exc:  # noqa: BLE001
             log.info("tg: comptes par methode non calcules (%s)", str(exc)[:80])
+
+        # LES POSITIONS ENCORE OUVERTES. Demande de l operateur le 14/09. Avec deux carnets qui
+        # tournent a des rythmes differents, savoir combien d argent est encore engage au moment de
+        # lire le message evite de rapprocher un cumul d un capital qu on croit disponible.
+        #
+        # LE RESULTAT LATENT EST UNE ESTIMATION, et il est marque comme telle. Tout le reste du
+        # moteur lit le resultat sur le PORTEFEUILLE (S3.63) : ici c est impossible, la vente n a
+        # pas eu lieu. On ne peut donc que citer la derniere cotation, celle-la meme qui avait fait
+        # annoncer +5,05 EUR sur une ligne payee +2,54 le 08/09. Le mot « estime » n est pas une
+        # precaution de style, c est la difference entre un fait et une projection.
+        try:
+            ouvertes = self.ctx.db.query(
+                "SELECT mint, symbole, pair_id, mise_eur, prix_entree, ts_entree,"
+                " COALESCE(methode,'telegram') meth FROM tg_lignes"
+                " WHERE mode='live' AND statut='OUVERTE'")
+            if ouvertes:
+                engage = sum(float(o["mise_eur"] or 0) for o in ouvertes)
+                latent, connus = 0.0, 0
+                for o in ouvertes:
+                    p = self._prix(o["mint"], maintenant, fraicheur=180,
+                                   pair=o["pair_id"]) if o["pair_id"] else None
+                    if p and o["prix_entree"] and float(o["prix_entree"]) > 0:
+                        latent += float(o["mise_eur"] or 0) * (p[0] / float(o["prix_entree"]) - 1)
+                        connus += 1
+                detail = " · ".join(
+                    "%s %s" % (NOMS.get(m, m), sum(1 for o in ouvertes if o["meth"] == m))
+                    for m in sorted({o["meth"] for o in ouvertes}))
+                lignes.append("")
+                lignes.append("<b>%d position(s) ouverte(s)</b> · %.0f EUR engages%s"
+                              % (len(ouvertes), engage, (" · " + detail) if detail else ""))
+                if connus:
+                    lignes.append("  resultat latent %+.2f EUR (estime sur la cotation, %d/%d lues)"
+                                  % (latent, connus, len(ouvertes)))
+        except Exception as exc:  # noqa: BLE001
+            log.info("tg: positions ouvertes non listees (%s: %s)",
+                     exc.__class__.__name__, str(exc)[:100])
         return "━━━━━━━━━━━━━━" + "\n".join(lignes)
 
     async def _prevenir(self, texte: str, critique: bool = False) -> None:
