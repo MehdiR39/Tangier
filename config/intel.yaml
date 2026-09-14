@@ -706,12 +706,26 @@ telegram_rapide:
   # 150 SOL rapportent -0,020. Appliquer un avantage mesure sur une population a une autre est
   # l erreur qui a tue trois decouvertes cette semaine.
   #
-  # SENSIBILITE, puisque l avantage est encore imprecis (intervalle -0,058 a +0,208) :
-  #     avantage +0,1427 (sans le 14/09)  -> 160 EUR rapporte +364,88 par jour
-  #     avantage +0,0724 (retenu)         -> 160 EUR rapporte +139,92
-  #     avantage +0,03 (deux fois pire)   -> 160 EUR rapporte   +4,24
-  #     avantage -0,058 (borne basse)     -> 160 EUR coute    -277,36
-  mise_eur: 160.0
+  # POURQUOI 120 ET NON 160, alors que le sommet est a 160. Parce que le sommet est PLAT et que
+  # l avantage est encore imprecis (intervalle -0,058 a +0,208). Les deux mises comparees sur toute
+  # la plage d incertitude :
+  #
+  #     hypothese sur l avantage        120 EUR      160 EUR     ecart
+  #     sans le 14/09      (+0,1427)   +298,46      +364,88     +66,43
+  #     avec le 14/09      (+0,0724)   +129,74      +139,92     +10,19   <-- le cas retenu
+  #     deux fois pire     (+0,0300)    +27,98        +4,24     -23,73
+  #     avantage nul        (0,0000)    -44,02       -91,76     -47,73
+  #     borne basse        (-0,0580)   -183,22      -277,36     -94,13
+  #
+  # Au cas retenu, 160 EUR ne rapporte que 10 EUR de plus par jour -- 7 % du gain -- et perd
+  # nettement plus partout ailleurs. Le seuil de bascule le dit mieux encore :
+  #     120 EUR devient perdant si l avantage tombe sous +0,0183 (soit -75 % du mesure)
+  #     160 EUR devient perdant si l avantage tombe sous +0,0287 (soit -60 %)
+  # On achete donc 15 points de marge avant bascule pour 7 % de gain abandonne.
+  #
+  # Le capital envoye n est pas perdu pour autant : a 120 EUR il porte 5 lignes simultanees au lieu
+  # de 3, donc aucun achat refuse faute de fonds aux heures de fort flux.
+  mise_eur: 120.0
   # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
   # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
   # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
