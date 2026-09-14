@@ -679,7 +679,39 @@ telegram_rapide:
   enabled: true
   mode: live                   # paper | live
   pas_secondes: 10
-  mise_eur: 50.0
+  # 50 -> 160 EUR le 14/09, apres alimentation du portefeuille (+506,47 EUR, solde 706,88 EUR).
+  #
+  # LE CHIFFRE VIENT D UN OPTIMUM, PAS D UNE PREFERENCE. Notre ordre s execute contre les reserves
+  # du pool : plus il est gros, plus il pousse le prix a l achat et le casse a la vente. Ce cout
+  # monte avec la taille pendant que l avantage par euro reste constant, donc le gain total monte,
+  # plafonne, puis s effondre. Calcule sur la distribution reelle des reserves de nos pools
+  # (mediane 77,7 SOL), avec l avantage mesure de +0,0724 par euro sur 59 tickets reels -- celui
+  # qui INCLUT la mauvaise journee du 14/09 ; sans elle il vaudrait +0,1427 :
+  #
+  #     mise     peage median   avantage net   EUR par jour
+  #      50 EUR       1,33 %        +0,0724         +72,40
+  #     100 EUR       2,65 %        +0,0593        +118,53
+  #     140 EUR       3,68 %        +0,0489        +136,86
+  #     160 EUR       4,20 %        +0,0437        +139,92   <-- sommet
+  #     200 EUR       5,22 %        +0,0335        +134,01
+  #     300 EUR       7,69 %        +0,0088         +50,71
+  #     340 EUR          --          0,0000              0   l impact mange tout
+  #
+  # Le sommet est PLAT entre 140 et 200 EUR : la precision n a pas d importance dans cette bande.
+  # Au-dela de 340 EUR la strategie devient perdante par construction, pas par malchance.
+  #
+  # Un « optimum » apparent a 750 EUR a ete ECARTE : a cette taille le garde-fou ne laisse passer
+  # que 26 % des jetons, uniquement les pools geants, et le peage median baisse parce qu on change
+  # de population -- pas parce que c est meilleur. Or sur le carnet reel les pools au-dessus de
+  # 150 SOL rapportent -0,020. Appliquer un avantage mesure sur une population a une autre est
+  # l erreur qui a tue trois decouvertes cette semaine.
+  #
+  # SENSIBILITE, puisque l avantage est encore imprecis (intervalle -0,058 a +0,208) :
+  #     avantage +0,1427 (sans le 14/09)  -> 160 EUR rapporte +364,88 par jour
+  #     avantage +0,0724 (retenu)         -> 160 EUR rapporte +139,92
+  #     avantage +0,03 (deux fois pire)   -> 160 EUR rapporte   +4,24
+  #     avantage -0,058 (borne basse)     -> 160 EUR coute    -277,36
+  mise_eur: 160.0
   # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
   # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
   # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
