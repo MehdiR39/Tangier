@@ -735,6 +735,17 @@ telegram_rapide:
   # chaine. Les deux conditions sont en realite incompatibles : 0 des 14 jetons a gros pool de la
   # nuit avait une capitalisation sous 166 000 $. La regle n a d ailleurs jamais tire en 9 h.
   # Le collecteur verifie desormais que le second compte est bien du WSOL (prix_chaine.py).
+  # MORTE, verifie le 14/09 apres assainissement complet (intel.research.pools_propres : les 4 587
+  # pools de l historique etiquetes sur la chaine, 9,9 % non adosses au SOL ; offre reelle de
+  # chaque jeton, qui n est PAS constante -- 7,6e8 a 2e9). Rejugee sur 2 656 tickets executables,
+  # coupure sur la date de naissance, sortie a 4, 5 et 6 min :
+  #     regle complete          0 ticket dans les deux moities, aux trois sorties
+  #     mcap < 166 k$ seule     -0,012 en jugement   (NEGATIVE : sens inverse de la decouverte)
+  #     pool >= 468 SOL seule   -0,008 en jugement
+  # Et l arithmetique dit pourquoi les deux conditions ne peuvent pas coexister : sur un pool a
+  # produit constant, mcap / pool_sol = offre / reserve_base. Ce ne sont pas deux signaux mais une
+  # seule variable structurelle. Ne pas reactiver : ces trois reglages ne sont gardes que pour que
+  # le journal (S3.74) reste lisible.
   regle_mcap: false
   mcap_max_usd: 166000
   mcap_pool_min_sol: 468

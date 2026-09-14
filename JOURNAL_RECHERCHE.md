@@ -11,7 +11,7 @@ Règle d'écriture : **un chiffre sans sa méthode ne vaut rien.** Chaque entré
 donnée, le résultat, et la conclusion qu'on en tire — y compris quand la conclusion est « on ne
 sait pas ».
 
-Dernière mise à jour : 2026-09-09.
+Dernière mise à jour : 2026-09-14.
 
 ---
 
@@ -3232,6 +3232,86 @@ détention fait partie de la stratégie, pas du décor. Six familles ont été e
 en tenant quinze minutes. Elles méritent d'être rejouées sur le profil temporel.
 
 
+
+### 3.74 — Une découverte qui n'était qu'une colonne fausse, et la confirmation qu'elle a permise, 2026-09-14
+
+**La règle morte.** Le 13/09 au soir, un balayage de 1 866 combinaisons a sorti une seule
+survivante au seuil corrigé pour le test multiple : « petite capitalisation ET gros pool »
+(`mcap < 166 k$` et `pool >= 468 SOL`), 0 sur 100 000 tirages, quatre quarts de période positifs,
+indépendante de Telegram. Mise en observation à blanc plutôt qu'activée — c'est la seule décision
+de cette histoire qui s'est révélée juste.
+
+**Elle n'a jamais tiré. Zéro ticket en 9 heures.** C'est ce silence qui a mis sur la piste.
+
+**La cause : `reserve_sol` comptait des unités d'autre chose que du SOL.** Le collecteur
+(`prix_chaine.py`) lisait les deux comptes de réserve d'un pool PumpSwap et supposait que le second
+était du WSOL. Il ne l'est pas toujours. Étiquetage sur la chaîne des 4 587 pools de l'historique,
+en lisant leur `quote_mint` à l'offset 43+32 du compte de pool : **456 pools, soit 9,9 %, ne sont
+pas adossés au SOL.**
+
+    reserve_sol          médiane      p90              max
+    avant correction     69,85 SOL    2 493 SOL    3 648 691 SOL
+    après correction     75,53 SOL      966 SOL        3 029 SOL
+
+La médiane était juste — ~75 SOL est simplement la liquidité qu'un jeton pump.fun reçoit à sa
+migration. **C'est la queue haute qui était polluée**, et « gros pool » n'allait chercher que là.
+Un pool annoncé à 2 060 964 SOL, soit 200 M€ pour un jeton à 43 000 $.
+
+**Rejugement sur donnée assainie**, avec l'offre réelle de chaque jeton (voir plus bas) et la
+contrainte d'exécution appliquée avant mesure — 2 656 tickets exécutables, coupure sur la date de
+naissance :
+
+    règle                              n     recherche   JUGEMENT   sans best
+    tout prendre                    1 328      +0,004      -0,012     -0,015
+    mcap<166k$ ET pool>=468 SOL         0          --          --         --
+    mcap < 166 k$ (seule)             557          --      -0,012     -0,020
+    pool >= 468 SOL (seule)           707          --      -0,008     -0,009
+
+**Aucun ticket, dans les deux moitiés, à 4, 5 et 6 minutes.** Les deux conditions sont réellement
+incompatibles, et l'arithmétique dit pourquoi : sur un pool à produit constant,
+`mcap / pool_sol = offre / reserve_base`. « Petite capitalisation ET gros pool » ne sont pas deux
+signaux, c'est une seule variable structurelle déguisée — la part de l'offre détenue par le pool.
+Prise seule, `mcap < 166 k$` est **négative**, soit l'inverse du sens annoncé par la découverte.
+
+**L'offre pump.fun n'est pas constante.** Contrôle sur 60 jetons tirés au hasard : médiane 9,99e8
+mais étendue de 7,55e8 à 2,00e9, et **38 % seulement à 1 % d'un milliard**. Toute reconstruction
+hors-ligne qui la suppose constante se trompe jusqu'à un facteur 2. Le moteur live, lui, la lit à
+chaque décision (`getTokenSupply`) — il était juste. Lecture en lot possible par
+`getMultipleAccounts` sur les comptes de mint, offset 36..44 en u64 petit-boutiste, décimales en
+44 : 40 appels au lieu de 4 000, vérifié **exact** contre `getTokenSupply` sur 15 jetons.
+
+**CE QUE CE NETTOYAGE A RENDU POSSIBLE.** La correction laisse un jeu de prix lus aux réserves du
+pool, indépendant de DexScreener d'où vient toute la règle Telegram. Autre capteur, autre cadence,
+autre zone temporelle. Aucun seuil n'y a jamais été choisi : il est jugement en entier. 911 tickets
+exécutables, sortie à 4 min, péage 2,4 % :
+
+    groupe             n      par euro   médiane   sans best   gagnants   >= x1,9
+    TELEGRAM          51       +0,116     +0,004     +0,061       53 %      16 %
+    pas de Telegram  860       -0,039     +0,013     -0,045       60 %       2 %
+    twitter seul     499       -0,067     +0,019     -0,077       59 %       2 %
+    site seul        382       -0,063     +0,016     -0,075       58 %       3 %
+
+Twitter et le site restent négatifs : l'effet est spécifique à Telegram, comme sur DexScreener.
+
+**Et le test du hasard porté par la bonne statistique.** Sur la moyenne il donne 1,93 %, mais
+8,32 % une fois retiré le meilleur ticket — faiblesse normale d'une queue épaisse sur 51
+observations. La fréquence des gros tickets, elle, ne peut pas être portée par un seul coup :
+
+    seuil      Telegram      sans Telegram    rapport    hasard
+    >= x1,5    14/51  27 %    42/860   5 %     x5,6      0,000 %
+    >= x1,9     8/51  16 %    18/860   2 %     x7,5      0,000 %
+
+**0 sur 20 000 dans les deux cas.** C'est la deuxième confirmation indépendante de la semaine,
+après le multiplicateur 4,5 entre le taux de Telegram chez les créations (1,46 %) et chez les
+gradués (6,5 %) mesuré la même nuit. La règle en production ne repose plus sur une seule source de
+prix.
+
+**Ce qu'on en retient sur la méthode.** Le silence d'une règle est une donnée. Une règle qui sort
+d'un balayage géant et ne tire jamais n'est pas « en attente d'occasion » : il faut aller vérifier
+que ses conditions sont seulement compatibles, et sur quelle colonne elle s'appuie. Ici, neuf
+heures de silence valaient mieux que n'importe quel test statistique — et la mise en observation à
+blanc, décidée après l'activation trop rapide de la règle de hausse, a évité que la découverte
+coûte un euro.
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
@@ -3774,3 +3854,18 @@ bout en bout, du seuil jusqu a la signature.*
 - **Un filtre mesuré sur une population ne se transporte pas dans un sous-groupe.** Le filtre
   « trop propre » écarte un groupe perdant partout — sauf chez les jetons Telegram, où le même
   groupe gagne (+0,156 par euro, 76 % de gagnants). Remesurer le filtre dans le sous-groupe.
+- **Le silence d'une règle est une donnée, pas une attente.** La règle « petite capitalisation ET
+  gros pool », seule survivante d'un balayage de 1 866 combinaisons, n'a tiré aucun ticket en neuf
+  heures d'observation. Ce n'était pas faute d'occasion : ses deux conditions étaient
+  arithmétiquement incompatibles, et la colonne qui les portait comptait des unités d'un jeton qui
+  n'était pas du SOL (§3.74). Une règle qui ne tire jamais se dissèque immédiatement — compatibilité
+  de ses conditions, et provenance de chaque colonne qu'elle lit.
+- **Deux conditions sur un pool à produit constant ne sont pas deux signaux.** `mcap / pool_sol`
+  vaut identiquement `offre / reserve_base` : croiser une capitalisation et une taille de pool ne
+  produit qu'une variable structurelle déguisée. Avant de croiser deux mesures d'un même pool,
+  écrire leur rapport.
+- **Un effet mesuré sur une seule source de prix reste une propriété possible de ce capteur.** La
+  règle Telegram venait entièrement de DexScreener. Rejouée sur les prix lus aux réserves — autre
+  capteur, autre cadence — elle donne +0,116 par euro contre −0,039, et 0 sur 20 000 au test du
+  hasard sur la fréquence des gros tickets (§3.74). Tant que ce contrôle n'est pas fait, un edge
+  n'est pas confirmé, il est seulement reproductible chez le même fournisseur.
