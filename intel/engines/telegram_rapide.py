@@ -586,7 +586,19 @@ class TelegramRapide:
                         (mint, now, None, None, None, "illisible"))
                     continue
                 fiche = {"telegram": 0, "twitter": 0, "site": 0, "nom": mint[:8]}
-            if not fiche["telegram"] and not sig_h and not sig_m:
+            # LE CARNET « PROPRE », ajoute le 14/09 : les jetons SANS Telegram qui reunissent les
+            # trois signes. Mesure sur 2 436 tickets hors Telegram, coupure recherche/jugement :
+            # contraste +0,061 (recherche +0,060, jugement +0,064), hasard 0,08 %. C est le signal
+            # le mieux etabli du projet -- bien mieux que Telegram lui-meme, dont le contraste sur
+            # 206 tickets donne 33,6 % au hasard.
+            # Il rapporte peu par euro (+0,023) mais il porte DIX FOIS plus de tickets, et son pool
+            # median est de 370 SOL contre 78 chez Telegram : notre ordre y est negligeable.
+            sig_p = False
+            if (not fiche["telegram"] and not sig_h and not sig_m
+                    and bool(self._cfg("regle_propre_seule", False))):
+                sgp, _ = self._signes_propre(pair, now)
+                sig_p = sgp == 3
+            if not fiche["telegram"] and not sig_h and not sig_m and not sig_p:
                 self.ctx.db.execute(
                     "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
                     (mint, now, 0, fiche["twitter"], fiche["site"], "aucun signal"))
@@ -594,7 +606,22 @@ class TelegramRapide:
             # Le signal `mcap` est A BLANC : il ne doit jamais faire partir un ordre reel. S il est
             # le SEUL a dire oui, la ligne est ouverte en papier quoi que dise `mode`.
             methode = ("telegram" if fiche["telegram"]
-                       else ("hausse" if sig_h else "mcap"))
+                       else ("hausse" if sig_h else ("mcap" if sig_m else "propre")))
+            # PLAFOND DEDIE AU CARNET PROPRE. Il porte dix fois plus de tickets que Telegram pour
+            # cinq fois moins par euro : sans borne il remplirait les six lignes et affamerait
+            # exactement les achats qui rapportent le plus. On lui reserve une part du plafond, le
+            # reste demeure disponible pour Telegram.
+            if methode == "propre":
+                pmax_p = int(self._cfg("max_lignes_propre", 3))
+                ouv_p = self.ctx.db.scalar(
+                    "SELECT COUNT(*) FROM tg_lignes WHERE statut='OUVERTE' AND methode='propre'",
+                    (), 0) or 0
+                if ouv_p >= pmax_p:
+                    self.ctx.db.execute(
+                        "INSERT OR REPLACE INTO tg_juges VALUES(?,?,?,?,?,?)",
+                        (mint, now, 0, fiche["twitter"], fiche["site"],
+                         "propre mais %d lignes deja ouvertes" % ouv_p))
+                    continue
             # Le jeton A un Telegram : la bande decide maintenant, et le verdict porte `telegram=1`
             # pour qu on puisse compter exactement ce qu elle refuse.
             pmin = float(self._cfg("pool_min_sol", 0) or 0)
@@ -657,6 +684,12 @@ class TelegramRapide:
             mise = float(self._cfg("mise_hausse_eur", 10.0))
         elif methode == "mcap":
             mise = float(self._cfg("mise_mcap_eur", 50.0))
+        elif methode == "propre":
+            # Mise propre a ce carnet : son avantage par euro est cinq fois plus faible que celui
+            # de Telegram, mais son pool median est cinq fois plus gros, donc l impact ne mord pas
+            # avant bien plus haut. Optimum mesure a 30 EUR (+0,0230 par euro, meilleur « sans
+            # best » et pire journee a -24 EUR sur six jours).
+            mise = float(self._cfg("mise_propre_eur", 30.0))
         else:
             mise = float(self._cfg("mise_eur", 10.0))
         mode = str(self._cfg("mode", "paper")).lower()

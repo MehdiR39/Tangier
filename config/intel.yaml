@@ -842,6 +842,39 @@ telegram_rapide:
   # qu a la methode `telegram`. Un historique trop court ne fait PAS refuser -- « pas mesurable »
   # n est pas « pas propre », et les confondre fausserait le comptage de ce que le filtre ecarte.
   regle_propre: true
+  # ---- CINQUIEME REGLE, ACTIVEE le 14/09 : le carnet « PROPRE », SANS Telegram ----
+  # Les memes trois signes, mais appliques aux jetons qui n ont PAS de Telegram. Question posee par
+  # l operateur apres l activation du filtre : marche-t-il ailleurs ? Reponse mesuree, et elle
+  # renverse la hierarchie :
+  #
+  #     categorie                  n      garde              jette            contraste   hasard
+  #     TELEGRAM                 206   81 a +0,190      125 a +0,147            +0,043     33,6 %
+  #     sans Telegram          2 436  977 a +0,014    1 459 a -0,047            +0,061      0,08 %
+  #     twitter, sans TG       1 469  615 a +0,018      854 a -0,053            +0,070      0,94 %
+  #     site, sans TG          1 194  493 a +0,026      701 a -0,055            +0,080      1,00 %
+  #
+  # Le filtre capte une propriete GENERALE du marche, pas un trait propre a Telegram -- et sur les
+  # seuls jetons Telegram il n est meme pas significatif (206 tickets, moities qui basculent). Hors
+  # Telegram il l est franchement, sur 2 436 tickets et avec des moities stables (+0,060 / +0,064).
+  #
+  # RENDEMENT MOINDRE, FLUX DIX FOIS PLUS GROS. +0,023 par euro contre +0,128 chez Telegram, mais
+  # 166 tickets par jour contre 13. Et son pool median est de 370 SOL contre 78 : a 30 EUR notre
+  # ordre y pese 0,09 % et le peage ne bouge quasiment pas avec la taille -- c est l inverse du
+  # carnet Telegram, ou l impact fixe l optimum a 120 EUR.
+  #
+  # LA MISE, mesurée sur les six jours de collecte (chiffres SANS le 10/09, journee dominee par un
+  # ticket x316 sur un pool de 2,5 SOL, invendable en pratique) :
+  #     10 EUR  +0,0153 par euro   +24,32/jour
+  #     20 EUR  +0,0205            +64,44
+  #     30 EUR  +0,0230           +107,81   <-- retenu, meilleur par euro ET meilleur sans best
+  #     50 EUR  +0,0219           +170,71
+  #
+  # PLAFOND DEDIE. Ce carnet porte dix fois plus de tickets pour cinq fois moins par euro : sans
+  # borne il remplirait les six lignes et affamerait les achats qui rapportent le plus. Il ne peut
+  # donc pas occuper plus de `max_lignes_propre` lignes a la fois.
+  regle_propre_seule: true
+  mise_propre_eur: 30.0
+  max_lignes_propre: 3
   mcap_pool_min_sol: 468
   mise_mcap_eur: 50.0      # mise FICTIVE : cette regle ne signe jamais
   max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
