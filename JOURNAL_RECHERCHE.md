@@ -3552,6 +3552,53 @@ jour l'estimation de l'avantage et son intervalle à chaque ticket, et dit combi
 C'est la boucle adaptée au volume de données dont on dispose. Un bandit contextuel deviendra
 justifié le jour où l'on aura **et** 200 tickets **et** une variable qui sépare — aujourd'hui il
 manque les deux.
+
+### 3.78 — Ce qui fait une bonne journée : rien de mesurable, 2026-09-14
+
+L'opérateur : *« pour une journée meilleure qu'une autre c'est quoi le driver ? le marché crypto ?
+le BTC ? le ETH ? les créateurs ? »*
+
+Le carnet réel ne compte que trois jours — on ne corrèle rien avec trois points. Mais les cinq jours
+de prix sur **tous** les jetons gradués permettent une série HORAIRE : 2 734 tickets simulés,
+108 heures avec au moins 8 tickets. Corrélation de rangs (Spearman), et surtout **son seuil de
+bruit affiché à côté**, `1,96/racine(n)` — sans quoi +0,10 sur 108 heures se lit comme un résultat.
+
+    cause candidate              corrélation   seuil   verdict
+    BTC variation -> marché         +0,101     0,189   bruit
+    SOL variation -> marché         +0,059     0,189   bruit
+    BTC niveau -> marché            -0,182     0,189   bruit
+    flux (tickets/h) -> marché      -0,103     0,189   bruit
+    marché -> notre groupe          +0,076     0,370   bruit
+    BTC -> notre groupe             -0,020     0,370   bruit
+    flux -> notre groupe            +0,208     0,370   bruit
+
+**Aucune ne passe son seuil.** Notre groupe Telegram ne suit même pas le marché memecoin.
+
+**Les créateurs**, quatrième hypothèse, devenue testable : 562 des 4 625 créateurs ont lancé
+plusieurs jetons (12,2 %, contre une vingtaine trois jours plus tôt). Historique construit dans
+l'ordre du temps — pour juger le jeton k on n'utilise que les jetons 1..k−1 :
+
+    premier jeton du créateur   2 442   -0,007   sans best -0,009
+    il en a déjà fait 1           119   +0,027   sans best -0,010
+    il en a déjà fait 2+          103   -0,024   sans best -0,051
+    précédent gagnant             107   -0,009   sans best -0,036
+    précédent perdant             115   +0,016   sans best -0,022
+
+Rien ne tient : tous les « sans best » sont négatifs. Et le point qui ferme la porte : **sur nos
+jetons Telegram, 3 seulement ont un prédécesseur**. Sur 119 créateurs récidivistes, **0 mettent
+toujours un Telegram, 116 n'en mettent jamais**. Les créateurs qui recommencent et les créateurs qui
+mettent un Telegram sont deux populations disjointes — le filtre par historique ne peut pas se
+combiner à la stratégie, faute de recouvrement.
+
+**Conclusion.** Sur cinq jours, une bonne journée ne se distingue d'une mauvaise par aucune cause
+observable. C'est cohérent avec §3.77, où dix variables mesurées à l'instant d'acheter ne séparaient
+pas les gagnants des perdants. La distribution porte 13 % de tickets sous −70 % et 13 % au-dessus de
++90 % : **la journée est faite par ceux qui tombent dedans**, et rien de ce qu'on sait mesurer ne le
+prédit. Il n'y a donc pas de « n'acheter que les bons jours » à construire.
+
+**La limite honnête** : cinq jours. Une influence de BTC se jouerait sur des semaines, et un
+changement de régime (effondrement du marché) ne serait pas visible ici. Ce résultat dit qu'il n'y a
+rien à exploiter au jour le jour, pas qu'aucun régime n'existe.
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
