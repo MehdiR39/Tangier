@@ -3407,6 +3407,56 @@ interrogé. Sur la courbe, j'aurais pu m'arrêter au premier sondage (« multipl
 au-dessus de x1,5 : 0 % » sur 67 jetons en 0,54 h) — et j'aurais raté le signal à 21×, qui est réel
 même s'il n'est pas monnayable. **Un chiffre nul ou plat doit d'abord être suspecté d'être un
 défaut d'instrument.** Ce n'est qu'après l'avoir disculpé qu'il devient un résultat.
+
+### 3.76 — BNB chiffré : 94 % des jetons ne sont jamais échangés, et Telegram y est anti-prédictif, 2026-09-14
+
+L'opérateur, le 14/09 : *« ne me dis pas ce qui est difficile, tes intuitions foirent tout le temps,
+je veux les chiffres — simule un portefeuille blanc qui trade BNB et teste toutes les combinaisons
+de stratégie possibles »*. Réponse chiffrée, sans commentaire d'intuition.
+
+**Données.** 617 jetons four.meme dont nous possédons un historique de prix **horodaté par nous**
+(`bnb_releves`, 13/09), croisé avec leurs liens sociaux lus chez four.meme (`bnb_social`, module
+`intel.research.bnb_fiches`). Taux sur cet échantillon : Telegram 74,1 %, twitter 93,7 %, site
+85,3 % — plus élevés que le sondage général (40-44 %) parce que ce sous-ensemble est celui que
+DexScreener avait indexé, donc déjà biaisé vers les jetons vivants.
+
+**Le balayage.** 4 entrées (T+60/120/240/420 s) × 4 tenues (2/5/10/20 min) × 9 filtres sociaux =
+**144 cellules**, dont 34 avec assez de tickets. Coupure recherche/jugement sur la date de
+naissance, résultat privé de son meilleur ticket, seuil corrigé pour le test multiple à 0,0347 %.
+
+    CE QUI SURVIT (positif dans les deux moitiés ET sans son meilleur ticket) : AUCUNE sur 34.
+
+**Et le motif du résultat était l'information.** Presque toutes les cellules affichaient exactement
+−0,030, soit précisément le péage, avec **0 % de gagnants**. Un chiffre plat se suspecte d'abord
+comme un défaut d'instrument (§6) — vérification faite, ce n'en était pas un :
+
+    644 jetons · 37 bougent (5,7 %) · 607 au prix INCHANGÉ
+    et ce prix est le même d'un jeton à l'autre : 4,111e-06, 5,740e-09...
+
+Ce n'est donc pas la source qui fige : c'est **le prix de départ de la courbe**, jamais modifié
+parce que **le jeton n'a reçu aucune transaction**. 94,3 % des four.meme sont morts à la naissance
+dans la fenêtre observée (jusqu'à T+491 s).
+
+**Telegram y est ANTI-prédictif**, exactement l'inverse de Solana :
+
+    filtre            n jetons   échangés   taux
+    avec Telegram         457        14     3,1 %
+    sans Telegram         160        23    14,4 %
+    avec twitter          578        29     5,0 %
+    les trois             454        13     2,9 %
+
+Un jeton SANS Telegram a **4,6 fois plus de chances** d'être échangé qu'un jeton avec. Et ce sens
+résiste au biais de la mesure : les liens ayant été lus après coup, la fuite du futur devrait
+FAVORISER Telegram, pas le pénaliser. Le résultat négatif est donc robuste à sa propre limite.
+
+**Même les 37 qui bougent ne paient pas** : −0,038 par euro, médiane −0,030, **5 % de gagnants**,
+meilleur ticket +0,71, aucun au-dessus de +100 %.
+
+**Ce que ça ferme, et ce que ça n'exclut pas.** La fenêtre d'observation s'arrêtait à T+491 s :
+on ne peut pas distinguer « mort » de « lent ». `AGE_LIMITE` passe de 900 s à 3 600 s et la collecte
+horodatée continue avec la bonne source. Mais sur la question posée — un portefeuille à blanc qui
+trade BNB dans les minutes suivant la création — la réponse mesurée est : **aucune combinaison ne
+gagne, et la meilleure piste théorique y est inversée.**
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne

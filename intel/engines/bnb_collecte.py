@@ -51,7 +51,11 @@ FOUR_MEME = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
 FOURMEME_API = "https://four.meme/meme-api/v1/private/token/get?address="
 
 AGE_RELEVE = 45          # s : premier relevé, au plus tot
-AGE_LIMITE = 900         # s : au-dela on cesse de suivre un lancement
+# 900 -> 3600 le 14/09. Le balayage du jour n a pu observer que jusqu a T+491 s, et 94,3 % des
+# jetons n avaient alors recu AUCUNE transaction : leur prix etait encore celui du depart de la
+# courbe, identique d un jeton a l autre (4,111e-06 revient partout). Impossible de dire si ces
+# jetons sont morts ou seulement lents sans les suivre plus longtemps.
+AGE_LIMITE = 3600        # s : au-dela on cesse de suivre un lancement
 
 
 def _mot(d: str, i: int) -> str:
