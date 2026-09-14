@@ -179,6 +179,22 @@ class TelegramRapide:
                     "ALTER TABLE tg_lignes ADD COLUMN methode TEXT DEFAULT 'telegram'")
             if "hausse" not in cols:
                 self.ctx.db.execute("ALTER TABLE tg_lignes ADD COLUMN hausse REAL")
+            # LE PRIX REELLEMENT PAYE ET REELLEMENT ENCAISSE, calcules depuis la transaction :
+            # SOL echanges divises par jetons echanges. Ajoutes le 14/09 au soir.
+            #
+            # `prix_entree` est une lecture du POOL, prise quelques secondes avant l ordre. Sur ces
+            # jetons le prix bouge de 50 % en neuf secondes : elle ne dit donc PAS a quel prix on a
+            # achete. Sans le prix effectif, deux causes tres differentes sont indiscernables quand
+            # un ticket perd -- le jeton a baisse apres l achat (mauvais signal), ou on a paye 60 %
+            # trop cher des l entree (mauvaise execution). C est exactement ce qui a fait bouger
+            # quatre fois mes chiffres le 14/09, jusqu a ce que l operateur exige une seule analyse.
+            #
+            # L information est deja dans la reponse du noeud qu on lit pour calculer le gain :
+            # `preTokenBalances` / `postTokenBalances`. On la jetait.
+            for nom, typ in (("jetons_recus", "REAL"), ("prix_achat_reel", "REAL"),
+                             ("prix_vente_reel", "REAL")):
+                if nom not in cols:
+                    self.ctx.db.execute("ALTER TABLE tg_lignes ADD COLUMN %s %s" % (nom, typ))
         except Exception as exc:  # noqa: BLE001
             log.info("tg: colonne non ajoutee (%s)", str(exc)[:80])
 
@@ -448,7 +464,7 @@ class TelegramRapide:
         rejoue a chaque cycle tant que le compte manque, au lieu de bloquer la vente dessus.
         """
         a_compter = self.ctx.db.query(
-            "SELECT mint, symbole, tx_achat, tx_vente FROM tg_lignes WHERE mode='live'"
+            "SELECT mint, symbole, tx_achat, tx_vente, mise_eur FROM tg_lignes WHERE mode='live'"
             " AND statut='FERMEE' AND gain_eur IS NULL AND tx_achat IS NOT NULL"
             " AND tx_vente IS NOT NULL AND ts_sortie >= ?", (now - 6 * 3600,))
         if not a_compter:
@@ -471,6 +487,26 @@ class TelegramRapide:
             gain = (da + dv) * taux
             self.ctx.db.execute("UPDATE tg_lignes SET gain_eur=?, motif=? WHERE mint=?",
                                 (gain, "compte sur la chaine : %+.5f SOL" % (da + dv), l["mint"]))
+
+            # LE PRIX REELLEMENT PAYE ET ENCAISSE. Meme source, meme instant, aucun appel de plus
+            # dans le cas general : ce sont les memes transactions qu on vient de lire. On le fait
+            # APRES avoir ecrit le gain, pour qu un echec ici ne prive jamais le carnet de son
+            # resultat -- c est un supplement de diagnostic, pas le compte lui-meme.
+            try:
+                ea = await sol.echange_reel(self.client, rpc, l["tx_achat"], proprio, l["mint"])
+                ev = await sol.echange_reel(self.client, rpc, l["tx_vente"], proprio, l["mint"])
+                if ea and ev and ea[1] > 0 and ev[1] < 0:
+                    pa = abs(ea[0]) / ea[1]          # SOL payes par jeton recu
+                    pv = abs(ev[0]) / abs(ev[1])     # SOL encaisses par jeton cede
+                    self.ctx.db.execute(
+                        "UPDATE tg_lignes SET jetons_recus=?, prix_achat_reel=?, prix_vente_reel=?"
+                        " WHERE mint=?", (ea[1], pa, pv, l["mint"]))
+                    log.info("tg: %s prix reels — achat %.4e, vente %.4e (peage %.2f %%)",
+                             l["symbole"], pa, pv, 100 * (1 - pv / pa) if pa > 0 else 0)
+            except Exception as exc:  # noqa: BLE001
+                log.info("tg: prix reels non enregistres pour %s (%s)",
+                         l["symbole"], str(exc)[:80])
+
             faits += 1
             log.info("tg: %s compte sur la chaine — %+.5f SOL soit %+.2f EUR",
                      l["symbole"], da + dv, gain)

@@ -290,6 +290,50 @@ async def sol_delta(client: httpx.AsyncClient, rpc_url: str, tx_hash: str, owner
         return None
 
 
+async def echange_reel(client: httpx.AsyncClient, rpc_url: str, tx_hash: str, owner: str,
+                       mint: str) -> tuple[float, float] | None:
+    """Ce qui a REELLEMENT change de mains dans une transaction : (SOL, jetons).
+
+    `sol_delta` donne deja le SOL. Il manquait les JETONS, et leur rapport est le seul prix qu on
+    ait vraiment paye ou encaisse.
+
+    POURQUOI C EST INDISPENSABLE. Le livre enregistre `prix_entree`, une lecture du POOL prise
+    quelques secondes avant l ordre. Sur ces jetons le prix bouge de 50 % en neuf secondes : cette
+    lecture ne dit donc pas a quel prix on a achete. Le 14/09, TWINEGPT affichait un prix d entree
+    de 4,05e-07 alors qu on a paye 8,56e-07 -- 63 % au-dessus. Sans le prix effectif, on ne peut pas
+    distinguer « le jeton a baisse apres l achat » de « on a paye trop cher des l entree », et ces
+    deux causes appellent des corrections opposees.
+
+    Le SOL est signe (negatif a l achat), les jetons aussi. On rend les deux bruts : l appelant sait
+    ce qu il lit.
+    """
+    try:
+        r = await client.post(rpc_url, json={
+            "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
+            "params": [tx_hash, {"maxSupportedTransactionVersion": 0,
+                                 "encoding": "jsonParsed"}]}, timeout=25)
+        res = (r.json() or {}).get("result")
+        if not res or (res.get("meta") or {}).get("err"):
+            return None
+        keys = [k["pubkey"] if isinstance(k, dict) else k
+                for k in res["transaction"]["message"]["accountKeys"]]
+        if owner not in keys:
+            return None
+        meta = res["meta"]
+        i = keys.index(owner)
+        dsol = (meta["postBalances"][i] - meta["preBalances"][i]) / LAMPORTS
+
+        def solde(cle: str) -> float:
+            for b in (meta.get(cle) or []):
+                if b.get("mint") == mint and b.get("owner") == owner:
+                    return float((b.get("uiTokenAmount") or {}).get("uiAmountString") or 0)
+            return 0.0
+
+        return dsol, solde("postTokenBalances") - solde("preTokenBalances")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def sol_balance(client: httpx.AsyncClient, rpc_url: str, owner: str) -> int:
     r = await client.post(rpc_url, json={"jsonrpc": "2.0", "id": 1, "method": "getBalance",
                                          "params": [owner]}, timeout=20)
