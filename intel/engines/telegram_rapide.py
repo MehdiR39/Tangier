@@ -112,8 +112,23 @@ LECTURE_MAX = 30         # s : au-dela, la lecture de reserve est perimee, on ne
 
 # Le nom lisible de chaque carnet, pour les messages. Une methode inconnue s affiche telle quelle
 # plutot que de disparaitre : un carnet ajoute et oublie ici doit rester visible dans le compte.
-NOMS = {"telegram": "Telegram", "propre": "Propre (sans TG)",
-        "hausse": "n a pas monte", "mcap": "capitalisation", "les deux": "les deux"}
+NOMS = {"telegram": "Telegram", "propre": "Clean (no TG)",
+        "hausse": "no pump", "mcap": "market cap", "les deux": "both"}
+
+
+def _diff(libelle: str, montant: float, suffixe: str = "") -> str:
+    """Une ligne de bloc `diff`, coloree par le SIGNE du montant.
+
+    Telegram colore en vert les lignes qui commencent par « + » et en rouge celles qui commencent
+    par « - ». C est le seul moyen d avoir de la couleur dans un message : l API n accepte aucune
+    balise de style, seulement la coloration syntaxique des blocs de code.
+
+    Le caractere de tete porte donc l information, et le montant est ecrit SANS son signe pour ne
+    pas le repeter. Un montant nul prend « + » : ne rien perdre se lit du bon cote.
+    """
+    tete = "-" if montant < 0 else "+"
+    corps = "%s %-18s %9.2f eur" % (tete, libelle[:18], abs(montant))
+    return corps + ("   %s" % suffixe if suffixe else "")
 
 
 class TelegramRapide:
@@ -404,8 +419,9 @@ class TelegramRapide:
             log.warning("tg: VENTE ECHOUEE sur %s (essai %d) : %s", l["symbole"], n, str(exc)[:400])
             if n == 1 or n % 180 == 0:
                 await self._prevenir(
-                    "⚠️ <b>%s</b> devait etre vendu (4 min) et la vente a echoue (essai %d)\n"
-                    "<code>%s</code>\n<i>Le moteur reessaye toutes les dix secondes.</i>"
+                    "⚠️ <b>%s</b> was due to be sold (4 min) and the sale FAILED (attempt %d)\n"
+                    "<code>%s</code>\n<i>The engine retries every ten seconds. Money is still in "
+                    "this position — you can sell it by hand if this persists.</i>"
                     % (l["symbole"], n, str(exc)[:120]), critique=True)
             return 0
         self.ctx.db.execute(
@@ -454,8 +470,8 @@ class TelegramRapide:
             faits += 1
             log.info("tg: %s compte sur la chaine — %+.5f SOL soit %+.2f EUR",
                      l["symbole"], da + dv, gain)
-            await self._prevenir("%s <b>%s</b> boucle en 4 min : <b>%+.2f EUR</b>\n"
-                                 "<i>lu sur le portefeuille, pas sur une cotation</i>\n%s"
+            await self._prevenir("%s <b>%s</b> closed after 4 min: <b>%+.2f EUR</b>\n"
+                                 "<i>read from the wallet, not from a quote</i>\n%s"
                                  % ("✅" if gain > 0 else "🔻", l["symbole"], gain, self._cumul()))
         return faits
 
@@ -781,10 +797,12 @@ class TelegramRapide:
         log.info("tg: %s ACHETE POUR DE VRAI a T+%d s (%.2f EUR, %s), tx %s",
                  symbole, age, mise, methode, h[:20])
         await self._prevenir(
-            "🟢 <b>%s</b> achete · <i>%s</i> · T+%d s\n%.2f EUR · vente dans 4 min"
-            % (symbole, {"telegram": "signal Telegram",
-                         "hausse": "signal « n a pas monte »",
-                         "les deux": "LES DEUX signaux"}.get(methode, methode), age, mise))
+            "🟢 <b>%s</b> bought · <i>%s</i> · T+%d s\n%.2f EUR · selling in 4 min"
+            % (symbole, {"telegram": "Telegram signal",
+                         "propre": "clean launch, no Telegram",
+                         "hausse": "no-pump signal",
+                         "mcap": "market-cap signal",
+                         "les deux": "BOTH signals"}.get(methode, methode), age, mise))
         return True
 
     def _cumul(self) -> str:
@@ -825,16 +843,15 @@ class TelegramRapide:
                 (jour,))
             if j and int(j[0]["n"] or 0):
                 jn = int(j[0]["n"]); jg = float(j[0]["g"]); jw = int(j[0]["w"] or 0)
-                lignes.append("<b>Aujourd hui %s : %+.2f EUR</b>  (%d tickets, %d gagnants)"
-                              % (time.strftime("%d/%m", time.gmtime(jour)), jg, jn, jw))
+                lignes.append(_diff("Today %s" % time.strftime("%d/%m", time.gmtime(jour)),
+                                    jg, "%d trades, %d winners" % (jn, jw)))
         except Exception as exc:  # noqa: BLE001
             # On dit pourquoi la ligne du jour manque. Un `pass` muet l a fait disparaitre du
             # message sans laisser de trace pendant deux essais le 13/09.
             log.info("tg: resultat du jour non calcule (%s: %s)",
                      exc.__class__.__name__, str(exc)[:100])
-        lignes.append("<b>Depuis le depart : %+.2f EUR</b>" % g)
-        lignes.append("%d tickets · %d gagnants (%.0f %%) · %+.3f par euro mise"
-                      % (n, w, 100.0 * w / n, g / m))
+        lignes.append(_diff("All time", g, "%d trades, %.0f %% won, %+.3f per euro"
+                                           % (n, 100.0 * w / n, g / m)))
 
         # LE COMPTE DE CHAQUE REGLE, SEPAREMENT. Deux regles tournent et elles n ont ni le meme
         # rythme, ni la meme mise, ni la meme forme : Telegram gagne souvent et petit, « n a pas
@@ -847,14 +864,14 @@ class TelegramRapide:
                 " FROM tg_lignes WHERE mode='live' AND gain_eur IS NOT NULL"
                 " GROUP BY meth ORDER BY g DESC")
             if len(par) > 1:
-                lignes.append("")
+                lignes.append("  ")
                 for r in par:
                     mm = float(r["m"]) or 1.0
-                    lignes.append("  <b>%s</b> %+.2f EUR · %d tickets · %.0f %% gagnants · %+.3f/euro"
-                                  % (NOMS.get(r["meth"], r["meth"]),
-                                     float(r["g"]), int(r["n"]),
-                                     100.0 * int(r["w"] or 0) / max(int(r["n"]), 1),
-                                     float(r["g"]) / mm))
+                    lignes.append(_diff(
+                        NOMS.get(r["meth"], r["meth"]), float(r["g"]),
+                        "%d trades, %.0f %% won, %+.3f/eur"
+                        % (int(r["n"]), 100.0 * int(r["w"] or 0) / max(int(r["n"]), 1),
+                           float(r["g"]) / mm)))
         except Exception as exc:  # noqa: BLE001
             log.info("tg: comptes par methode non calcules (%s)", str(exc)[:80])
 
@@ -881,19 +898,26 @@ class TelegramRapide:
                     if p and o["prix_entree"] and float(o["prix_entree"]) > 0:
                         latent += float(o["mise_eur"] or 0) * (p[0] / float(o["prix_entree"]) - 1)
                         connus += 1
-                detail = " · ".join(
+                detail = ", ".join(
                     "%s %s" % (NOMS.get(m, m), sum(1 for o in ouvertes if o["meth"] == m))
                     for m in sorted({o["meth"] for o in ouvertes}))
-                lignes.append("")
-                lignes.append("<b>%d position(s) ouverte(s)</b> · %.0f EUR engages%s"
-                              % (len(ouvertes), engage, (" · " + detail) if detail else ""))
+                lignes.append("  ")
+                lignes.append("! %-18s %d open, %.0f eur at work%s"
+                              % ("Still running", len(ouvertes), engage,
+                                 ("  (%s)" % detail) if detail else ""))
                 if connus:
-                    lignes.append("  resultat latent %+.2f EUR (estime sur la cotation, %d/%d lues)"
-                                  % (latent, connus, len(ouvertes)))
+                    lignes.append(_diff("  unrealised", latent,
+                                        "estimate from quote, %d/%d read" % (connus, len(ouvertes))))
         except Exception as exc:  # noqa: BLE001
             log.info("tg: positions ouvertes non listees (%s: %s)",
                      exc.__class__.__name__, str(exc)[:100])
-        return "━━━━━━━━━━━━━━" + "\n".join(lignes)
+        # BLOC `diff` : Telegram y colore en VERT les lignes qui commencent par « + » et en ROUGE
+        # celles qui commencent par « - ». C est le seul moyen d obtenir de la couleur dans un
+        # message, l API n acceptant aucune balise de style. Demande de l operateur le 14/09.
+        # Consequence a ne pas oublier : a l interieur de ce bloc aucune balise HTML n est rendue,
+        # donc plus de <b> nulle part -- l alignement en chasse fixe remplace le gras.
+        return ('<pre><code class="language-diff">\n' + "\n".join(lignes).strip("\n")
+                + "\n</code></pre>")
 
     async def _prevenir(self, texte: str, critique: bool = False) -> None:
         """Prevenir l operateur, dans SON canal a lui et pas dans le fil du portefeuille.

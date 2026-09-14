@@ -81,8 +81,8 @@ def test_le_nombre_de_positions_ouvertes_apparait():
                           _ouverte("BBB", 30.0, 2.0, "propre")],
                 prix=(1.1, 20, "pool1", 80.0))
     t = m._cumul()
-    assert "2 position(s) ouverte(s)" in t
-    assert "150 EUR engages" in t
+    assert "2 open" in t
+    assert "150 eur at work" in t
 
 
 def test_le_detail_par_carnet_apparait():
@@ -92,7 +92,7 @@ def test_le_detail_par_carnet_apparait():
                 prix=(1.0, 20, "pool1", 80.0))
     t = m._cumul()
     assert "Telegram 1" in t
-    assert "Propre (sans TG) 2" in t
+    assert "Clean (no TG) 2" in t
 
 
 def test_le_resultat_latent_est_marque_comme_estime():
@@ -100,21 +100,41 @@ def test_le_resultat_latent_est_marque_comme_estime():
     m = _moteur(FERMEES, [_ouverte("AAA", 100.0, 1.0, "telegram")],
                 prix=(1.2, 20, "pool1", 80.0))
     t = m._cumul()
-    assert "estime sur la cotation" in t
-    assert "+20.00 EUR" in t, "100 EUR a x1,2 doit donner +20 EUR de latent"
+    assert "estimate from quote" in t
+    assert "20.00 eur" in t, "100 EUR a x1,2 doit donner 20 EUR de latent"
 
 
 def test_sans_cotation_lisible_on_annonce_le_nombre_sans_inventer_de_chiffre():
     m = _moteur(FERMEES, [_ouverte("AAA", 120.0, 1.0, "telegram")], prix=None)
     t = m._cumul()
-    assert "1 position(s) ouverte(s)" in t
-    assert "latent" not in t, "aucun latent ne doit etre annonce si aucune cotation n est lue"
+    assert "1 open" in t
+    assert "unrealised" not in t, "aucun latent ne doit etre annonce si aucune cotation n est lue"
 
 
 def test_aucune_position_ouverte_n_ajoute_rien():
     m = _moteur(FERMEES, [])
     t = m._cumul()
-    assert "position(s) ouverte(s)" not in t
+    assert " open," not in t
+
+
+def test_le_bloc_est_un_diff_colore():
+    """Telegram ne colore que les blocs de code `diff` : sans cet emballage, aucun message n a de
+    couleur, et le « + » de tete se lirait comme une coquille."""
+    m = _moteur(FERMEES, [])
+    t = m._cumul()
+    assert t.startswith('<pre><code class="language-diff">')
+    assert t.endswith("</code></pre>")
+    assert "<b>" not in t, "aucune balise HTML n est rendue dans un bloc de code"
+
+
+def test_un_gain_commence_par_plus_et_une_perte_par_moins():
+    """C est le signe de tete qui porte la couleur, pas le montant."""
+    from intel.engines.telegram_rapide import _diff
+    assert _diff("gagne", 12.5).startswith("+")
+    assert _diff("perdu", -12.5).startswith("-")
+    assert _diff("rien", 0.0).startswith("+"), "zero n est pas une perte"
+    assert "12.50" in _diff("perdu", -12.5)
+    assert "-12.50" not in _diff("perdu", -12.5), "le signe ne doit pas etre repete"
 
 
 def test_une_base_qui_leve_ne_casse_pas_le_message():
@@ -128,4 +148,4 @@ def test_une_base_qui_leve_ne_casse_pas_le_message():
 
     m.ctx.db.query = casse
     t = m._cumul()
-    assert "Depuis le depart" in t
+    assert "All time" in t
