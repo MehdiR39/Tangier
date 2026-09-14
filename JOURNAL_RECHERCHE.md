@@ -3312,6 +3312,101 @@ que ses conditions sont seulement compatibles, et sur quelle colonne elle s'appu
 heures de silence valaient mieux que n'importe quel test statistique — et la mise en observation à
 blanc, décidée après l'activation trop rapide de la règle de hausse, a évité que la découverte
 coûte un euro.
+
+### 3.75 — Deux pistes creusées à fond : la courbe ne paie pas, et le « zéro social » BNB était une erreur de source, 2026-09-14
+
+L'opérateur, le 14/09 : *« t'as vu qu'on peut se retrouver du jour au lendemain avec un truc qui
+fonctionne plus… ne décourage abandonne pas une piste car t'as essayé 2/3 remonté de données et ça
+renvoyait vide creuse cherche et note »*. Les deux pistes ci-dessous étaient exactement dans ce cas.
+
+#### A. Acheter AVANT la graduation : le signal est énorme, le rendement est nul
+
+**Pourquoi c'était la meilleure piste disponible.** La stratégie en production n'agit qu'après la
+migration — ~40 occasions par heure. Les créations sont douze fois plus nombreuses (~470/h). Le
+même avantage par euro y rapporterait douze fois plus.
+
+**Le signal brut est spectaculaire.** Le SOL réel accumulé dans la courbe sépare massivement :
+
+    âge      futures graduées (médiane)   les autres    rapport
+    T+1 min        0,23 SOL                0,01 SOL       21x
+    T+3 min        0,19 SOL                0,00 SOL      165x
+    T+5 min        0,14 SOL                0,00 SOL      364x
+
+**Et l'exécution y est FAVORABLE**, contrairement à PumpSwap : la courbe pump.fun a des réserves
+virtuelles (~30 SOL), donc un ordre de 0,53 SOL vaut ~1,8 % d'impact même quand la courbe ne
+contient que 0,2 SOL réel. C'est l'inverse du problème qui avait tué la règle de hausse.
+
+**Le majorant est même très beau.** En supposant qu'on sache d'avance qui graduera — donc en
+trichant — acheter à T+300 s et vendre à la graduation donne **+1,499 par euro, 81 % de gagnants**.
+
+**Et pourtant la règle honnête ne paie pas.** Filtre sur le seul `sol_reel` disponible à l'instant
+d'entrée, sortie à la graduation ou à la fin du suivi, coupure sur la date de naissance :
+
+    entrée T+300 s        n     recherche   JUGEMENT   sans best   gagnants   graduent
+    SOL >= 0           1 602      -0,034     -0,039      -0,043        3 %      0,6 %
+    SOL >= 3              96      -0,070     -0,038      -0,069       23 %      4,1 %
+    SOL >= 8              61      -0,038     -0,033      -0,080       27 %      6,5 %
+    SOL >= 20             41      +0,003     +0,016      -0,056       24 %      9,8 %
+    SOL >= 40             29      +0,081     +0,112      +0,013       34 %     13,8 %
+
+Le seuil fait bien monter le taux de graduation (0,6 % → 13,8 %, soit 23×). **Mais le rendement
+reste négatif partout sauf une case**, et cette case a une **médiane négative** (−0,069) et tombe à
++0,013 dès qu'on retire son meilleur ticket. Sur 29 tickets, un seul coup porte tout — la forme
+exacte des deux fausses découvertes de la semaine. Testé aussi à T+180 s et T+480 s, à 4 et 10 min
+de tenue : **28 cellules, aucune ne survit à « sans best »**.
+
+**Pourquoi ça ne marche pas, mécaniquement.** Le prix à T+15 s vaut en médiane **1,96 fois** le prix
+de graduation : la poussée est déjà passée quand on arrive. Acheter à T+60 s sur un jeton qui
+graduera donne un multiple médian de **x0,65**. L'argent de la courbe est capté dans les quinze
+premières secondes, par des acteurs plus rapides que nous.
+
+**Ce qui reste ouvert** : le suivi s'arrêtait à 15 min alors que 33 % des graduations arrivent après
+(médiane 8 min, p75 25 min, p90 119 min). Ces lignes étaient soldées au prix de la 15e minute au
+lieu de leur graduation — mesure pessimiste d'une ampleur inconnue. `suivi_minutes` passe de 15 à
+45 (couvre ~82 %), et `part_lue` de 0,35 à 0,60.
+
+**Et une mesure à refaire, pas un résultat.** Le test direct « une création avec Telegram
+gradue-t-elle plus ? » donne 3,70 % (2 sur 54) contre 3,82 % sans — soit aucun effet. Mais
+l'intervalle sur 2 graduations va de 0,5 % à 13 % : il ne distingue ni le taux de base ni le x4,5
+annoncé ce matin. **Ce n'est pas une réfutation, c'est un manque de puissance**, et c'est pour ça
+que la part de fiches lues augmente.
+
+#### B. BNB : « zéro lien social » était faux, il y en a 40 %
+
+**Ce que j'avais écrit le 13/09**, en arrêtant le collecteur : *« 6 766 créations, 53 928 relevés,
+ZERO lien social à tous les âges. L'information n'existe pas au moment de décider. »*
+
+**C'était une limite de la source prise pour un fait sur la chaîne.** Le collecteur interrogeait
+DexScreener. Pour un jeton four.meme encore sur sa courbe, DexScreener renvoie bien une paire — les
+54 228 relevés en ont une — mais sa réponse ne contient **aucun bloc `info`**. Clés vérifiées une
+par une le 14/09 : `baseToken, chainId, dexId, pairAddress, pairCreatedAt, priceChange, priceNative,
+quoteToken, txns, url, volume`. Ni prix, ni liquidité, ni réseaux. Jamais. D'où le zéro.
+
+**La bonne source est l'API de four.meme :**
+`https://four.meme/meme-api/v1/private/token/get?address=<adresse>` → `telegramUrl`, `twitterUrl`,
+`webUrl`, `tokenPrice.price`, `tokenPrice.marketCap`. Sondage sur 90 jetons :
+
+    âge du jeton      n     Telegram   twitter    site
+    8 à 24 h         45      40,0 %    88,9 %    64,4 %
+    plus de 24 h     45      44,4 %    86,7 %    71,1 %
+    (Solana)                  3,7 %    42 %      20 %
+
+**Ce qui ne veut PAS dire que la règle y marchera — au contraire.** Sur Solana, la force du signal
+tient en partie à sa **rareté** : 3,7 % des jetons le portent, et c'est ce qui en fait un filtre. Un
+lien présent sur 40 % des jetons ne trie presque rien. La question est ouverte et ne se tranchera
+qu'avec la collecte horodatée.
+
+**Et l'horodatage reste vital** : ces liens sont dans la base de four.meme, modifiables après coup.
+L'écart entre 8-24 h (40,0 %) et plus de 24 h (44,4 %) est faible mais non nul, et la tranche qui
+compte — moins de 2 h — manquait faute de collecte. Le collecteur est relancé avec la bonne source.
+
+#### Ce que ces deux pistes ont en commun
+
+Dans les deux cas j'avais conclu trop tôt sur une mesure vide. Sur BNB, un zéro que je n'ai pas
+interrogé. Sur la courbe, j'aurais pu m'arrêter au premier sondage (« multiple médian 1,000, part
+au-dessus de x1,5 : 0 % » sur 67 jetons en 0,54 h) — et j'aurais raté le signal à 21×, qui est réel
+même s'il n'est pas monnayable. **Un chiffre nul ou plat doit d'abord être suspecté d'être un
+défaut d'instrument.** Ce n'est qu'après l'avoir disculpé qu'il devient un résultat.
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
@@ -3869,3 +3964,18 @@ bout en bout, du seuil jusqu a la signature.*
   capteur, autre cadence — elle donne +0,116 par euro contre −0,039, et 0 sur 20 000 au test du
   hasard sur la fréquence des gros tickets (§3.74). Tant que ce contrôle n'est pas fait, un edge
   n'est pas confirmé, il est seulement reproductible chez le même fournisseur.
+- **Un zéro se suspecte d'abord comme un défaut d'instrument.** « Zéro lien social sur 6 766
+  créations BNB » n'était pas un fait sur la chaîne : DexScreener ne porte simplement aucun bloc
+  `info` pour un jeton four.meme sur courbe. La vraie valeur est 40 % (§3.75). Avant de conclure
+  d'une mesure nulle ou plate, la disculper : interroger une seconde source, ou vérifier champ par
+  champ que l'information cherchée est bien censée s'y trouver.
+- **Un signal énorme n'est pas un rendement.** Le SOL accumulé dans la courbe sépare les futures
+  graduées d'un facteur 21 à T+1 min et 165 à T+3 min, et le seuil multiplie par 23 le taux de
+  graduation — sans qu'aucune règle exécutable ne gagne d'argent, parce que la hausse est déjà
+  passée quand on arrive (le prix à T+15 s vaut 1,96 fois le prix de graduation). Mesurer la
+  séparation d'un signal et mesurer ce qu'il rapporte sont deux questions différentes ; seule la
+  seconde décide.
+- **Un majorant qui brille ne prouve rien.** « Acheter à T+300 s et vendre à la graduation » donne
+  +1,499 par euro — en supposant connu d'avance qui graduera. La même entrée, filtrée sur la seule
+  information disponible à l'instant, donne entre −0,11 et +0,11 selon le seuil, et rien ne survit
+  à « sans best ». Toujours écrire la version qui ne sait rien du futur AVANT de se réjouir.

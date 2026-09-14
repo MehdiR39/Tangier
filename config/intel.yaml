@@ -794,11 +794,27 @@ telegram_rapide:
 # chaine, puis relever les liens NOUS-MEMES a T+60 et horodater ce relevé. Apres deux ou trois
 # jours l historique ainsi constitue est honnete. Voir intel/engines/bnb_collecte.py.
 bnb_collecte:
-  # ARRETE le 13/09 : la question est repondue. 11,5 h, 6 766 creations, 53 928 releves horodates,
-  # ZERO lien social a tous les ages jusqu a 9 minutes. L information n existe pas au moment de
-  # decider, donc on ne pourrait ni mesurer ni executer. Le collecteur saturait en plus les
-  # passerelles IPFS dont le bot a besoin. Les donnees restent dans bnb_lancements et bnb_releves.
-  enabled: false
+  # ARRETE le 13/09 sur une conclusion FAUSSE, et relance le 14/09.
+  #
+  # Le 13/09 j avais ecrit : « 6 766 creations, 53 928 releves, ZERO lien social a tous les ages,
+  # l information n existe pas au moment de decider ». Ce zero ne disait rien de BNB : il disait
+  # que la source interrogee ne porte pas cette information. Pour un jeton four.meme encore sur sa
+  # courbe, DexScreener renvoie bien une paire -- les 54 228 releves en ont une -- mais sa reponse
+  # n a AUCUN bloc `info` : ni prix, ni liquidite, ni reseaux. Verifie cle par cle le 14/09.
+  #
+  # La bonne source est l API de four.meme. Sondage du 14/09 sur 90 jetons :
+  #     Telegram 40 a 44 %   twitter 87 a 89 %   site 64 a 71 %
+  #     (Solana, pour comparaison : 3,7 %, 42 %, 20 %)
+  #
+  # CE QUI NE VEUT PAS DIRE QUE LA REGLE Y MARCHERA -- au contraire, c est la question ouverte. Sur
+  # Solana la force du signal tient en partie a sa RARETE : 3,7 % des jetons le portent. Un lien
+  # present sur 40 % des jetons ne trie presque rien. Il faut donc la collecte horodatee pour
+  # mesurer, et non l intuition.
+  #
+  # ET L HORODATAGE RESTE VITAL : ces liens sont dans la base de four.meme, modifiables apres coup.
+  # Ecart mesure entre 8-24 h (40,0 %) et plus de 24 h (44,4 %) -- faible mais non nul, et la
+  # tranche qui compte, moins de 2 h, manquait faute de collecte.
+  enabled: true
   pas_secondes: 20
   rpc: "https://bsc.publicnode.com"   # `bsc-dataseed` refuse eth_getLogs (limit exceeded)
   max_blocs: 200                      # apres un arret, on ne rattrape pas au-dela
@@ -818,5 +834,15 @@ pump_courbe:
   pas_secondes: 20
   slots_par_cycle: 40     # ~16 s de chaine par cycle : on echantillonne, on ne recense pas
   max_slots: 300          # apres un arret on ne rattrape pas au-dela
-  part_lue: 0.35          # part des creations dont on lit la metadonnee (IPFS sature au-dela)
-  suivi_minutes: 15       # duree de suivi du prix SUR LA COURBE apres creation
+  # 0,35 -> 0,60 le 14/09. Sur 18 h la collecte n a lu que 3 327 fiches sur 10 128, dont 54
+  # portaient un Telegram. Le test direct « une creation avec Telegram gradue-t-elle plus ? »
+  # a donc donne 2 graduations sur 54, soit un intervalle de 0,5 % a 13 % autour de 3,70 % --
+  # incapable de distinguer le taux de base (3,82 %) du multiplicateur x4,5 annonce par la
+  # litterature. Ce n est pas un resultat, c est un manque d echantillon.
+  part_lue: 0.60          # part des creations dont on lit la metadonnee (IPFS sature au-dela)
+  # 15 -> 45 min le 14/09. Mesure du meme jour sur 152 graduations appariees : mediane 8 min,
+  # mais p75 a 25 min et p90 a 119 min. A 15 min on tronquait 33 % des graduations, et le
+  # rendement de ces lignes etait solde au prix de la 15e minute au lieu de leur graduation --
+  # ce qui rend toute mesure d une strategie « acheter sur la courbe » pessimiste sans qu on
+  # sache de combien. A 45 min on en couvre ~82 %.
+  suivi_minutes: 45       # duree de suivi du prix SUR LA COURBE apres creation

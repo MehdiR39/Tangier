@@ -46,7 +46,9 @@ log = logging.getLogger(__name__)
 
 RPC_DEFAUT = "https://bsc.publicnode.com"
 FOUR_MEME = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
-DEXS = "https://api.dexscreener.com/latest/dex/tokens/"
+# DexScreener ne porte aucun bloc `info` pour un jeton four.meme sur courbe : ni prix, ni
+# liquidite, ni reseaux. Verifie le 14/09 champ par champ. On interroge donc four.meme.
+FOURMEME_API = "https://four.meme/meme-api/v1/private/token/get?address="
 
 AGE_RELEVE = 45          # s : premier relevé, au plus tot
 AGE_LIMITE = 900         # s : au-dela on cesse de suivre un lancement
@@ -151,44 +153,73 @@ class BnbCollecte:
 
     # -------------------------------------------------------------- les relevés
     async def _relever(self, now: int) -> int:
-        """Les liens sociaux et le prix, horodates PAR NOUS. C est tout l interet du module."""
+        """Les liens sociaux et le prix, horodates PAR NOUS. C est tout l interet du module.
+
+        LA SOURCE A CHANGE LE 14/09, et le premier choix etait faux. On interrogeait DexScreener :
+        pour un jeton four.meme encore sur sa courbe il renvoie bien une paire, mais AUCUN bloc
+        `info` -- ni prix, ni liquidite, ni reseaux. D ou 0 Telegram sur 54 228 relevés, un chiffre
+        que j avais pris pour un fait sur la chaine alors qu il ne disait que « cette source ne
+        porte pas cette information ». Verifie champ par champ sur la reponse complete : les cles
+        sont exactement baseToken, chainId, dexId, pairAddress, pairCreatedAt, priceChange,
+        priceNative, quoteToken, txns, url, volume. Pas d `info`, jamais.
+
+        L API de four.meme, elle, porte tout, et un appel par jeton :
+            /meme-api/v1/private/token/get?address=<adresse>
+            -> telegramUrl, twitterUrl, webUrl, tokenPrice.price, tokenPrice.marketCap
+
+        Sondage du 14/09 sur 90 jetons : Telegram 40 a 44 %, twitter 87 a 89 %, site 64 a 71 %.
+        Sans commune mesure avec Solana (3,7 %, 42 %, 20 %) -- ce qui CHANGE la nature du signal :
+        un lien present sur 40 % des jetons ne trie presque rien, la ou sa rarete faisait sa force.
+        C est precisement ce que la collecte horodatee doit trancher.
+
+        POURQUOI HORODATER RESTE VITAL : ces liens sont dans la base de four.meme, donc modifiables
+        apres coup. L ecart mesure entre 8-24 h (40,0 %) et plus de 24 h (44,4 %) est faible mais
+        non nul, et la tranche qui compte -- moins de 2 h -- manquait faute de collecte. Lire
+        aujourd hui un jeton d hier reviendrait a lire le futur.
+        """
         cibles = self.ctx.db.query(
             "SELECT jeton, ts_vu FROM bnb_lancements WHERE ts_vu <= ? AND ts_vu >= ?"
             " ORDER BY ts_vu DESC LIMIT 30", (now - AGE_RELEVE, now - AGE_LIMITE))
         if not cibles:
             return 0
         faits = 0
-        for i in range(0, len(cibles), 25):
-            lot = cibles[i:i + 25]
+        for x in cibles:
             try:
-                r = await self.client.get(DEXS + ",".join(x["jeton"] for x in lot), timeout=25)
-                paires = (r.json() or {}).get("pairs") or []
+                r = await self.client.get(FOURMEME_API + x["jeton"], timeout=20,
+                                          headers={"accept": "application/json",
+                                                   "user-agent": "Mozilla/5.0"})
+                j = r.json() or {}
             except Exception as exc:  # noqa: BLE001
-                log.info("bnb: dexscreener muet (%s)", str(exc)[:70])
+                log.info("bnb: four.meme muet (%s)", str(exc)[:70])
                 continue
-            vu: dict[str, dict] = {}
-            for p in paires:
-                a = ((p.get("baseToken") or {}).get("address") or "").lower()
-                liq = float((p.get("liquidity") or {}).get("usd") or 0)
-                if a and liq >= float(vu.get(a, {}).get("liq", -1)):
-                    vu[a] = {"p": p, "liq": liq}
-            for x in lot:
-                e = vu.get(x["jeton"].lower())
-                if not e:
-                    continue
-                p = e["p"]
-                soc = {s.get("type") for s in ((p.get("info") or {}).get("socials") or [])}
-                try:
-                    self.ctx.db.execute(
-                        "INSERT OR IGNORE INTO bnb_releves(jeton, ts, age_s, telegram, twitter,"
-                        " site, prix_usd, liquidite_usd, paire) VALUES(?,?,?,?,?,?,?,?,?)",
-                        (x["jeton"], now, now - int(x["ts_vu"]),
-                         int("telegram" in soc), int("twitter" in soc),
-                         int(bool((p.get("info") or {}).get("websites"))),
-                         float(p.get("priceUsd") or 0) or None, e["liq"], p.get("pairAddress")))
-                    faits += 1
-                except Exception:  # noqa: BLE001
-                    pass
+            # LIRE L ERREUR AVANT LE RESULTAT. `j.get("data") or {}` effacerait la difference entre
+            # « ce jeton n a pas de Telegram » et « l API a refuse » -- la famille d erreurs qui a
+            # deja produit trois conclusions fausses cette semaine.
+            if j.get("code") != 0:
+                continue
+            d = j.get("data")
+            if not isinstance(d, dict):
+                continue
+            prix = None
+            try:
+                prix = float(((d.get("tokenPrice") or {}).get("price")) or 0) or None
+            except Exception:  # noqa: BLE001
+                pass
+            cap = None
+            try:
+                cap = float(((d.get("tokenPrice") or {}).get("marketCap")) or 0) or None
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                self.ctx.db.execute(
+                    "INSERT OR IGNORE INTO bnb_releves(jeton, ts, age_s, telegram, twitter,"
+                    " site, prix_usd, liquidite_usd, paire) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (x["jeton"], now, now - int(x["ts_vu"]),
+                     int(bool(d.get("telegramUrl"))), int(bool(d.get("twitterUrl"))),
+                     int(bool(d.get("webUrl"))), prix, cap, d.get("dexType")))
+                faits += 1
+            except Exception:  # noqa: BLE001
+                pass
         return faits
 
     async def cycle(self) -> dict[str, Any]:
