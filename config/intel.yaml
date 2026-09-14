@@ -725,7 +725,14 @@ telegram_rapide:
   #
   # Le capital envoye n est pas perdu pour autant : a 120 EUR il porte 5 lignes simultanees au lieu
   # de 3, donc aucun achat refuse faute de fonds aux heures de fort flux.
-  mise_eur: 120.0
+  #
+  # 120 -> 20 EUR le 14/09, sur decision de l operateur apres une nouvelle serie perdante. Le
+  # raisonnement est le bon et il est deja ecrit plus haut : ON APPREND AU NOMBRE DE TICKETS, PAS
+  # AU NOMBRE D EUROS. Les 35 tickets qui manquent pour trancher l avantage arrivent a la meme
+  # date a 20 EUR qu a 120, et une journee comme celle du 14/09 y coute 49 EUR au lieu de 293.
+  # Le cout de cette prudence est connu : ~108 EUR de gain espere par jour abandonnes SI
+  # l avantage mesure est reel -- et c est precisement ce qui n est pas encore etabli.
+  mise_eur: 20.0
   # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
   # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
   # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :

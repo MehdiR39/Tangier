@@ -3599,6 +3599,111 @@ prédit. Il n'y a donc pas de « n'acheter que les bons jours » à construire.
 **La limite honnête** : cinq jours. Une influence de BTC se jouerait sur des semaines, et un
 changement de régime (effondrement du marché) ne serait pas visible ici. Ce résultat dit qu'il n'y a
 rien à exploiter au jour le jour, pas qu'aucun régime n'existe.
+
+### 3.79 — Le filtre « 3 signes » chez les jetons Telegram : le premier vrai candidat, et mon erreur de lecture, 2026-09-14
+
+#### La question de l'opérateur, et sa cause
+
+*« On rentre au moment où ça se crashe. »* Mesuré : notre prix d'entrée se situe au **80ᵉ centile**
+de tout ce qui précède, et dans **45 % des cas c'est le plus haut vu jusque-là**. On achète donc
+systématiquement haut, et c'est structurel — le signal Telegram désigne des jetons que quelqu'un
+vient d'acheter.
+
+Mais ce n'est pas un crash : le prix médian après l'entrée reste à 1,00 tout du long. Ce qui explose
+est la **dispersion** — p25 de 0,998 à T+80 s à **0,011** à T+600 s, pendant que le p75 monte à
+1,452. Bifurcation, pas effondrement. Entrer plus tard ne répare rien (T+90 +0,042 · T+120 +0,014 ·
+T+180 −0,007 · T+300 −0,208).
+
+#### Le filtre, et l'inversion qui le rend intéressant
+
+Trois signes, tous mesurés **avant T+90 s** sur les réserves qu'on lit déjà (§3.66) :
+le prix est au-dessus de son premier relevé (≥ +0,7 %) · il n'est jamais descendu en dessous ·
+la liquidité a grossi (≥ +0,35 %). On n'achète que si les **trois** sont vrais.
+
+**Sur la population générale ces signes désignent les jetons qui se font vider cinq fois plus** — un
+jeton qui monte tout droit sans jamais reculer ressemble à une mise en scène. **Chez les jetons
+Telegram, le même profil désigne les bons.** Deux populations, deux sens opposés.
+
+#### MON ERREUR, qui vaut plus que le résultat
+
+Premier passage : j'ai présenté le filtre comme positif sur nos 35 tickets réels, puis je l'ai
+écarté parce que 13 tickets **simulés** de la moitié de jugement donnaient −0,015. L'opérateur :
+*« tu me sors un truc, tu dis c'est le seul truc positif, et après tu dis non c'est un piège »*.
+
+Il a raison. J'ai laissé **13 observations simulées annuler 35 observations de vrai argent**, et
+j'avais en plus lu la mauvaise tranche (13 tickets au lieu de 15, découpage différent). À force de
+me méfier des fausses découvertes après trois cette semaine, j'ai appliqué le scepticisme à
+l'envers. **La méfiance n'est utile que si elle pèse les preuves dans le bon sens.**
+
+Et un filtre ne se juge pas sur le niveau du groupe gardé — qui bouge avec la période — mais sur le
+**contraste** entre ce qu'il garde et ce qu'il jette.
+
+#### Le test correct
+
+    échantillon                garde            jette            CONTRASTE
+    nos tickets RÉELS          35 à +0,128      25 à -0,079        +0,206
+    simulés (Telegram)         26 à +0,202      36 à -0,082        +0,285
+      dont recherche           11 à +0,227      20 à -0,163        +0,389
+      dont JUGEMENT            15 à +0,184      16 à +0,018        +0,166
+    TOUT RÉUNI                 61 à +0,159      61 à -0,081        +0,240
+
+Le contraste est du même signe dans les quatre échantillons, **jugement compris**. Test du hasard
+porté sur le contraste : 9,0 % sur les seuls tickets réels, **1,8 % sur tout réuni**.
+
+#### Ce que ça vaut, jour par jour
+
+    jour     achats  gardés  part   sans filtre   AVEC filtre   différence
+    12/09       12      6    50 %      +17,34       +32,40        +15,06
+    13/09       35     19    54 %     +125,86      +128,50         +2,64
+    14/09       19     10    53 %     -345,79      -143,68       +202,10
+    TOTAL       66     35    53 %     -202,59       +17,22       +219,80
+
+**Il ne change presque rien les bons jours et coupe les deux tiers de la perte le mauvais.** Il ne
+rogne pas les ailes, il coupe la traîne — l'inverse de tous les filtres enterrés cette semaine.
+
+**Le coût** : 53 % des achats conservés, soit 11,7 par jour au lieu de 22. Les tickets qui manquent
+pour trancher l'avantage mettront donc **deux fois plus longtemps** à arriver. On échange de la
+vitesse d'apprentissage contre de la protection.
+
+Aucun signe ne trie seul (65 à 73 % des achats passent chacun) : c'est leur combinaison qui décide.
+En attente de décision de l'opérateur, rien n'est active.
+
+### 3.80 — NFT : la rareté ne se paie pas là où elle n'est pas pricée, 2026-09-14
+
+L'opérateur, après un premier examen que j'avais bâclé en jugeant le NFT à l'aune d'une stratégie à
+4 minutes : *« pas forcément pour notre méthode, c'est sûr qu'un NFT ne se trade pas sur 4 min, sois
+un peu intelligent »*. Reprise dans le bon ordre : sur un marché lent, l'inefficacité n'est pas dans
+le flux mais dans le **prix de chaque objet**.
+
+**Le plancher est efficace** : le 2ᵉ listing est à 0-2,7 % du 1ᵉʳ sur cinq collections. Pas de
+bonnes affaires sous le plancher.
+
+**Mais la rareté n'est pas toujours dans le prix demandé** : pricée sur 5 collections
+(famous_fox −0,637 · cets_on_creck −0,302 · mad_lads −0,299 · okay_bears −0,267 · SMB −0,255),
+**pas du tout** sur claynosaurz (+0,015) et smb_gen3 (+0,076). Anomalie apparente : des pièces rares
+listées au prix des communes.
+
+**Elle n'en est pas une.** 1 377 ventes réelles sur 40 à 90 jours, rareté calculée par nous à partir
+des traits de chaque pièce (score statistique, somme des −log des fréquences) plutôt qu'un rang
+tiers dont on ignore la formule :
+
+    collection      corrélation rareté/prix de VENTE   écart quart rare vs commun
+    claynosaurz        +0,057 (seuil 0,088)  non              +1 %
+    smb_gen3           +0,096 (seuil 0,101)  non              +5 %
+    mad_lads           +0,370 (seuil 0,088)  OUI             +11 %
+
+**Les deux collections où la rareté n'est pas pricée sont exactement celles où elle ne se paie
+pas.** Le marché a raison de l'ignorer. Et là où elle se paie, elle est déjà dans le prix demandé.
+
+Le péage achève l'affaire : **7 %** à la revente (2 % Magic Eden + 5 % de royalties, relevés dans
+les métadonnées). L'écart est de +1 % et +5 % là où il n'est pas pricé, +11 % là où il l'est déjà.
+
+**Deux obstacles de collecte, instructifs tous les deux** : l'historique d'activité est à **99,7 %
+des offres et listings** — 0,3 % de ventes, d'où un premier passage qui n'a rien ramené ; et le
+paramètre `type=buyNow` fonctionne alors que `activityType` et `kind` sont **acceptés sans effet**,
+renvoyant le flux non filtré. Un garde-fou vérifie désormais que le filtre a bien été applique.
+
+Piste fermée sur un résultat, pas sur un manque de données.
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
@@ -4171,3 +4276,23 @@ bout en bout, du seuil jusqu a la signature.*
   +1,499 par euro — en supposant connu d'avance qui graduera. La même entrée, filtrée sur la seule
   information disponible à l'instant, donne entre −0,11 et +0,11 selon le seuil, et rien ne survit
   à « sans best ». Toujours écrire la version qui ne sait rien du futur AVANT de se réjouir.
+- **Le scepticisme doit peser les preuves dans le bon sens.** Le 14/09 j'ai écarté un filtre positif
+  sur 35 tickets de vrai argent parce que 13 tickets SIMULÉS ne le confirmaient pas (§3.79). Après
+  trois fausses découvertes dans la semaine, la méfiance était devenue un réflexe au lieu d'un
+  calcul. Avant d'enterrer un résultat sur un échantillon contradictoire : comparer les tailles, et
+  se demander lequel des deux est le plus proche de la décision réelle.
+- **Un filtre se juge sur le CONTRASTE, pas sur le niveau du groupe gardé.** Le niveau bouge avec la
+  période — le même groupe donne +0,227 sur une moitié et +0,184 sur l'autre. L'écart entre ce qu'on
+  garde et ce qu'on jette, lui, reste du même signe : +0,206 / +0,285 / +0,389 / +0,166 sur quatre
+  échantillons (§3.79). Le test du hasard porte sur le contraste.
+- **Un filtre utile coupe la traîne sans rogner les ailes.** Le filtre « 3 signes » change de +15 €
+  et +3 € les deux bons jours, et de +202 € le mauvais (§3.79). Un filtre qui améliore surtout les
+  bons jours ne fait que sélectionner du passé ; celui qui coupe les pires jours protège.
+- **Le silence d'un paramètre d'API vaut refus.** `type=buyNow` filtre bien les ventes Magic Eden,
+  mais `activityType` et `kind` sont ACCEPTÉS sans effet et renvoient le flux non filtré (§3.80).
+  Une collecte bâtie dessus aurait tourné des heures pour rien. Vérifier dans la RÉPONSE que le
+  filtre demandé a été appliqué, jamais dans le fait que l'appel n'a pas échoué.
+- **Juger une nouvelle famille à l'aune de la stratégie en place est une paresse.** J'ai d'abord
+  écarté le NFT parce qu'il ne se trade pas en 4 minutes — vrai et hors sujet. La bonne question
+  était : où est l'inefficacité sur un marché LENT ? (§3.80) La réponse était mesurable et a fermé
+  la piste pour une bonne raison au lieu d'une mauvaise.
