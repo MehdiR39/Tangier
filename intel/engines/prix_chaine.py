@@ -81,16 +81,20 @@ class PrixChaine:
         EXISTAIENT -- simplement indexes apres la fermeture de la fenetre d entree. Or la
         transaction de migration, qu on recoit deja et dont on garde la signature, contient tout :
 
-            postTokenBalances  ->  l entree de NOTRE mint avec un solde non nul
-                                   son `owner` EST le pool
+            postTokenBalances  ->  l entree de NOTRE mint AU PLUS GROS SOLDE
+                                   son `owner` est le pool, verifie ensuite sur la chaine
                                    son compte est la reserve en jetons
                                ->  l entree WSOL du meme `owner` est la reserve en SOL
 
         Une lecture, zero attente. L ancienne recherche reste en secours quand la signature manque
         ou que la transaction n est pas encore servie par le noeud.
 
-        Le solde non nul est la condition qui distingue : la migration laisse aussi une entree a
-        zero pour l ancienne courbe de bonding, avec un autre proprietaire.
+        DEUX CONDITIONS DISTINGUENT LE POOL, et il a fallu les deux :
+          - le solde non nul ecarte l ancienne courbe de bonding, que la migration laisse a zero ;
+          - le solde MAXIMAL ecarte les snipers du premier bloc, presents dans la meme transaction
+            avec un solde positif et parfois du WSOL. Sans lui, 5 des 57 premiers tickets reels
+            ont pris un portefeuille de sniper pour un pool (14/09).
+        Le proprietaire retenu est ensuite verifie : un pool PumpSwap appartient au programme.
         """
         from intel.execution.solana import SOL_MINT
         res = await self._rpc("getTransaction",
@@ -105,21 +109,47 @@ class PrixChaine:
             keys = [k["pubkey"] if isinstance(k, dict) else k
                     for k in res["transaction"]["message"]["accountKeys"]]
             soldes = meta.get("postTokenBalances") or []
-            pool = base_ta = quote_ta = None
+            # LE POOL EST LE PLUS GROS PORTEUR, PAS LE DERNIER DE LA LISTE. La meme transaction
+            # porte les achats des snipers du premier bloc : leurs comptes detiennent aussi notre
+            # mint avec un solde positif, et certains detiennent du WSOL -- ils passaient donc les
+            # deux conditions, et garder le dernier vu revenait a designer un portefeuille de
+            # sniper comme pool. Constate le 14/09 : 5 des 57 tickets reels, soit 8,8 %, avaient
+            # pour `pair_id` l adresse LfEcaUf7..., un compte du System Program de 0 octet,
+            # partagee par cinq jetons differents ; les prix d entree et de sortie de ces lignes
+            # etaient lus sur le solde d un sniper. Le pool detient l offre migree -- 205 700 000
+            # jetons contre 1 200 000 au sniper sur le jeton temoin -- donc le maximum tranche.
+            candidats = []
             for b in soldes:
                 if b.get("mint") != mint:
                     continue
-                if float(b["uiTokenAmount"]["uiAmountString"] or 0) <= 0:
+                q = float(b["uiTokenAmount"]["uiAmountString"] or 0)
+                if q <= 0:
                     continue
-                pool, base_ta = b.get("owner"), keys[int(b["accountIndex"])]
+                candidats.append((q, b.get("owner"), keys[int(b["accountIndex"])]))
+            if not candidats:
+                return None
+            _, pool, base_ta = max(candidats, key=lambda x: x[0])
             if not pool or not base_ta:
                 return None
+            quote_ta = None
             for b in soldes:
                 if b.get("mint") == SOL_MINT and b.get("owner") == pool:
                     quote_ta = keys[int(b["accountIndex"])]
             if not quote_ta:
                 return None
         except Exception:  # noqa: BLE001
+            return None
+        # ET LE VERIFIER. Le plus gros porteur suffit en pratique, mais un pool PumpSwap se
+        # reconnait avec certitude : il appartient au programme et fait 301 octets. Un appel de
+        # plus par lancement -- une quarantaine par heure -- pour une colonne sur laquelle toute
+        # la recherche s appuie. En cas de doute on renvoie None et l ancienne recherche par
+        # `getProgramAccounts` prend le relais, plus lente mais sure.
+        info = await self._rpc("getAccountInfo", [pool, {"encoding": "base64"}])
+        v = (info or {}).get("value") or {}
+        if v.get("owner") != PAMM:
+            return None
+        taille = v.get("space")
+        if taille is not None and int(taille) != TAILLE_POOL:
             return None
         return pool, base_ta, quote_ta
 
