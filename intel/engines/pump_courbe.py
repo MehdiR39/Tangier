@@ -221,9 +221,20 @@ class PumpCourbe:
             return {"status": "ok", "crees": 0}
 
         neufs: list[str] = []
-        res = await asyncio.gather(*[self._rpc("getBlock", [
-            s, {"encoding": "json", "maxSupportedTransactionVersion": 0,
-                "transactionDetails": "full", "rewards": False}]) for s in range(depart, fin + 1)])
+        # Borne aussi sur la lecture des blocs : chaque appel a son propre delai, mais quarante
+        # appels en parallele sur un noeud qui traine se cumulent. Sans borne globale, le cycle
+        # n a aucun plafond.
+        try:
+            res = await asyncio.wait_for(
+                asyncio.gather(*[self._rpc("getBlock", [
+                    s, {"encoding": "json", "maxSupportedTransactionVersion": 0,
+                        "transactionDetails": "full", "rewards": False}])
+                    for s in range(depart, fin + 1)]),
+                timeout=float(self._cfg("budget_blocs_s", 40.0)))
+        except asyncio.TimeoutError:
+            log.info("courbe: lecture des blocs abandonnee apres delai (slots %d-%d)", depart, fin)
+            self.dernier_slot = fin      # on n insiste pas sur ces slots au cycle suivant
+            return {"status": "ok", "crees": 0, "lus": 0, "prix": 0, "motif": "blocs trop lents"}
         for s, b in zip(range(depart, fin + 1), res):
             if not b:
                 continue
@@ -241,7 +252,39 @@ class PumpCourbe:
         # passerelles IPFS, et un sondage suffit pour une proportion.
         part = float(self._cfg("part_lue", 0.35))
         a_lire = [m for i, m in enumerate(neufs) if (hash(m) % 100) < part * 100]
-        lus = await self._lire_social(a_lire) if a_lire else 0
-        prix = await self._suivre_prix(now)
+
+        # BORNER LA LECTURE DES METADONNEES. `_fiche` essaie neuf passerelles IPFS a 15 s chacune :
+        # 135 s au pire pour UN jeton, et rien ne majore le total. Le 14/09, apres le passage de
+        # `part_lue` de 0,35 a 0,60, un cycle a mis 233 s puis le suivant s est fige -- collecteur
+        # muet pendant 25 minutes sans la moindre erreur dans le journal, parce qu une attente
+        # infinie ne leve rien. La production n a pas ete touchee, les cycles etant independants,
+        # mais la mesure, elle, etait perdue.
+        #
+        # On borne donc, plutot que de baisser le reglage : aucune dependance lente ne doit pouvoir
+        # geler un collecteur. Ce qui n est pas lu ce cycle-ci ne l est jamais -- c est voulu, la
+        # mesure est un SONDAGE et perdre des lectures au hasard ne la biaise pas ; c est perdre
+        # tous les cycles qui la tuerait.
+        budget = float(self._cfg("budget_social_s", 25.0))
+        lus = 0
+        if a_lire:
+            try:
+                lus = await asyncio.wait_for(self._lire_social(a_lire), timeout=budget)
+            except asyncio.TimeoutError:
+                log.info("courbe: lecture des fiches abandonnee apres %.0f s (%d en attente)",
+                         budget, len(a_lire))
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Le suivi des prix est borne aussi : il ne depend que du RPC, mais un noeud qui accepte la
+        # connexion sans jamais repondre produirait le meme gel.
+        prix = 0
+        try:
+            prix = await asyncio.wait_for(self._suivre_prix(now),
+                                          timeout=float(self._cfg("budget_prix_s", 30.0)))
+        except asyncio.TimeoutError:
+            log.info("courbe: suivi des prix abandonne apres delai")
+        except Exception:  # noqa: BLE001
+            pass
+
         return {"status": "ok", "crees": len(neufs), "lus": lus, "prix": prix,
                 "total": self.ctx.db.scalar("SELECT COUNT(*) FROM pump_creations", (), 0) or 0}

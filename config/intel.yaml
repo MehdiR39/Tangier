@@ -899,3 +899,14 @@ pump_courbe:
   # ce qui rend toute mesure d une strategie « acheter sur la courbe » pessimiste sans qu on
   # sache de combien. A 45 min on en couvre ~82 %.
   suivi_minutes: 45       # duree de suivi du prix SUR LA COURBE apres creation
+  # BUDGETS DE TEMPS, ajoutes le 14/09 apres un GEL du collecteur. `_fiche` essaie neuf passerelles
+  # IPFS a 15 s chacune -- 135 s au pire pour un seul jeton -- et rien ne majorait le total. Apres
+  # le passage de part_lue de 0,35 a 0,60, un cycle a mis 233 s puis le suivant s est fige :
+  # collecteur muet 25 minutes, SANS AUCUNE ERREUR au journal, parce qu une attente infinie ne leve
+  # rien. La production n a pas ete touchee (les cycles sont independants) mais la mesure etait
+  # perdue, et rien ne l aurait signale.
+  # Ce qui n est pas lu dans le budget n est jamais lu : c est voulu. La mesure est un SONDAGE,
+  # perdre des lectures au hasard ne la biaise pas ; perdre tous les cycles la tuerait.
+  budget_blocs_s: 40      # lecture des blocs
+  budget_social_s: 25     # lecture des metadonnees IPFS
+  budget_prix_s: 30       # suivi des prix sur la courbe
