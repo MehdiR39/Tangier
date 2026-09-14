@@ -3457,6 +3457,101 @@ on ne peut pas distinguer « mort » de « lent ». `AGE_LIMITE` passe de 900 s 
 horodatée continue avec la bonne source. Mais sur la question posée — un portefeuille à blanc qui
 trade BNB dans les minutes suivant la création — la réponse mesurée est : **aucune combinaison ne
 gagne, et la meilleure piste théorique y est inversée.**
+
+### 3.77 — Autopsie des 59 tickets réels : rien ne sépare à l'entrée, la sortie est déjà optimale, reste la mise, 2026-09-14
+
+L'opérateur : *« analyse sérieuse des différents achats, pourquoi certains ont marché d'autres non,
+est-ce qu'il y a une cause qui peut nous éviter de perdre ou de gagner plus — n'oublie pas
+reinforcement learning et learning by doing »*.
+
+**Précaution de méthode, écrite avant de regarder.** Sur 59 tickets, chercher parmi quinze variables
+laquelle sépare le mieux *garantit* de trouver quelque chose. Le carnet réel sert à FORMULER des
+hypothèses ; la validation se fait sur le jeu indépendant des prix lus aux réserves.
+
+#### 1. À l'entrée, gagnants et perdants sont indiscernables
+
+31 gagnants (+457,42 €) contre 28 perdants (−436,14 €). Médiane des uns contre médiane des autres :
+
+    variable              gagnants   perdants   rapport
+    pool à l'entrée       78,6 SOL   77,6 SOL     1,01x
+    capitalisation         42 525 $   38 917 $    1,09x
+    part de l'offre          0,188      0,199     0,94x
+    âge à l'achat             59 s       60 s     0,98x
+    fraîcheur du prix         50 s       52 s     0,97x
+    hausse avant l'achat    +0,049     +0,043     1,16x
+    heure UTC                  8 h        9 h     0,89x
+
+**Dix variables, aucun rapport qui s'éloigne de 1.** Et les 59 tickets portent TOUS twitter et site :
+zéro variation à exploiter de ce côté. Ce n'est pas un échec de mesure, c'est un résultat — à
+l'instant d'acheter, l'information disponible ne distingue pas l'issue.
+
+#### 2. La sortie à 4 minutes est confirmée par notre propre argent
+
+Chaque ticket ne donne pas un chiffre mais une TRAJECTOIRE : 29 de nos achats ont un chemin de prix
+complet, soit des centaines d'observations pour la question « quand vendre ». Rejeu avec le péage
+RÉEL de chaque ticket (médiane 2,2 %) :
+
+    sortie fixe à 120 s    -0,036      sortie à 360 s   +0,093
+    sortie fixe à 180 s    +0,042      sortie à 480 s   +0,091
+    sortie fixe à 240 s    +0,135  <-- en place
+    sortie fixe à 300 s    +0,155      sortie à 600 s   -0,125
+
+Un vrai sommet autour de 240-300 s. 300 s donne +0,155 contre +0,135, mais **sans best il tombe à
++0,077 contre +0,086** : l'écart est porté par un ticket. On ne bouge pas.
+
+#### 3. L'amélioration candidate n'a pas résisté
+
+Sur le carnet réel, « prendre le gain à x2, sinon sortir à 240 s » battait la règle en place sur les
+deux mesures : **+0,200 contre +0,135, et sans best +0,152 contre +0,086**. Testée sur 55 chemins
+indépendants (jetons Telegram, prix aux réserves, pools vérifiés) :
+
+    groupe Telegram, 55 chemins    sortie 240 s    objectif x2
+    tout                              +0,061         +0,064
+    moitié de recherche               +0,206         +0,198
+    moitié de JUGEMENT                -0,078         -0,065
+
+**+0,003 d'écart. Rien.** Les +0,065 du carnet réel étaient du bruit sur 29 tickets et 18 règles
+essayées. Stops (−15 à −60 %) et suiveurs (−15 à −40 %) : aucun n'apporte rien non plus, troisième
+confirmation de §3.23 et §3.59.
+
+#### 4. Ce qui reste améliorable : la taille de la mise
+
+Elle n'a besoin d'aucun signal — seulement de l'avantage et de sa dispersion, tous deux mesurables
+sur ce qui a déjà été joué.
+
+    59 tickets · avantage +0,0724 par euro · écart-type 0,621
+    intervalle à 90 % : -0,058 à +0,208
+    Kelly sur l'avantage mesuré        18,7 % du capital
+    demi-Kelly                          9,4 %
+    Kelly sur la BORNE BASSE          -15,1 %   <-- négative
+
+**La borne basse est négative, donc le calcul ne justifie aucune taille.** Kelly ne mise pas sur un
+avantage qui peut être nul. Ce qui ne veut pas dire s'arrêter — il faut jouer pour apprendre — mais
+que la mise actuelle est celle qu'on accepte de PERDRE pour acheter l'information, pas celle qu'un
+avantage prouvé justifierait. Ce que chaque taille aurait donné sur nos 59 tickets :
+
+    mise      résultat    pire série    pire ticket
+    10 EUR     +42,69       -29,96         -8,41
+    20 EUR     +85,38       -59,91        -16,82
+    50 EUR    +213,46      -149,78        -42,05
+    80 EUR    +341,53      -239,65        -67,27
+
+**Et le point décisif : on apprend au nombre de TICKETS, pas au nombre d'euros.** Diviser la mise
+par deux divise le risque par deux et ne ralentit l'apprentissage d'aucun jour. Les 200 tickets qui
+trancheront arrivent à la même date à 25 € qu'à 50 €.
+
+#### 5. Sur l'apprentissage par renforcement
+
+Un agent par renforcement apprend une politique *état → action → récompense*. La mesure du §1 dit
+qu'il n'existe, pour l'instant, aucun état observable qui prédise la récompense : dix variables,
+aucune séparation. Il n'y a donc rien à apprendre — un agent entraîné là-dessus apprendrait le bruit
+de 59 tickets, exactement ce que le rejeu du §3 vient de démontrer sur dix-huit règles.
+
+Ce qui EST de l'apprentissage par l'expérience, et qui tourne déjà : `intel.research.usure` remet à
+jour l'estimation de l'avantage et son intervalle à chaque ticket, et dit combien il en faut encore.
+C'est la boucle adaptée au volume de données dont on dispose. Un bandit contextuel deviendra
+justifié le jour où l'on aura **et** 200 tickets **et** une variable qui sépare — aujourd'hui il
+manque les deux.
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
