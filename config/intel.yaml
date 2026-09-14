@@ -926,6 +926,33 @@ telegram_rapide:
   jeton_fichier: /app/data/.telegram_token_tradingdex   # secours si la variable disparait
   slippage_achat_pct: 20.0
   slippage_vente_pct: 25.0
+  # PLAFOND D ECART ENTRE LA COTATION ET NOTRE PROPRE LECTURE DU POOL, ajoute le 14/09.
+  #
+  # `slippage_achat_pct` ne protege pas de ca : il borne la derive entre la cotation et
+  # l atterrissage de la transaction, PAS l ecart entre cette cotation et le vrai prix du marche.
+  # Si le routeur cote 60 % trop cher, on signait sans broncher.
+  #
+  # Mesure du 14/09 sur 60 tickets reels -- prix effectif lu dans la transaction confirmee
+  # (SOL depenses / jetons recus) contre prix du pool au meme instant :
+  #     ecart median +5,8 %  ·  p75 +16,9 %  ·  p90 +32,8 %  ·  max +74,0 %
+  #
+  # Et les trois plus grosses pertes de la journee sont trois achats payes trop cher :
+  #     gptstonks  +59,4 %  ->   -90,15 EUR
+  #     BEMJAK     +47,3 %  ->   -87,37 EUR
+  #     IRONMIKE   +27,8 %  ->   -42,89 EUR
+  # Ce n etait pas le signal qui etait mauvais, c etait le prix d entree.
+  #
+  #     seuil de refus   refuses   total des 60 tickets
+  #     aucun (avant)       0 %          -52,58 EUR
+  #     plus de 30 %       10 %         +110,83 EUR
+  #     plus de 20 %       18 %         +130,02 EUR   <- retenu
+  #     plus de 15 %       25 %         +100,20 EUR
+  #     plus de 10 %       40 %          -54,25 EUR   (jette trop, l avantage part avec)
+  #
+  # Ce controle ne coute AUCUN appel reseau : le prix du pool est deja lu toutes les dix secondes
+  # par le collecteur, et c est precisement sa valeur -- il ne depend d aucune promesse du routeur.
+  # 0 = desactive.
+  max_ecart_pool_pct: 20.0
   max_impact_pct: 15.0
   # « peut-on ressortir ? » : on cote la revente AVANT d acheter. Cinq pools sur vingt-cinq sont
   # invendables a notre taille (mesure du 09/09) et causent 25 % des tickets aneantis. La mesure qui

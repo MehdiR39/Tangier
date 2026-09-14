@@ -765,6 +765,12 @@ class TelegramRapide:
                                        # pools-la. Ce garde corrige un biais connu, dans le bon
                                        # sens, et c est le seul qui protege d une perte totale.
                                        max_aller_retour_pct=float(self._cfg("max_aller_retour_pct", 15.0)),
+                                       # LA COTATION EST-ELLE AU PRIX DU MARCHE ? On lui oppose
+                                       # NOTRE lecture du pool, celle sur laquelle la decision vient
+                                       # d etre prise. `prix` est en SOL par jeton entier, et les
+                                       # jetons pump.fun ont six decimales.
+                                       prix_pool_sol=float(prix or 0.0), decimales=6,
+                                       max_ecart_pool_pct=float(self._cfg("max_ecart_pool_pct", 20.0)),
                                        proprietaire=proprio,
                                        priorite_lamports=int(self.ctx.config.get("solana.priority_fee_lamports", 0) or 0))
             if tx.get("status") != "BUILT" or not tx.get("tx"):

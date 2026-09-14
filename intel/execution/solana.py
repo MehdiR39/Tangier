@@ -373,7 +373,8 @@ async def _construire_sous_limite(client: httpx.AsyncClient, q: SolanaQuote, own
 
 async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, sol_eur: float,
                       slippage_pct: float, max_impact_pct: float, priorite_lamports: int = 0,
-                      max_aller_retour_pct: float = 0.0,
+                      max_aller_retour_pct: float = 0.0, prix_pool_sol: float = 0.0,
+                      decimales: int = 6, max_ecart_pool_pct: float = 0.0,
                       proprietaire: str | None = None) -> dict[str, Any]:
     """Everything but the signature: what the journal records, in dry run and live alike."""
     lamports = int(size_eur / max(sol_eur, 1e-9) * LAMPORTS)
@@ -389,6 +390,36 @@ async def prepare_buy(client: httpx.AsyncClient, *, mint: str, size_eur: float, 
     if q.price_impact_pct > max_impact_pct:
         return {"status": "REFUSED", "amount_in": str(lamports),
                 "refused_reason": f"impact {q.price_impact_pct:.1f} % > plafond {max_impact_pct:.1f} %"}
+    # LA COTATION EST-ELLE AU PRIX DU MARCHE ? On la compare a NOTRE propre lecture du pool.
+    #
+    # `slippage_pct` ne protege pas de ca : il borne la derive entre la cotation et l atterrissage
+    # de la transaction, pas l ecart entre cette cotation et le vrai prix. Si le routeur cote 60 %
+    # trop cher, on signe sans broncher. Mesure du 14/09 sur 60 tickets reels, prix effectif lu
+    # dans la transaction confirmee contre prix du pool au meme instant :
+    #
+    #     ecart median +5,8 %  ·  p90 +32,8 %  ·  max +74,0 %
+    #
+    # Et les trois plus grosses pertes de la journee sont trois achats payes 28 a 59 % trop cher --
+    # gptstonks -90 EUR (+59 %), BEMJAK -87 EUR (+47 %), IRONMIKE -43 EUR (+28 %). Ce n etait pas le
+    # signal qui etait mauvais, c etait le prix d entree.
+    #
+    #     seuil de refus   refuses   total des 60 tickets
+    #     aucun (avant)       0 %          -52,58 EUR
+    #     plus de 30 %       10 %         +110,83 EUR
+    #     plus de 20 %       18 %         +130,02 EUR   <- retenu
+    #     plus de 10 %       40 %          -54,25 EUR   (jette trop)
+    #
+    # Ce controle ne coute AUCUN appel : le prix du pool est deja lu toutes les dix secondes par le
+    # collecteur, et il ne depend d aucune promesse du routeur -- c est sa valeur.
+    if max_ecart_pool_pct > 0 and prix_pool_sol > 0 and q.out_amount > 0:
+        jetons = q.out_amount / (10 ** decimales)
+        implique = (lamports / LAMPORTS) / jetons if jetons > 0 else 0.0
+        if implique > 0:
+            ecart = (implique / prix_pool_sol - 1) * 100
+            if ecart > max_ecart_pool_pct:
+                return {"status": "REFUSED", "amount_in": str(lamports),
+                        "refused_reason": f"cotation {ecart:.1f} % au-dessus du pool "
+                                          f"> plafond {max_ecart_pool_pct:.1f} %"}
     # PEUT-ON RESSORTIR ? On cote la revente immediate de ce qu on recevrait, avant d acheter.
     #
     # Mesure du 09/09 sur 25 pools suivis : un aller-retour de 20 EUR coute 2,9 % en mediane -- mais
