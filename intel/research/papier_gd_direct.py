@@ -81,7 +81,10 @@ N_REGIME, PLAFOND_JOUR = 50, 40_000
 # portefeuille de 185. Mais un test PAPIER n a pas de capital : on enregistre tout, et on rejouera
 # n importe quel plafond ensuite sur les tickets collectes. L inverse est impossible -- un ticket refuse
 # ne revient jamais. La contrainte de capital se remet a l analyse, pas a la collecte.
-MAX_OUVERTS = 25
+# En mode large les positions sont tenues 30 min au lieu de 5 : a ~500 tickets/jour la moyenne
+# simultanee monte a ~10 et les pointes bien au-dela de 25. On releve le plafond -- mais pas plus de
+# 45, car `getMultipleAccounts` n accepte que 100 comptes et chaque position en occupe deux.
+MAX_OUVERTS = 45 if os.environ.get("PAPIER_GD_REGLE") == "large" else 25
 
 # EMISSION VERS LE MOTEUR, inerte par defaut. Mise a 1, chaque ticket pris ecrit AUSSI une ligne dans
 # la table `decisions` du moteur, avec un `model_version` a part : c est la SEULE chose qui separe deux
@@ -119,7 +122,8 @@ def schema(c):
                        ("decision", "jetons_2s REAL"), ("decision", "jetons_5s REAL"),
                        ("decision", "jetons_10s REAL"),
                        ("issue", "sol_recu REAL"), ("issue", "net_reel REAL"),
-                       ("issue", "impact_sortie REAL")):
+                       ("issue", "impact_sortie REAL"), ("issue", "jalons TEXT"),
+                       ("issue", "sol_recu_4min REAL"), ("issue", "net_reel_4min REAL")):
         try:
             c.execute("ALTER TABLE %s ADD COLUMN %s" % (table, col))
         except Exception:  # noqa: BLE001
@@ -218,6 +222,32 @@ def tendance(t_dec):
 
 
 # --- la boucle ------------------------------------------------------------------------------------
+
+# En mode large on suit jusqu a 30 MINUTES, la duree de detention de la production, et on note des
+# jalons : les prix a plusieurs horizons, et le premier passage par chaque seuil avec le prix qu on
+# obtiendrait 2 s plus tard. Ca permet de rejouer APRES COUP n importe quelle sortie -- la notre
+# (+25 % ou 287 s) comme celle du moteur (x1,5, stop 0,7, echeance 1800 s) -- sur les memes tickets.
+# Sans ca on ne peut comparer que des entrees, et l operateur a raison : la sortie compte autant.
+SUIVI_MAX = 1800 if os.environ.get("PAPIER_GD_REGLE") == "large" else FIN_S
+HORIZONS = (167, 287, 600, 900, 1200, 1500, 1800)
+SEUILS = (1.25, 1.5, 2.0, 0.7)
+
+
+def jalonner(t, prix, age):
+    """Note les horizons franchis et les premiers passages de seuil. Modifie `t` en place."""
+    for h in HORIZONS:
+        if age >= h and ("h%d" % h) not in t["jalons"]:
+            t["jalons"]["h%d" % h] = prix
+    for s in SEUILS:
+        cle = "s%s" % s
+        atteint = prix >= t["p0"] * s if s > 1 else prix <= t["p0"] * s
+        if atteint and cle not in t["jalons"]:
+            t["jalons"][cle] = {"age": round(age, 1), "prix": prix}
+        # le prix REELLEMENT obtenable 2 s apres le franchissement, seule sortie honnete
+        j = t["jalons"].get(cle)
+        if isinstance(j, dict) and "apres" not in j and age >= j["age"] + RETARD:
+            j["apres"] = prix
+
 
 def avancer(p0, declenche, prix, age):
     """La decision de sortie, isolee et SANS effet de bord, pour pouvoir la tester.
@@ -333,10 +363,15 @@ def clore(ici, t, prix, motif):
         if q:
             sol_recu, impact = q[0] / LAMPORTS, q[1]
             net_reel = min(sol_recu / MISE_SOL - 1, PLAFOND)
+    q4 = t.get("q4")
+    sol4 = (q4[0] / LAMPORTS) if q4 else None
+    net4 = min(sol4 / MISE_SOL - 1, PLAFOND) if sol4 else None
     ici.execute("INSERT OR IGNORE INTO issue(pair, brut, net, age_sortie, motif, sommet, ts,"
-                " sol_recu, net_reel, impact_sortie) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                " sol_recu, net_reel, impact_sortie, jalons, sol_recu_4min, net_reel_4min)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (t["pair"], brut, net, time.time() - t["naissance"], motif,
-                 t["sommet"] / t["p0"] - 1, time.time(), sol_recu, net_reel, impact))
+                 t["sommet"] / t["p0"] - 1, time.time(), sol_recu, net_reel, impact,
+                 json.dumps(t.get("jalons") or {}) if t.get("jalons") else None, sol4, net4))
     ici.commit()
     print("papier_gd: %s sortie %s a x%.2f -> %+.2f %% (%+.2f EUR)%s"
           % (t["pair"][:8], motif, prix / t["p0"], 100 * net, MISE_EUR * net,
@@ -356,6 +391,8 @@ def gel_de(ici):
     r = ici.execute("SELECT valeur FROM meta WHERE cle='gel'").fetchone()
     if r:
         GEL = float(r[0])
+    elif "--rapport" in sys.argv:
+        pass                    # un rapport LIT, il n ecrit jamais : il ne doit pas poser un gel
     else:
         ici.execute("INSERT INTO meta VALUES('gel', ?)", (str(GEL),))
         ici.execute("INSERT OR REPLACE INTO meta VALUES('regle', ?)", (REGLE,))
@@ -397,7 +434,23 @@ def main():
                 if p:
                     t["sommet"] = max(t["sommet"], p)
                     t["dernier"] = p
-                t["declenche"], motif = avancer(t["p0"], t["declenche"], p, age)
+                    if REGLE == "large":
+                        jalonner(t, p, age)
+                # La cotation de SORTIE doit se prendre a l horizon qu on compare, pas a la fin du
+                # suivi : en mode large la position est gardee 30 min pour pouvoir rejouer la regle
+                # du moteur, mais la regle de production qu on veut comparer vend a 4 MINUTES. Sans
+                # cette cotation-la, `net_reel` mesurerait une detention de 30 min qu on met en face
+                # d un calcul a 4 min -- deux durees differentes, comparaison fausse.
+                if REGLE == "large" and t.get("jetons") and "q4" not in t and age >= FIN_S:
+                    try:
+                        t["q4"] = coter(t["mint"], SOL_MINT, t["jetons"])
+                    except Exception:  # noqa: BLE001
+                        t["q4"] = None
+                if REGLE == "large":
+                    # on ne ferme qu a l horizon le plus lointain : la sortie se rejoue apres coup
+                    motif = "suivi complet" if age >= SUIVI_MAX else None
+                else:
+                    t["declenche"], motif = avancer(t["p0"], t["declenche"], p, age)
                 if motif:
                     net = clore(ici, t, p or t["dernier"], motif)
                     if net <= SEUIL_PAUSE:
@@ -506,7 +559,7 @@ def main():
                 for retard, col in ((2.0, "jetons_2s"), (5.0, "jetons_5s"), (10.0, "jetons_10s")):
                     recotes.append({"pair": pair, "mint": mint, "quand": time.time() + retard, "col": col})
             ouverts.append({"pair": pair, "naissance": naissance, "comptes": comptes, "p0": p[0],
-                            "sommet": p[0], "dernier": p[0], "declenche": None,
+                            "sommet": p[0], "dernier": p[0], "declenche": None, "jalons": {},
                             "mint": mint, "jetons": q[0] if q else None})
             rid = emettre(pair, mint, n_ach, coffre, tend, age, p[0])
             print("papier_gd: ENTREE %s · %d acheteurs · coffre %.1f SOL · tendance %+.4f · a %.0f s · %d ouverte(s)%s"
@@ -521,9 +574,14 @@ def rapport_large(ici):
     C est le seul montage qui permet de les comparer : un test par regle verrait des pools
     differents, donc on comparerait des periodes de marche plutot que des regles.
     """
-    lignes = [dict(zip(("t", "fin", "n_ach", "coffre", "tend", "net"), r)) for r in ici.execute(
-        "SELECT d.t_dec, d.naissance + 289, d.acheteurs, d.coffre, d.tendance, i.net"
-        " FROM decision d JOIN issue i ON i.pair = d.pair WHERE d.pris = 1 ORDER BY d.t_dec")]
+    lignes = []
+    for t_dec, fin, n_ach, coffre, tendance, p0, jal, net_reel, net4 in ici.execute(
+            "SELECT d.t_dec, d.naissance + 289, d.acheteurs, d.coffre, d.tendance, d.prix_entree,"
+            " i.jalons, i.net_reel, i.net_reel_4min FROM decision d JOIN issue i ON i.pair = d.pair"
+            " WHERE d.pris = 1 ORDER BY d.t_dec"):
+        j = json.loads(jal) if jal else {}
+        lignes.append({"t": t_dec, "fin": fin, "n_ach": n_ach, "coffre": coffre, "tend": tendance,
+                       "p0": p0, "j": j, "net_reel": net_reel, "net4": net4})
     if not lignes:
         n = ici.execute("SELECT COUNT(*) FROM decision WHERE pris=1").fetchone()[0]
         print("collecte large : %d tickets pris, aucun termine pour l instant" % n)
@@ -545,28 +603,89 @@ def rapport_large(ici):
             att.append(l)
         return pris
 
+    def issue_de(l, sortie):
+        """Le rendement NET selon la regle de sortie choisie, reconstruit depuis les jalons.
+
+        C est ce qui permet de comparer nos regles A CELLES DE LA PRODUCTION sur les memes tickets :
+        `tg` = tenir 240 s puis vendre (telegram_rapide, TENUE_S=240), `moteur` = x1,5 ou stop 0,7
+        ou 1800 s (carnet solana). Le prix retenu apres un franchissement est toujours celui d au
+        moins 2 s plus tard, jamais celui du declenchement.
+        """
+        j, p0 = l["j"], l["p0"]
+        if not j or not p0:
+            return None
+        fin = j.get("h287")
+        if sortie == "tg":                       # 4 minutes pile, la regle de production
+            px = fin
+        elif sortie == "tp25":                   # la notre : +25 % sinon 287 s
+            s = j.get("s1.25")
+            px = (s.get("apres") or s.get("prix")) if isinstance(s, dict) else fin
+        elif sortie == "moteur":                 # x1,5, stop 0,7, echeance 1800 s
+            haut, bas = j.get("s1.5"), j.get("s0.7")
+            aa = haut.get("age") if isinstance(haut, dict) else None
+            ab = bas.get("age") if isinstance(bas, dict) else None
+            if aa is not None and (ab is None or aa <= ab):
+                px = haut.get("apres") or haut.get("prix")
+            elif ab is not None:
+                px = bas.get("apres") or bas.get("prix")
+            else:
+                px = j.get("h1800") or j.get("h1500") or j.get("h1200") or fin
+        else:
+            px = fin
+        if not px:
+            return None
+        return min(px / p0 - 1, PLAFOND) - COUT
+
     G = lambda l: (l["n_ach"] or 0) <= FOULE_MAX
     D = lambda l: (l["tend"] or 0) > 0
-    print("   %-28s %5s %11s %10s %11s %9s" % ("regle", "n", "par ticket", "total", "sans best", "gagnants"))
-    for nom, f, p in (("coffre seul", lambda l: True, False),
-                      ("coffre + pause", lambda l: True, True),
-                      ("G  + foule <= 74", G, True),
-                      ("D  + tendance > 0", D, False),
-                      ("D+F  tendance + pause", D, True),
-                      ("G+D  les trois", lambda l: G(l) and D(l), True)):
-        sel = [l for l in lignes if f(l)]
+    PROD = lambda l: (l["n_ach"] or 0) >= 75          # le plancher du carnet solana en service
+    print("   %-34s %5s %11s %10s %11s %9s" % ("regle", "n", "par ticket", "total", "sans best", "gagnants"))
+    for nom, f, p, sortie in (
+            ("PROD moteur : >=75, x1,5/1800 s", PROD, False, "moteur"),
+            ("PROD telegram : sortie 4 min", lambda l: True, False, "tg"),
+            ("coffre seul + sortie 4 min", lambda l: True, False, "tg"),
+            ("coffre seul + gain +25 %", lambda l: True, False, "tp25"),
+            ("coffre + pause", lambda l: True, True, "tp25"),
+            ("G  + foule <= 74", G, True, "tp25"),
+            ("D  + tendance > 0", D, False, "tp25"),
+            ("D+F  tendance + pause", D, True, "tp25"),
+            ("G+D  les trois", lambda l: G(l) and D(l), True, "tp25")):
+        for l in lignes:
+            l["net"] = issue_de(l, sortie)
+        sel = [l for l in lignes if f(l) and l["net"] is not None]
         pris = pause(sel) if p else sel
         if not pris:
-            print("   %-28s aucun ticket" % nom)
+            print("   %-34s aucun ticket" % nom)
             continue
         v = sorted((l["net"] for l in pris), reverse=True)
         moy = sum(v) / len(v)
         sans = (sum(v[1:]) / (len(v) - 1)) if len(v) > 1 else float("nan")
-        print("   %-28s %5d %+10.2f %% %+9.0f E %+10.2f %% %8.0f %%" % (
+        print("   %-34s %5d %+10.2f %% %+9.0f E %+10.2f %% %8.0f %%" % (
             nom, len(v), 100 * moy, MISE_EUR * sum(v), 100 * sans,
             100 * sum(1 for x in v if x > 0) / len(v)))
-    print("   Tickets collectes sans filtre autre que le coffre : chaque regle est donc jugee sur")
+    # On compare ce qui est comparable : la cotation REELLE prise a 4 min contre le calcul sur le
+    # prix du pool a 4 min. Comparer la cotation de fin de suivi (30 min) au calcul a 4 min
+    # melangerait deux durees de detention et donnerait un ecart qui ne veut rien dire.
+    paires = [(l["net4"], issue_de(l, "tg")) for l in lignes if l["net4"] is not None]
+    paires = [(a, b) for a, b in paires if b is not None]
+    if paires:
+        reel = sum(a for a, _ in paires) / len(paires)
+        pool = sum(b for _, b in paires) / len(paires)
+        print("\n   ISO-PROD, sur %d tickets ou les deux mesures existent, MEME horizon (4 min) :" % len(paires))
+        print("      aller-retour reellement cote par le routeur : %+.2f %% par ticket" % (100 * reel))
+        print("      calcul sur le prix du pool - 2,62 pts        : %+.2f %% par ticket" % (100 * pool))
+        print("      -> le forfait se trompe de %+.2f point par ticket" % (100 * (reel - pool)))
+    longs = [l["net_reel"] for l in lignes if l["net_reel"] is not None]
+    if longs:
+        print("   (pour information, la meme cotation prise en fin de suivi, 30 min : %+.2f %%)"
+              % (100 * sum(longs) / len(longs)))
+    print("\n   Tickets collectes sans filtre autre que le coffre : chaque regle est jugee sur")
     print("   exactement les memes pools, aux memes instants. Verdict a 300 tickets ou 21 jours.")
+    print("   RESERVE sur les deux lignes PROD : on rejoue leur SORTIE, pas leur entree complete.")
+    print("   Le carnet solana entre a T+1 min sur des criteres DexScreener (liquidite, capitalisation)")
+    print("   qu on n enregistre pas, et telegram_rapide entre entre 55 et 180 s sur un signal Telegram")
+    print("   qui ne se rejoue pas. Ces lignes disent donc ce que LEURS SORTIES valent sur NOS entrees,")
+    print("   ce qui est deja la moitie de la question, mais pas la production a l identique.")
 
 
 def rapport(ici):
