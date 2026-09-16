@@ -3704,6 +3704,752 @@ paramètre `type=buyNow` fonctionne alors que `activityType` et `kind` sont **ac
 renvoyant le flux non filtré. Un garde-fou vérifie désormais que le filtre a bien été applique.
 
 Piste fermée sur un résultat, pas sur un manque de données.
+
+### 3.81 — Aucun carnet n'a jamais eu d'espérance positive : j'ai mis de l'argent sur un contraste, 2026-09-15
+
+**Le réel est arrêté** le 15/09 à 07h42 à la demande de l'opérateur (`telegram_rapide.mode` et
+`execution.mode` en `paper`). Carnet réel du 12 au 15/09 : **−436,06 EUR sur 229 tickets** ; les deux
+derniers jours −604,42 EUR. Portefeuille de l'opérateur : ~800 EUR devenus ~185.
+
+#### 1. L'erreur de fond, trouvée en confrontant le simulateur au réel
+
+Simulation complète, 1 180 jetons du 12 au 14/09 (base ancienne), coût d'exécution MESURÉ en chaîne
+sur nos 227 tickets (prix payé et encaissé contre prix du pool) :
+
+    groupe             simulé, avant coût   coût réel   espérance        à 30 EUR/ticket
+    propre (516)          +0,004 / euro       −0,010     −0,006 / euro      −0,17 EUR
+    telegram (66)         +0,010 / euro       −0,079     −0,069 / euro      −2,07 EUR
+    autre (596)           −0,075 / euro
+
+**Le filtre propre a été validé sur son CONTRASTE (+0,080 contre le reste), jamais sur son niveau,
+qui est nul.** J'ai mis de l'argent sur « perd moins que les autres », pas sur « gagne ». La règle
+§6 « un filtre se juge sur le contraste » est vraie pour JUGER UN FILTRE ; elle est fausse pour
+décider d'ENGAGER DE L'ARGENT, qui ne dépend que du niveau après coûts réels. Telegram : les chiffres
+positifs venaient du 12/09 (+0,121) et du 13/09 (+0,179), le 14/09 fait −0,281 ; et le simulateur
+comptait 2,4 % de péage quand le réel en coûte 8 points de plus.
+
+Hypothèse vérifiée et FAUSSE : le simulateur n'écarte pas les vidages (2 exclusions sur 1 180
+candidats ; 10,1 % de vidés simulés côté propre contre 15,2 % réels).
+
+#### 2. La perte, c'est la traîne : 15 % de vidages à −81 %
+
+Carnet propre, 145 tickets réels : 22 vidages (r ≤ −0,5) = 86 % de la perte de la nuit. Non-vidés
++11 % en moyenne, vidés −81 % : **point mort à 11,9 % de vidages**, mesuré 15,2 % (IC 95 % 10,2-21,9).
+Gain moyen du 15/09 +3,76 EUR contre perte moyenne −18,75 : il fallait 83 % de gagnants, on en a 67.
+
+- **Rien ne les sépare à l'entrée** : 18 variables (pool, hausse, hausse 30 s, écart au plus haut,
+  volatilité, k, part de l'offre dans le pool, âge, fraîcheur, twitter, site, description, créateur
+  récidiviste, symbole/nom déjà vus, refus du garde-fou, heure). AUC par permutation + BH q=0,10 : la
+  meilleure à 13 % de hasard. Puissance : avec 22 événements seule une AUC > 0,63 est détectable.
+- **Les « 3 signes » n'en font que 2** : prix +0,7 % et réserve SOL +0,35 % sont en désaccord sur 1
+  ticket sur 223 — à produit constant, prix ∝ réserve².
+- **Un vidage est une cascade** : juste avant, le jeton est AU-DESSUS de notre prix (+1,2 % médiane) ;
+  puis −84 % entre deux lectures de 10 s. Première grosse vente −24 % (médiane), 4 à 22 vendeurs
+  distincts ensuite. Pas un retrait de liquidité (k −12 % au creux). La première vente fait souvent
+  5 à 37 % de l'offre en UNE transaction (HIKKO 37,5 %, cashcaton 20,3 %, SharkCAT 16,5 %).
+- **Ce n'est pas l'exécution** côté propre : au prix du pool −0,021/euro, réel −0,030. Côté Telegram
+  l'exécution coûte −0,079/euro.
+
+#### 3. Pourquoi « ça monte puis ça crashe »
+
+- **Telegram : vraie dégradation** (permutation de l'ordre : 0,8 %). Le taux de vidage ne bouge pas ;
+  ce sont les GAGNANTS qui fondent (hausse médiane des non-vidés +71 % au premier bloc, +1 à +5 %
+  ensuite). Et la mise a été montée à 113 EUR pile à ce moment : à 30 EUR constants le carnet
+  Telegram ferait +65,90 EUR au lieu de −248,29. Les hausses de mise ont coûté 314 EUR.
+- **Propre : compatible avec le hasard** (11,7 %) — même prime, mêmes hausses du début à la fin. Le pic
+  à +115,68 EUR après 23 tickets survient dans 16 % des permutations : c'est la forme d'une
+  distribution à petits gains et traîne à −90 %.
+- Point commun : on lance une stratégie à la fin d'une bonne série, puis on monte la mise.
+
+#### 4. Tout ce qui a été testé pour limiter la perte, et fermé
+
+- **15 règles de stop** rejouées sur les 227 chemins avec le coût réel de chaque ticket (rejeu calé :
+  règle en place −131,74 contre −132,60 réel) : aucune positive, même en vente instantanée. Couper au
+  premier changement de signe −200 EUR, sous le prix d'achat −265, tenir 30 s −74.
+- **Vente sur cascade** (lecture du pool à la seconde, `intel/engines/vente_cascade.py`, 17 tests) :
+  au seuil 30 % on sort à −57 % (propre) / −78 % (Telegram) en vendant 2 s après le signal. P&L
+  rejoué +43 EUR sur 227 tickets, mais **+123,52 sur la première moitié et −80,50 sur la seconde**,
+  probabilité d'être positif 65 %. Seuils plus bas pires (20 % : −611 EUR). Déployée en live à 07h09
+  AVANT ce test — faute signalée par l'opérateur. Nos ventes réelles s'inscrivent en chaîne ≤ 2 s
+  après la décision dans 97 % des cas.
+- **Acheter après un crash** : 927 crashs ≥ 50 % en une lecture, achat à la lecture suivante —
+  médiane −4,6 % à 30 s, −45 % à 240 s, avant coûts. Le prix continue de tomber.
+- **Entrer plus tôt ou plus tard** (première lecture, 30, 60, 90, 120 s × sorties 30-480 s × 4
+  groupes, coûts 3 % / 8 %) : 7 combinaisons positives sur 100, la meilleure (+0,232) portée par UN
+  ticket à ×316 sur un pool de 2,5 SOL ; sans lui −0,054. Tout négatif.
+
+#### 5. Ce qui reste
+
+Une seule variable jamais mesurée et qui a une raison mécanique d'exister : **qui détient le stock à
+l'instant d'acheter**. Non testable sur l'historique (les vendeurs ont vendu, les soldes actuels ne
+disent plus rien) : enregistrement vers l'avant sur chaque candidat, acheté ou non.
+
+**Vérifié sur l'historique le 15/09 (`vendeurs.py`)** : dans 22 vidages lisibles, le premier gros
+vendeur détenait DÉJÀ au moins 80 % de ce qu'il a vendu au moment de notre achat dans **15 cas sur
+22** (médiane 100 %). Son stock à notre achat : médiane 7,3 % de l'offre, ≥ 5 % dans 13 cas. Son
+compte de jetons est né entre T−1 s et T+25 s après la migration : il a acheté dans les toutes
+premières secondes. Telegram : 9 vidages sur 11 portaient un vendeur à 7-41 % visible à l'entrée.
+Propre : plus éclaté — 3 sur 11 à ≥ 5 %, et 6 vendeurs sur 11 ont acheté APRÈS nous (T+72 à T+297 s),
+donc invisibles à l'entrée. Ce qui manque pour conclure : la fréquence de tels détenteurs chez les
+jetons qui ne se vident PAS. C'est ce que mesure `detenteurs.py`, verdict figé dans
+`detenteurs_verdict.py` (200 tickets papier, deux moitiés, niveau après coût réel).
+
+Note de méthode : `pool_quote` n'est remplie par AUCUN moteur — c'est `pools_propres.py` lancé à la
+main (§3.74). Le 15/09 j'ai annoncé à tort qu'elle avait « cessé d'être remplie » après l'échange de
+base. Relancée : 412 pools étiquetés.
+
+### 3.82 — Qui détient le stock, et ce que ça rapporte : rien d'assez gros, 2026-09-15 après-midi
+
+Objectif fixé par l'opérateur : **50 EUR par jour**, soit ~150 tickets à 30 EUR et **+1,1 % net par
+ticket**. Tous les tests ci-dessous ont leurs règles écrites AVANT le calcul, coupure recherche /
+jugement par date de naissance, niveau après coût réel.
+
+**D'où vient le stock des vidages** (relu transaction par transaction sur 6 vidages) : achat du dernier
+morceau de courbe pump.fun à T−1 s (HIKKO 52 %, GOLDGOOSE 51 %), ou TRANSFERT vers un portefeuille neuf
+entre T+0 et T+12 s (cashcaton 20 %, BBRAIN 11 %, CHILLGPT 11 %, TROLLGPT 48 %). Rien n'est acheté dans
+le pool : relire les transactions du POOL ne montre rien, relire celles du JETON sur [T−5, T+30 s] montre
+le vendeur avec le bon montant (`premieres_secondes.py`, 1 885 jetons reconstruits via Helius
+`getTransactionsForAddress`, ordre chronologique, ~1 s par jeton).
+
+**Le sac ne prédit pas le vidage** (`sacs_verdict.py`) : le carnet propre est fait de lancements où UN
+portefeuille détient 79,3 % de l'offre (toute la courbe) — médiane 79,3 % chez les vidés comme chez les
+autres sur nos tickets réels. Simulé propre, 581 jetons : AUC 0,441 (légèrement inverse). NON.
+
+**Récidive** : 908 jetons à détenteur ≥ 5 %, **811 portefeuilles distincts** — les orchestrateurs
+prennent un portefeuille neuf à chaque fois. Au niveau du **financeur** (`financeurs.py`, 604 financeurs,
+plateformes > 25 détenteurs écartées) le signal existe sur les deux moitiés : financeur qui a déjà vidé →
+31,0 % / 40,6 % de vidages contre ~11 %. Mais il ne touche que 7 % du carnet propre : +1 centime par euro.
+
+**Combinaison** (`combinaison_verdict.py`) : filtre détenteur/financeur + vente sur cascade. Simulé propre
+−2,5 → +0,8 % (recherche), +2,4 → +3,8 % (jugement) : chaque effet ajoute sur les deux moitiés. MAIS
+**la simulation surestime le réel de 3,7 points par euro sur les mêmes jetons** (123 tickets : réel −1,9 %,
+simulé +1,7 %), et 37 tickets réels hors de la population simulée perdent −18 %. Rejouée sur l'argent réel :
+−271 → −210 EUR. NON.
+
+**Acheter la hausse confirmée** (`hausse_confirmee.py`) : née de 15 tickets réels achetés > +10 % au-dessus
+de la lecture à 60 s (+26 % par euro sur les deux moitiés). Sur 105 jetons propres simulés : recherche
+−12,6 %, jugement +2,9 % à coût prudent (sans best −0,6 %), **vidages 23-29 % au lieu de ~11 %**. Sur tous
+les jetons, négatif partout. Les 15 tickets étaient de la chance. NON.
+
+**Bilan du 15/09** : sur ce marché, à notre vitesse et sans position d'initié, aucune règle testée
+n'atteint +1,1 % par ticket après coûts sur les deux moitiés — 18 variables d'entrée, 15 stops, vente sur
+cascade, achat après crash, fin de cascade, 100 combinaisons d'entrée/sortie, sac, récidive portefeuille
+et financeur, combinaison, hausse confirmée. Reste en cours, sur données neuves : `detenteurs.py` (soldes
+réels à T+60 s), déjà affaibli par le résultat historique sur le sac.
+
+### 3.83 — Audit du code : les prix du projet étaient faux, et la correction ne crée aucun avantage, 2026-09-15 soir
+
+Audit demandé par l'opérateur (« creuse bien le code, tout le code, il y a d'autres problèmes »), après
+qu'il a fallu son insistance pour trouver les comptes de jetons jamais fermés. Chaque point vérifié
+sur la chaîne avant d'être retenu.
+
+**DÉFAUT 1 — LA RÉSERVE VIRTUELLE (majeur, données).** Un pool PumpSwap issu d'une migration pump.fun
+porte à l'octet 245 de son compte (301 octets) un u64 de **17,5845 SOL**, et échange au prix
+**(SOL du coffre + 17,5845) / jetons**. Réserve implicite recalculée sur nos trades : 17,94 SOL en
+médiane sur 239 achats, 17,27 sur 239 ventes (l'écart = les frais) ; une formule à 0,25 % de frais colle
+aux jetons reçus à 1 % près. 3 423 pools à 17,5845, 1 883 à 0 (vérifié : ils échangent bien au prix du
+coffre), 351 à d'autres valeurs non vérifiables (écartés). `prix_chaine.py` calculait SOL du coffre /
+jetons : **prix trop bas de 17,6/(q+17,6), soit −18 % sur un pool frais de 80 SOL, −1 % à 1 400 SOL.**
+Conséquences : la « prime à l'entrée » (+5,5 % propre, +24 % Telegram, §3.81) était ce biais, pas un
+coût ; le garde-fou `max_ecart_pool_pct` refusait les pools frais en croyant la cotation trop chère ;
+toutes les simulations exagéraient les gains (pool qui grossit) et les pertes (pool qui se vide).
+
+**DÉFAUT 2 — LE RETARD (données).** `getMultipleAccounts` sans `commitment` = « finalized » :
+**31 slots, 12,4 s** derrière la chaîne, horodaté à l'heure de lecture. `processed` : 0 slot.
+
+**DÉFAUT 3 — LES COMPTES DE JETONS JAMAIS FERMÉS (argent).** 291 comptes vides, **0,4579 SOL récupérés**
+le 15/09 (291 fermetures confirmées). Coût : 0,15 EUR par trade, 0,50 % à 30 EUR, compté en perte.
+
+**COÛT RÉGLABLE.** Frais de priorité 0,0005 SOL par transaction : 0,00101 SOL par aller-retour mesuré,
+0,32 % à 30 EUR.
+
+**VÉRIFIÉ ET SANS PROBLÈME** : aucun sandwich (0 sur 221 achats et 222 ventes lus bloc par bloc ; 137
+achats sont la première transaction du pool dans leur bloc, 55 suivent un autre robot qui achète le même
+jeton) ; aucun achat hors carnet ni rachat en double sur 568 transactions ; une seule transaction en
+échec ; ventes complètes (aucun jeton resté) ; migrations détectées en 1 s (p90 2 s) ; cycles réguliers
+(10 s, p99 12 s) ; 98,6 % du SOL payé entre dans le pool.
+
+**LE SIMULATEUR CORRIGÉ COLLE AU RÉEL** (`calibration_corrigee.py`, 236 tickets) :
+
+    groupe      simulation d'avant   simulation corrigée   réel      écart restant
+    propre            −2,3 %               −3,3 %          −5,8 %      −2,5 pts
+    telegram         +10,7 %               +4,1 %          +1,3 %      −2,8 pts
+    tous              +2,0 %               −0,8 %          −3,5 %      −2,6 pts
+
+Écart réel − corrigé ticket par ticket : médiane −2,4 points, p25 −3,1, p75 −1,3 — un coût fixe (dépôt
+0,5 + priorité 0,3 + frais de pool ~1,7). Sur Telegram, les deux tiers de l'optimisme venaient des prix.
+
+**REFAIT AVEC LES PRIX CORRIGÉS** (`refaire_corrige.py` : prix échangeable, lectures décalées de 12 s,
+exécution à +2 s, coût 2,0 et 2,5 points, 3 groupes × entrée 30/60/90 s × détention 60-480 s) : **aucune
+combinaison positive sur les deux moitiés.** Règle en place (60 s / 240 s, coût 2,0) : propre −4,0 % /
+−2,5 % ; telegram +11,6 % / −14,1 % ; autres −4,9 % / −6,9 %. La correction ne révèle aucun avantage
+caché : elle retire un avantage illusoire.
+
+**Corrigé dans le code** (non déployé au moment d'écrire) : `prix_chaine.py` lit la réserve virtuelle
+(`reserve_virtuelle()`, octet 245, ignorée au-delà de 50 SOL), écrit `prix_sol` = prix échangeable et une
+colonne `reserve_virtuelle`, lit en `processed` ; même correction dans `vente_cascade.py` et
+`detenteurs.py`. Tests : `test_reserve_virtuelle.py`. **Tout `prix_sol` antérieur au déploiement est le
+rapport des coffres** : le corriger avec `data/recherche/reserve_virtuelle.json` et décaler de 12 s.
+
+### 3.84 — Grand balayage sur prix corrigés : rien ne survit à trois tranches, 2026-09-15 soir
+
+Demande de l'opérateur : « trouve une stratégie avec ce nouveau simulateur, tente tout ». Protocole
+unique pour tout : tranches chronologiques par naissance du pool (RECHERCHE 60 %, TRI 20 %, TEST FINAL
+20 % lu une fois), rendement net de coût réel, plafonné à +300 % pour les moyennes, contrôle par
+rendements mélangés. Scripts : `grand_balayage_table.py`, `grand_balayage.py`, `grand_balayage_ml.py`,
+`grand_balayage_sorties.py`, `grand_balayage_long.py`, `verif_long_ml.py`.
+
+**Table** : 27 135 décisions (3 157 pools × âges 20-600 s × durées 30-900 s), coût 1,7 % + impact.
+Sans filtre (60 s / 240 s) : niveau +2,9 % (10/09), −0,4 % (12/09), −3,2 % (13/09), −3,3 % (14/09),
+−11,8 % (15/09) ; **médiane positive tous les jours (+0,8 à +1,9 %)** ; vidages 11-14 %, puis 22,5 % le 15/09
+avec des pools cinq fois plus petits (93 SOL médians). Le régime a changé dans la tranche finale.
+
+- **Règles simples** (une et deux variables) : strict, 64 candidats contre 4 au hasard, 1 survivant au tri,
+  −10,6 % au test. Large : 1 177 candidats, 73 survivants au tri (28 au hasard) ; **les 25 meilleurs sont
+  TOUS négatifs au test** (−4 à −24 %). De la structure qui ne dure pas.
+- **LightGBM, court terme** : le VIDAGE est prévisible hors échantillon (AUC 0,79 tri, 0,82 test, contre
+  0,56 variable par variable) — mais n'acheter que les plus faibles risques rend −1,9 % / −2,2 à −2,9 % :
+  les jetons qui ne se vident pas ne bougent pas assez pour couvrir 1,9 % de coût. Le gain du marché est
+  dans les rares gros mouvements, qui sont aussi les plus risqués. Régression du rendement : corrélation
+  +0,19 à +0,28 hors échantillon, stratégies toutes négatives au test.
+- **Sorties dynamiques** (TP 5-100 %, SL −10 à −50 %, exécution à la lecture suivante) : un premier passage
+  a donné 20 « GO » à +112 %… par BIAIS DE SURVIE (un chemin trop court rendait NaN sauf si le TP était
+  touché). Corrigé : **0 règle ne survit** à recherche + tri.
+- **Horizons longs** (DexScreener, 7 449 pools suivis 24 h ; son prix inclut la réserve virtuelle, SOL/USD
+  implicite constant à 100-102 $) : tenir des heures rend −8 à −43 % en moyenne ; règles : 0 candidat.
+  LightGBM 8 h top 10 % : tri +5,6 %, test +14,0 %, corrélation +0,55 — **effondré à la vérification** :
+  sortie au dernier prix connu → +0,5 % ; un trade par jeton → −10,3 % ; 27 modèles sur 50 entraînés sur du
+  bruit font aussi bien ; 0 réglage sur 9 positif au test.
+
+**Conclusion** : sur ces cinq jours, avec des prix justes et le coût réel, aucune stratégie — règle, modèle,
+sortie ou horizon — ne tient sur la tranche jamais vue. Deux pièges de simulation ont été attrapés AVANT
+d'être annoncés (survie des chemins courts, doublons de jetons) ; ils auraient produit deux faux « GO ».
+Limite honnête : cinq jours et un changement de régime le dernier jour. Le collecteur corrigé accumule
+maintenant des données justes ; toute la chaîne est scriptée et se relance à l'identique.
+
+### 3.85 — Les séries existent (régime de quelques heures), et les effets s'additionnent sans devenir positifs, 2026-09-15 nuit
+
+L'opérateur : « je constate plusieurs bons coups qui se suivent et plusieurs mauvais qui se suivent, il y a
+pas une cause ? » (`series.py`, `combinaison_finale.py`, prix corrigés, coût réduit 1,25 % + impact/2).
+
+**Carnet réel** (244 tickets) : test des séries z = −0,57, compatible avec le hasard ; mais P(gagne) 63 %
+contre 71 % après 2 gagnants et **78 % après 3 gagnants terminés** (n = 65).
+
+**Population** (2 965 décisions) : corrélation résultat passé / suivant +0,04 (hasard global p = 0,026,
+intra-jour p = 0,06 à 0,26 — surtout un effet de période). **Coupe-circuit à seuil fixe** (moyenne des 50
+derniers résultats connus > 0) : on trade +2,8 % / −1,6 % / −1,1 %, à l'arrêt −2,8 % / −4,9 % / −7,4 %
+(recherche / tri / test) : **écart +5,6 / +3,3 / +6,3 points, même signe sur les trois tranches.**
+
+**Combinaison régime + classifieur de vidage + durée** (81 combinaisons figées) : les effets s'additionnent —
+entrée 45 s, sortie 120 s : rien −1,1 / −2,6 / −5,2 % ; régime seul +1,8 / −0,6 / −4,5 ; risque seul
++1,5 / −2,0 / −3,7 ; **les deux +5,0 / +0,7 / −2,0 %, vidages 13 → 4 %, 12 → 5 %, 18 → 8 %**. Meilleure au test :
+45 s / 240 s ≈ 0,0 %. Retenue (meilleur min recherche/tri) : test −2,0 %, NON ; 10 tirages sur 50 avec un
+régime sans information temporelle font aussi bien au test.
+
+**Taille des pools récents comme régime** (connue immédiatement) : le lien par jour (11/09 148 SOL −4,6 % ;
+15/09 93 SOL −11,1 % ; 10/09 518 SOL +4,5 %) ne tient pas décision par décision. NON. Les pools « sans
+réserve virtuelle » sont marginaux (3 à 22 décisions par tranche) : la dégradation du 15/09 est dans le
+type standard.
+
+**Conclusion** : on sait rendre la stratégie beaucoup moins mauvaise (+3 à +6 points, vidages divisés par deux
+hors échantillon), pas gagnante sur la tranche jamais vue, dont le marché part de −5 %. Deux questions que
+seules des données neuves trancheront : le régime du 15/09 est-il la nouvelle norme ? et la combinaison
+tient-elle en papier, en temps réel ?
+
+### 3.86 — TEST PAPIER VERS L'AVANT, pré-enregistré : départ le 15/09 à 12h24 UTC, verdict le 29/09
+
+Accord de l'opérateur (« ok ») pour brancher la combinaison §3.85 en papier. `intel/research/papier_combo.py`,
+processus séparé du moteur (lecture seule de sa base, écrit dans `/app/db/papier_combo.sqlite`), aucun ordre.
+
+- **Population** : tout pool suivi par le collecteur corrigé (réserve virtuelle, lecture `processed`), première
+  lecture ≤ 32 s (équivalent en temps réel du « ≤ 20 s d'âge vrai » de l'historique retardé de 12 s — ajusté
+  avant toute issue jugée), ordre de 0,31 SOL ≤ 15 % du pool.
+- **Décision à 45 s**, variables de prix identiques à la table (écart 1e-16 sur 400 pools). **Risque** :
+  `modele_vidage.json`, LightGBM variables de prix seulement (AUC hors échantillon 0,78 / 0,82, même que le
+  modèle complet), évalué en Python pur (`arbres.py`, écart 7e-16 avec LightGBM), seuil p80 = 0,2694.
+  **Régime** : moyenne des 50 derniers résultats connus (décision 60 s, sortie 240 s, coût réduit) > 0.
+- **Entrée** lecture ≈ 47 s ; **sorties** 167 s et 287 s. **Coûts** : réduit 1,25 % + impact/2 ; réel actuel
+  1,7 % + impact + 0,5 %.
+- **CRITÈRE ESSENTIEL** (régime ET risque, H = 120 s, coût réduit), jugé le **29/09** : moyenne ≥ +1,1 %, sans
+  son meilleur ticket > 0, positive sur les deux moitiés. Sinon : on arrête ce marché. Secondaire : H = 240 s.
+  Attente honnête écrite au départ : autour de −1 % à 0 % (historique du modèle allégé : tri −0,5 %, test −2,3 %).
+- Rapport : `python -m intel.research.papier_combo --rapport`. Le processus s'arrête si le conteneur redémarre.
+
+### 3.87 — Copier les portefeuilles gagnants : protocole pré-enregistré, 2026-09-15 après-midi
+
+Recherche internet demandée par l'opérateur (sources dans la conversation) : aucune stratégie documentée ne
+fait 50 €/jour sur ~1 000 € — l'arbitrage de financement rapporte 3-12 %/an net sur BTC/ETH (20-60 % sur les
+petites), la tendance intraday BTC un Sharpe ~1,6 brut (≈ 32 %/an à 20 % de volatilité, ~0,9 €/jour), l'heure
+22h UTC +0,07 % contre 0,10 % de frais taker. Sur pump.fun, trois papiers confirment ce qu'on a mesuré : un
+modèle de graduation passe d'AUROC 0,86 à **0,46** sur la période suivante (arXiv 2607.02823) ; les réseaux de
+snipers (1 012 groupes) n'apportent **aucun SOL entrant mesurable** une fois leurs propres achats retirés
+(+6,3 %, IC [−0,5 ; +15,1], arXiv 2607.02795). La seule idée du marché jamais testée ici : **copier des
+portefeuilles**. L'opérateur écarte les marchés liquides (« 1 € par jour autant faire du buy and hold »).
+
+- **Données** : `copie_collecte.py` relit chaque échange réussi des 900 premières secondes des 3 157 pools du
+  balayage (Helius `getTransactionsForAddress` sur le pool, filtre `status: succeeded` — sans ce filtre, 60
+  pages de 100 transactions ne dépassaient pas 101 à 432 s sur 5 pools de la sonde ; avec, les mêmes pools
+  sont lus jusqu'à 900 s). Volume machine : jusqu'à 16 144 transactions réussies en 15 min sur un pool, dont
+  2 508 changent les coffres. Prix à la transaction vérifiés : écart médian **0,0000** avec
+  `solana_prix_chaine` sur 15 pools. Coût ≈ 390 crédits par pool (10 par 100 transactions), ~1,2 M au total.
+- **Piège trouvé à la sonde** : la création du pool et les mouvements de liquidité (les deux coffres bougent
+  dans le même sens) passaient pour des échanges — une « vente » de 4 948 SOL. Corrigé avant la collecte.
+  Reste ~30 achats par pool sans acheteur visible (compte créé et fermé dans la transaction) : non copiables,
+  ignorés. Le rendement d'une copie vient du PRIX, pas du SOL attribué.
+- **Protocole figé** dans la docstring de `copie_verdict.py` : retard 3 s, sortie à la première vente du
+  meneur + 3 s ou à 900 s, coût du balayage, grille de 12 combinaisons (score propre/copie × k {3,5,10} ×
+  seuil {0, +10 %}), sélection sur TRI, test lu une fois avec meneurs ré-appris sur RECHERCHE + TRI ; GO si
+  moyenne ≥ +1,1 %, sans le meilleur > 0, n ≥ 30, positive sur chaque moitié ; témoins « tous les
+  portefeuilles » et 50 tirages de meneurs au hasard.
+- Attente honnête écrite avant : négative — le copieur achète toujours après son meneur, et des bots piègent
+  les copieurs (arXiv 2601.08641).
+
+**RÉSULTAT (15/09 ~18h, `data/recherche/copie/verdict.txt`) : NON.** 2 979 pools lus (169 tronqués à plus de
+20 000 transactions, 9 en erreur), 736 449 portefeuilles, ~1,69 M crédits.
+- Sélection sur TRI : 11 combinaisons sur 12 négatives (−2,2 à −8,0 %) ; retenue score propre, k ≥ 10, > +10 % :
+  TRI +1,2 % (n = 213, sans le meilleur +0,4 %). Témoin « tous » : −3,1 à −3,5 %.
+- **TEST FINAL** (411 meneurs ré-appris) : **−6,25 %** (n = 218), sans le meilleur −7,1 %, médiane −2,3 %, moitiés
+  −3,4 / −9,1 %. Retard 1 s −7,1 %, 6 s −4,7 % : la vitesse n'est pas la cause. Témoin « tous » −7,1 % ; 10
+  tirages au hasard sur 50 font aussi bien.
+- **Mais la PERSISTANCE est réelle, hors échantillon** (rendement propre sur TRI) : gagnants de RECHERCHE
+  (≥ 10 pools, > +10 %) **+8,8 %** par pool (166 actifs, n = 826) contre **−13,5 %** pour tous et −19,6 % pour les
+  perdants ; ordre identique à k ≥ 5 (+4,0 / −16,3 / −21,5 %). Même ordre dans l'essai préliminaire interne à
+  RECHERCHE (+8,3 / −4,8 / −8,4 %), où un « +15,7 % » par tranche d'âge d'achat s'est révélé être le même jeton
+  compté plusieurs fois (−0,3 % à un trade par jeton) — attrapé avant d'être annoncé.
+- Conclusion : un savoir-faire existe chez quelques centaines de portefeuilles, et il ne se transmet pas par la
+  copie. Étape suivante demandée par l'opérateur : trouver POURQUOI ils gagnent (jetons choisis, moments, sorties,
+  ventes fractionnées), croisé avec le technique et le fondamental, pour en faire une règle à nous. La tranche
+  TEST a servi une fois ici : le test ultime d'une telle règle devra inclure des données neuves (vers l'avant).
+
+### 3.88 — Pourquoi les bons gagnent : ni leurs signaux, ni un modèle de 56 variables ne passent le TEST, 2026-09-15 soir
+
+Demande de l'opérateur : « fais tout ce que tu proposes » (analyse technique et fondamentale croisée).
+
+- **Formule de prix confirmée** sur 364 000 échanges réels (un pool sur dix) : aucun prix payé meilleur que le prix
+  du pool avant l'échange (0,0 %) ; sans réserve virtuelle, le prix payé tombe hors de l'intervalle avant/après
+  (position médiane 51,6 à l'achat, −36,5 à la vente, contre 0,99 et 0,68 avec).
+- **Décomposition des +8,8 %** des bons sur TRI (positions à un seul achat = 68,5 %, +10,0 %) : les renforts ne sont
+  PAS la source (une première lecture l'affirmait, calcul faux, corrigé avant de conclure). L'écart rendement en SOL
+  / rendement au prix du pool est à l'ENTRÉE (leur prix moyen payé sous le prix de fin de seconde) ; un copieur
+  n'y a pas accès. Copie parfaite à la transaction suivante +3,8 %, à 3 s +1,5 %, après coût réel −1,1 %.
+- **Leur rachat sur repli** (260 cas, médianes) : 32 s après l'achat, −13,8 % sous le plus haut, 4 s après une vente
+  de 3,6 SOL (3,8 % du pool). Rendement −1,3 % (54 % gagnants) contre −17,1 % (39 %) pour les autres.
+- **Historique complet des 325 bons** (`bons_historique.py`, 461 759 transactions, ~49 000 crédits) : 159
+  transactions et 17 jetons par jour (médianes), 79 % signées par eux-mêmes ; **courbe pump.fun 37 % des
+  transactions contre PumpSwap 30 %** ; 223 sur 325 achètent au moins un de nos jetons AVANT sa migration.
+- **Étude croisée** (`bons_etude.py` → `etude.pkl`, 23 612 décisions × 56 variables visibles à l'instant : flux
+  transaction par transaction, qualité des portefeuilles tirée des pools terminés avant, fondamental, régime ;
+  `bons_verdict.py`, protocole figé) — TEST FINAL, coût réel : **F1 modèle du rendement −4,3 %** (TRI +11,2 %),
+  **F2 imitation −7,7 %**, **F3 règles des bons −12,0 %** (TRI +6,9 %, 16 hasards sur 20 font aussi bien). NON ×3.
+  Marché sans filtre (45 s / 120 s) : −3,3 / −5,6 / −7,1 %.
+- **Incident** : un premier passage a donné « GO à +108 % » — un commentaire inséré dans la ligne `NON_VARS` avait
+  fait entrer les colonnes de RÉSULTAT dans les variables. Vu dans le diagnostic avant toute annonce ; assertion
+  ajoutée. Une variable de liquidité lue à A + 2 s (fuite de 2 s) avait aussi été remplacée avant le calcul.
+- **Diagnostic stable R et T** : la frénésie perd — quintile le plus actif à 45 s (achats 30 s, acheteurs, volume,
+  volatilité, plus gros achat) −6 à −18 % contre ≈ 0 % pour les plus calmes ; un acheteur dominant perd moins
+  (−1 à −2 % contre −7 à −13 %). Aucun groupe au-dessus de +1,1 % après coût.
+- Le TEST FINAL a maintenant servi deux fois (§3.87, §3.88). Toute règle future devra se valider sur des pools nés
+  après le 15/09.
+- **Où les bons gagnent en ARGENT RÉEL** (historique complet, SOL du portefeuille frais compris, 49 213 positions
+  fermées, transactions à un seul jeton) : total +1 375 SOL / 80 471 engagés (+1,7 %) ; 197 portefeuilles sur 316
+  gagnants, 10 % des portefeuilles font 76 % du gain. **Hors période de sélection** (achats après le 12/09 21h) :
+  courbe → courbe +2,5 % (13 439 SOL), courbe → pool +10,7 % (2 662 SOL, conditionné à la graduation), **total
+  courbe +3,9 %** ; **pool → pool −3,3 %** (8 501 SOL) ; autres DEX −2,2 %. Pendant la sélection : pool +8,0 %,
+  courbe +0,4 %. **Leurs « +8,8 % par pool » (moyenne à poids égal, sans frais, 15 min) ne sont pas de l'argent : en
+  SOL pondéré et frais compris, ils perdent dans les pools après la sélection.** Leur gain réel est sur la courbe
+  pump.fun, avant la migration — une phase que notre moteur n'a jamais tradée.
+
+### 3.89 — La courbe pump.fun : collecte, coûts, réglages, et les injections géantes dans les pools, 2026-09-15 nuit
+
+Accord de l'opérateur (« vas-y ») pour ~500 000 crédits : `courbe_collecte.py` relit chaque échange réussi du
+programme pump.fun, 13/09 00h → 15/09 00h UTC (mesure : 1 266 à 1 727 transactions par minute, ~115 000 par heure).
+- **Formule** : prix = (30 + SOL de la courbe) / (jetons de la courbe + 73 M), exacte (erreur médiane 0,0) pour 1 099
+  jetons sur 1 722 ; fin de courbe à 85,01 SOL. 621 jetons à autres réglages (ajustement impossible, erreur médiane
+  80 %) ne dépassent quasi jamais 10 SOL (15) ni 30 SOL (1) : exclus au moment de la décision.
+- **Coût mesuré** sur 207 échanges ≥ 0,05 SOL : l'acheteur paie 3,06 % de plus que ce qui entre dans la courbe, le
+  vendeur touche 2,15 % de moins (médianes). Parts récurrentes : 0,48 % + 0,47 % (pump.fun) et ~0,30 %
+  (créateur) par côté ; le reste = pourboires variables. Coût retenu : 2,5 % + 0,32 % + impact ; prudent +1 point.
+- **Premier essai de la table** : créations presque jamais reconnues (357 au lieu de ~3 450 en 3 h) et créateur
+  invisible — collecteur corrigé et relancé (3 heures relues, <1 % du forfait).
+- **INJECTIONS GÉANTES** (vu en comparant fin de courbe et ouverture du pool) : exemple 12RaVJ, la migration
+  dépose 67,4 SOL et 206,9 M jetons ; dans le MÊME bloc, EfeYMnNK… met 2 970 SOL et prend 201,1 M jetons (97 %) ;
+  le prix du pool vaut alors ×1 289 la fin de courbe et y reste 600 s. **51,5 % des 3 148 pools** de la collecte
+  dépassent 300 SOL de coffre dans les 10 premières secondes (coffre médian au 1er échange : 380 SOL) ; injecteurs
+  récurrents (Bf6z1Tr4 108 pools, DFHkArJt 99, 5zWxvqhr 74, EwujkMx5 65, 98TQeKbR 60). C'est l'origine du « pool
+  médian de 370 SOL » du carnet propre. Prix réels (notre bot y a tradé) ; pourquoi personne n'y revend les
+  jetons de courbe à ×k² reste NON EXPLIQUÉ. Conséquence : l'étude de la courbe sort SUR la courbe (H ou 80 SOL),
+  jamais au prix d'un pool.
+- Vérifié sur la transaction : EfeYMnNK avait 3 100 SOL et en dépense 2 999,58 (2 969,93 dans le coffre, 28,15 de
+  frais, 2 × 0,74 à deux comptes) en deux instructions d'achat PumpSwap. Sur 1 617 pools à injection : 759
+  injecteurs distincts, 812 SOL médians ; **dans 92 % des pools l'injecteur ne revend rien du pool en 15 min** ;
+  les autres achètent 22 SOL et vendent 12 SOL (médianes) pendant ce temps. Hypothèse NON prouvée : les jetons
+  achetés sont redistribués vers d'autres adresses et vendus plus tard (cohérent avec les transferts vers des
+  portefeuilles neufs à T+0-12 s de l'autopsie §3.81).
+
+**Comment les bons gagnent sur la courbe** (demande de l'opérateur : « on essaie de comprendre comment les traders
+gagnent », pas de les copier). Positions achetées sur la courbe après le 12/09 21h et fermées, SOL réel : 10 237
+positions, 168 portefeuilles, +622 SOL / 16 099 (+3,87 %).
+- 38 % de positions gagnantes, médiane −6,1 % ; les 10 % meilleures +1 847 SOL, les 90 % autres −1 225 SOL.
+- Durée : 0-5 s −14,5 %, 5-30 s −6,7 %, 30-120 s −0,8 %, 2-10 min +5,7 %, 10-60 min +6,4 %, > 1 h +26,1 % (durée
+  en partie conditionnée par l'issue : ils coupent vite, laissent courir).
+- Sortie sur la courbe −0,65 % (9 199) ; sortie dans le pool +8,8 % (1 038, 65 % gagnantes) = plus que tout le gain.
+- 3 portefeuilles font 89 % du gain (+270, +169, +117 SOL ; mises médianes 1,8-3,8 SOL).
+- **Aucune de ces sorties dans un pool gonflé** : pools normaux 753 positions +5,3 % ; pools absents de la collecte
+  285 positions +42,5 %. Les jetons à injection sont vraisemblablement des lancements d'opérateur où l'extérieur
+  n'a pas de stock.
+
+### 3.90 — La courbe : verdict NON ; l'après-midi du 15/09 est réel, et porté par les transactions « version 1 », 2026-09-15 soir
+
+- **Collecte courbe terminée** : 6 429 818 transactions, ~643 000 crédits (plus que les ~500 000 annoncés). 55 709
+  jetons créés en 2 jours, 1 259 complets (2,3 %). **Correction** : les « 621 jetons à autres réglages » ne sont pas
+  petits — sur ce 2e type de courbe, le SOL ne passe pas par le compte lu (lamports figés à 0,001 SOL pendant que
+  des millions de jetons sortent) ; 487 des 826 jetons tradés par les 3 meilleurs portefeuilles sont de ce type.
+  Le « +25 % à moins de 1 SOL » était cet artefact.
+- **Verdict courbe** (`courbe_verdict.py`, coût 2,5 % + 0,32 % + impact) : témoin négatif à tous les niveaux (ex.
+  10 SOL / 5 min −20 / −23 / −22 %) ; F1 règles TRI +3,8 % → TEST −11,6 % NON ; F2 LightGBM TRI +7,9 % → TEST +6,8 %
+  (n = 40, sans le meilleur −0,8 %, moitiés −0,4 / +13,9 %, 0 hasard sur 10) NON — seul signal au-dessus du hasard,
+  à revoir sur jours neufs.
+- **Frais — erreur de présentation corrigée** : `calibration_corrigee.py` compare le réel à la variation de prix
+  BRUTE ; −2,62 pts (moyenne, 236 tickets ; médiane −2,41) = coût total réel, déjà reproduit par 1,7 % + impact
+  (2,65 % à 30 €). Appliquer −2,4 en plus = double comptage (« −239 € » retiré). Tendance 240 s, 13-15/09, coût
+  réel mesuré : **+47 €** ; sans l'après-midi du 15 : −290 € (30 €), −466 € (50 €).
+- **Taille du ticket** (modèle 1,2 % + 0,001/s + dépôt 0,00204/s + 2s/(q+V), contrôle 2,65 % à 30 €) : optimum
+  ~50 € ; au-delà de 100 € l'impact détruit tout. Ne change pas la conclusion.
+- **Reconstruction de l'historique non biaisée** : même règle (45 → 287 s) sur 2 794 pools, prix reconstruits
+  (décalage 12 s + V) contre transactions réelles : écart moyen +0,0001, corrélation 0,986, ≤ 0,8 pt par jour.
+- **Historique en tranches de 6 h** (sans filtre, 240 s, coût réel) : 0 tranche sur 23 ≥ +10 %, 7 positives, meilleure
+  +7,2 % (10/09 18h), pire −14,3 % (15/09 0h).
+- **L'après-midi du 15/09 (14h24-20h30) vérifié transaction par transaction** (120 pools, ~50 000 crédits) :
+  collecteur +15,3 %, transactions +13,9 % (corr. 0,987) ; net réel +407 € sans filtre, +314 € tendance à 30 €.
+  **57 pools contiennent des transactions VERSION 1** (Helius refuse `maxSupportedTransactionVersion: 0`) : +26,7 %
+  brut, +411 € nets ; les 63 autres +2,4 % brut, −4 € nets. Part des pools concernés : 9 / 2 979 (0,3 %) du 09/09 au
+  15/09 7h47, 57 / 120 (48 %) l'après-midi du 15. Présence détectée sur 15 min ENTIÈRES (après l'entrée compris) :
+  pas un signal tant que la présence avant 45 s n'est pas mesurée. Le moteur lit en version 0 (`solana_stream.py`,
+  `prix_chaine.py`, `execution/solana.py`) : possible perte de lancements, à vérifier.
+- **Ce qu'est la version 1** : mise à jour réseau SIMD-0385, activée le 15/09 à ~01h04 UTC (epoch 1035) ; taille max
+  des transactions 1 232 → 4 096 octets, limites de calcul et frais de priorité dans l'en-tête ; tout appel RPC
+  doit passer `maxSupportedTransactionVersion: 1`, sinon erreur −32015 (sources : Solana Compass, QuickNode,
+  solana.com). Les 9 erreurs de la collecte de copie sont des pools nés après l'activation.
+- **Le moteur n'est pas aveugle** : lancements vus par heure 35-47 avant 03h (Paris), 32-53 après ; pools suivis dès
+  la naissance stables (26-43/h). Il lit des comptes, pas les transactions des autres. Reste à passer
+  `maxSupportedTransactionVersion: 1` dans `execution/solana.py` (lecture de nos propres transactions) avant tout
+  retour au réel, et dans les scripts de recherche qui lisent des transactions.
+- **La version 1 AVANT l'achat est-elle un signal ?** (accord de l'opérateur ; `copie/v1_lecture.py`, 50 premières
+  secondes de 377 pools nés après l'activation, 248 710 transactions, ~25 000 crédits ; rendement collecteur 47 →
+  287 s, coût réel 2,62 pts, 30 €) : v1 avant 45 s 69 pools +8,9 % (+185 €, sans le meilleur +4,7 %) ; sans 308
+  pools −4,3 % (−397 €). **Ne tient pas** : l'après-midi les deux groupes font pareil (+10,8 / +11,5 %) — l'écart
+  « +411 / −4 € » de la fenêtre de 15 min venait surtout de transactions APRÈS l'entrée ; le matin 7h47-14h24 +9,4 %
+  mais −4,2 % sans le meilleur ; avec la tendance +5,1 % (43) contre +6,6 % (77). Seule piste : tiers le plus actif
+  (≥ 257 échanges avant 45 s) avec v1 +8,2 % (42) contre −18,2 % (84) — découpe après coup, une journée. À refaire
+  sur des jours neufs avant toute conclusion.
+- **PRÉ-ENREGISTRÉ le 15/09 à ~23h, avant toute donnée du 16/09** (l'opérateur : « t'es pas biaisé ? ») : sur les
+  pools nés APRÈS le 16/09 00h (Paris), lecture des 50 premières secondes avec `maxSupportedTransactionVersion: 1`
+  (même script `v1_lecture.py`), rendement collecteur entrée 47 s → sortie 287 s, coût réel 2,62 pts, 30 €.
+  Règle A : ≥ 1 transaction version 1 réussie sur le pool avant 45 s. Règle B : A ET ≥ 257 échanges avant 45 s.
+  Règle C (ajoutée le même soir, toujours avant les données du 16/09) : A ET tendance > 0 (moyenne des 50 derniers
+  résultats connus), comparée à « tendance seule ». Le 15/09 : C 43 pools +5,1 % (+65 €), tendance sans v1 77
+  pools +6,6 % (+152 €).
+  **Règle D, ajoutée le 16/09 à 10h30** (après la découverte des injections, §3.90) : tendance N=50 ET coffre SOL à
+  la naissance (1re lecture, âge ≤ 20 s) < 100 SOL, c'est-à-dire un pool NON gonflé par une injection ; variante de
+  contrôle < 150 SOL ; témoins : tendance seule et sans filtre. Mesure rétrospective 13→16/09 (coût réel 2,62 pts,
+  30 €) : **+210 € sur 264 tickets** (+2,65 %/ticket, sans le meilleur +1,53 %, **sans les 3 meilleurs −0,65 %**,
+  moitiés +128 / +82 €, jours +1 / +32 / +236 / −60 €) ; par taille de coffre : < 100 SOL +210 €, 100-300 −234 €,
+  300-1 000 −49 €, > 1 000 −19 € ; seuils voisins < 80 SOL −153 € (28 tickets), < 150 +145 €, < 200 +61 €. Seuil
+  choisi APRÈS avoir vu les chiffres : à juger uniquement sur les jours neufs. Mécanisme connu avant le chiffre
+  (pools d'opérateur où les bons traders ne vont jamais, et où l'ancien carnet propre allait toujours).
+
+### 3.91 — Durée de détention et SORTIE : la prise de gain à +20/+30 % gagne partout, 2026-09-16
+
+Exploration demandée par l'opérateur (« continue d'explorer »), sur les données déjà collectées, sans crédit.
+
+- **Balayage entrée × sortie dans le sous-ensemble** (tendance N=50 + coffre naissance < 100 SOL, 13→16/09, coût
+  réel, 30 €) : sortie 240 s la seule bonne à toutes les entrées (+110 / +210 / +230 / +124 / −448 € pour 30 / 45 /
+  60 / 90 / 120 s d'entrée) ; **sortie 480 s catastrophique** (−1 636 à −2 390 €) : les effondrements tombent entre
+  4 et 8 min, ce qui valide la sortie à 4 min de l'ancien bot.
+- **Sorties sur le flux** (`sorties_flux.py`, transactions des 2 979 pools 09→15/09, sous-ensemble 524 tickets) :
+  heure fixe 287 s +2,36 % (+371 €) ; **prise de gain +20 % +3,63 % (+570 €, sans le meilleur +3,07 %)**, +30 %
+  identique (plateau), +50 % +2,93 % ; sortie sur grosse vente ≥ 3 % du coffre +0,85 % ; décrochage −15 % +0,38 %,
+  −25 % −1,87 % : **couper sur la baisse vend dans le trou, prendre le gain paie.**
+- **Généralité** (même période) : la prise de gain améliore les QUATRE populations — tous les pools −2,41 → −1,14 %,
+  tendance seule +0,09 → +0,27 %, coffre < 100 seul −1,53 → +1,86 % (+704 €), tendance + coffre < 100 +2,36 →
+  +3,63 %. Ce n'est donc pas un artefact de découpe.
+- **Jours récents 13→16/09** (prix collecteur, 1 821 décisions) : tout reste négatif — tous −2 432 → −1 398 € ;
+  tendance −613 → −410 € ; coffre < 100 −1 176 → **−172 €** ; tendance + coffre < 100 −270 → −98 € (+20 %) et
+  −46 € (+30 %). Jour par jour du meilleur sous-ensemble : −142 / −73 / **+201** / −84 €.
+- **Règle E, pré-enregistrée le 16/09 à 11h** (jours neufs uniquement) : entrée 45 s, **sortie à +25 % de gain
+  sinon 240 s**, sur tendance N=50 et coffre naissance < 100 SOL ; témoins : la même sans prise de gain, et sans
+  filtre. Seuil +25 % = milieu du plateau +20/+30 mesuré, choisi pour ne pas coller à un point.
+- Acquis méthodologique : la prise de gain est le premier effet qui va dans le même sens sur 4 populations et 2
+  périodes. Le niveau, lui, dépend du marché : il ne suffit pas à rendre la stratégie gagnante depuis le 13/09.
+- **Délai d'exécution de la vente** (09→15/09, pool < 100 SOL, +25 %) : instantané +1 024 € (irréaliste), 1 s
+  +591 €, 2 s +669 €, 5 s +708 €. Seule la vente au prix de la transaction déclenchante est flattée (+2,5 pts par
+  ticket) ; au-delà d'une seconde le niveau est stable. **Toujours simuler la vente au moins une transaction après
+  le déclenchement** — piège attrapé le 16/09 avant publication du chiffre.
+- **Moment d'achat** (même population, sortie +25 % sinon 240 s, vente 2 s après) : 20 s −195 / +381 €, 30 s −5 /
+  +503 €, **45 s +669 / +555 €**, 60 s +334 / +218 €, 90 s +232 / +117 €, 120 s −169 / −83 € (sans / avec
+  tendance). 45 s reste le meilleur réglage.
+- **VERDICT EN TROIS TRANCHES AVEC LA NOUVELLE SORTIE** (`balayage_tp.py`, 2 956 pools, cible = prise de gain
+  +25 % sinon 240 s, vente 2 s après, coût réel) : **la découverte ne survit pas.** tous R −0,6 / T −3,6 /
+  F −5,7 % ; coffre < 100 SOL R +2,6 (+521 €) / T −2,4 / F −7,8 % ; tendance R +1,2 / T −3,4 / F −3,2 % ;
+  **tendance + coffre < 100 R +5,3 % (+449 €) / T −5,2 % / F −2,6 %**. Modèle LightGBM : TRI +2,4 % → TEST −1,6 %.
+  Règles à une variable : 6 candidates en RECHERCHE, **0 survivante** au TRI (hasard : 0,0 par tirage). Les
+  « +570 € » du sous-ensemble venaient donc de la période d'apprentissage (09→12/09). La prise de gain reste un
+  vrai gain relatif (elle fait perdre moins partout), pas un avantage absolu.
+- **POURQUOI ÇA SE DÉGRADE : c'est le marché, et c'est significatif** (bootstrap 10 000 + test de permutation,
+  cible prise de gain +25 %) : tous les pools R −0,60 % / T −3,55 % / F −5,66 %, écart R − (T+F) = +3,99 points,
+  **le hasard fait aussi bien dans 0,0 % des cas** ; coffre < 100 SOL +7,92 points (0,1 %) ; tendance + coffre
+  < 100 +9,60 points (2,0 %). **Pente sur tous les pools : −1,50 point par jour, t = −4,2.** Conséquence chiffrée :
+  sur la dernière tranche le ticket moyen part de −5,7 %, nos meilleurs filtres apportent +3 à +6 points, il en
+  manque 2 à 4 pour revenir à zéro et 7 pour atteindre +1,1 %. C'est l'explication mesurée du « ça marche puis ça
+  s'arrête » observé par l'opérateur depuis le début : ce n'est pas le filtre qui s'use, c'est le rendement de base
+  du marché qui baisse. Reste à savoir si la pente dure (l'après-midi du 15/09 a été très positif : pas monotone).
+- **NATURE DE LA RUPTURE** (3 premiers jours 09-11/09, 1 277 tickets, contre 3 derniers 13-15/09, 1 227 ; sortie
+  heure fixe, coût réel) : Kolmogorov-Smirnov D = 0,148 p = 1,8e-12 ; moyennes −0,35 % → −5,67 % (t = 2,89,
+  p = 0,004) ; **Mann-Whitney p = 0,15 : les rangs et la médiane n'ont pas bougé** — le changement est dans les
+  queues. Décomposition : gagnants 48,5 → 55,8 % (+7,3), médiane −0,07 → +0,86 %, montées ≥ +25 % 31,3 → 27,1 %,
+  effondrements ≤ −50 % 13,8 → 16,0 %, **gain moyen d'un gagnant +27,8 → +17,7 % (−10,1)**, **perte moyenne
+  −26,8 → −35,1 % (−8,3)**. On gagne plus souvent, beaucoup moins gros, et on perd plus gros.
+- **Oaxaca-Blinder** (LightGBM appris sur les 3 premiers jours, variables visibles à 45 s) : prévu sur la fin
+  −2,27 % contre −5,67 % réalisé ; **écart total −5,32 points = −1,93 dû aux caractéristiques des jetons et −3,40
+  à la réponse du marché**. Caractéristiques qui changent : coffre médian 282 → 389 SOL, échanges dans les 45
+  premières secondes 78 → 168, acheteurs 53 → 96, SOL achetés 200 → 296. **Marché deux fois plus encombré à
+  l'entrée, hausses plus petites, chutes plus profondes.**
+- **COUPE-CIRCUIT RÉACTIF** (idée de l'opérateur : « dès qu'un jeton fait une grosse perte on se calme et on revient
+  plus tard » ; `coupe_circuit.py`, rejeu chronologique, un résultat n'est connu qu'à naissance + 289 s) : avec la
+  prise de gain +25 %, **pause de 30 min après tout ticket ≤ −30 %** donne +2,54 % (328 tickets, +249 €) sur les 3
+  premiers jours et **−2,02 % (263 tickets, −160 €)** sur les 3 derniers, contre +0,76 % (+292 €) et −3,40 %
+  (−1 251 €) sans coupe-circuit : **+1,8 et +1,4 point, même sens sur les deux périodes**, et la perte des mauvais
+  jours divisée par 8 (4 fois moins de tickets). Pauses de 60 min moins bonnes (−4,79 %) : on rate les reprises.
+  « 3 pertes de suite » (+1,75 % puis −3,75 %) est moins bon que « une grosse perte » : ce sont les grosses pertes
+  qui annoncent les séries. Ne rend pas positif quand le marché est à −5,7 %.
+  **Règle F pré-enregistrée (16/09)** : prise de gain +25 % sinon 240 s, ET pause 30 min après tout ticket ≤ −30 %.
+### 3.92 — Règles G et H, et trois idées enterrées, 2026-09-16
+
+**Règle G (pré-enregistrée le 16/09 à 10h30, jugée sur jours neufs)** : achat à 45 s (+2 s), **jetons peu
+encombrés** (≤ 74 acheteurs dans les 45 premières secondes), **pool non gonflé** (coffre < 100 SOL à la naissance),
+**vente à +25 % sinon 240 s**, **pause 30 min après tout ticket ≤ −30 %**. Comparatif sur 3 670 tickets (coût réel
+2,62 pts, 30 EUR, ordre ≤ 15 % du pool) : sans filtre −2 655 €, + prise de gain −1 256 €, + tendance −197 €,
+**règle G +553 €** (297 tickets, une entrée sur douze). Par période : 09→14/09 +545 €, 15/09 nuit −56 €,
+15/09 matin −15 € (trou comblé par relecture, 10 700 crédits), 15/09 après-midi +93 €, 16/09 −14 €.
+**Hors échantillon strict : +64 € sur 73 tickets (+0,9 %/ticket).**
+
+**Ce qui limite G, mesuré** : dans sa propre famille de 144 réglages (foule × coffre × gain × pause), optimisés sur
+09→12/09 et jugés sur 13→16/09, **68 sur 144 sont positifs au test, médiane −0,09 %** ; le meilleur réglage de
+l'apprentissage donne +1,26 % au test contre +3,47 % pour G telle quelle. **Optimiser ne sert à rien**, et un vote
+d'experts (10 meilleurs réglages) ne fait pas mieux (+1,15 % à 5 voix sur 10).
+**Pourquoi aucune méthode adaptative ne peut trancher ici** : écart-type 45 points par ticket → il faut 8 170
+tickets par règle (136 jours) pour distinguer deux règles qui diffèrent d'un point ; la borne de regret d'un
+algorithme en ligne sur 144 règles et 150 tickets vaut 8,2 points par ticket, contre 1,1 point d'avantage cherché.
+
+**Trois idées testées et enterrées le 16/09** :
+- vendre en deux fois (moitié à +25 %, moitié à 240 s) : +257 € contre +553 € pour G ; le bruit baisse à peine
+  (47,4 → 45,9 pts) et le gain se coupe de moitié ;
+- écarter les jetons où un **vendeur massif** déjà repéré achète avant 45 s : le sens s'inverse selon le seuil
+  (1 repérage : écarter coûte 419 € ; 3 repérages : écarter rapporte 170 €) — bruit ;
+- **apport de liquidité** (teneur de marché) de 45 s à 287 s sur 3 268 pools : **−2,09 %** en moyenne, et surtout
+  **les frais encaissés par les apporteurs valent +0,006 % en médiane** : sur PumpSwap les frais vont au protocole
+  et au créateur. Ça enterre toute la famille market making / grid trading sur ce marché.
+
+**Règle H, pré-enregistrée le 16/09 à 14h** (idée venue des guides internet, mesurée à l'envers de ce qu'ils
+disent) : règle G **plus** la condition qu'au moins un détenteur pèse ≥ 5 % de l'offre à +30 s. Sur les 95 tickets
+de G avec relevé disponible : au moins un détenteur ≥ 5 % → +7,66 % (36 tickets, +83 €) ; aucun → −2,29 %
+(48 tickets, −33 €) ; plus gros détenteur > 10 % → +3,74 % contre ≤ 5 % → −2,29 %. Les guides recommandent
+l'inverse (« aucun gros détenteur »). À juger sur les jours neufs avec `detenteurs.py`, qui tourne depuis le 15/09.
+
+### 3.93 — Méthodes venues de marchés voisins : trois règles ajoutées, et la correction qui va avec, 2026-09-16
+
+Recherche internet demandée par l'opérateur. Les guides de sniping ne donnent rien d'exploitable (course à la
+vitesse, achat en bloc 0 depuis plusieurs portefeuilles). Trois idées transposables ont été testées sur nos 852 à
+1 486 tickets (sortie +25 % sinon 240 s, coût réel, ordre ≤ 15 % du pool) :
+
+- **Petites capitalisations, « first red day »** ([TradeZero]) → I : monté ≥ +30 % depuis la naissance et ≥ 15 %
+  sous son plus haut à 45 s. 56 tickets +2,02 % (+34 €) mais **−3,35 % sans son meilleur** ; variante stricte
+  +27,37 % sur 18 tickets, moitié due à un seul. Non concluant.
+- **NFT, « volume maintenu »** → J : SOL acheté 30-45 s ≥ SOL acheté 0-15 s. Seule : **−1,53 %** (670 tickets) ;
+  l'inverse (flux qui s'essouffle) +0,42 % (1 018). Avec G : +8,39 % (87) contre +6,59 % pour G seule.
+- **IPO, « ouverture sous le prix d'offre »** → K : prix à 45 s SOUS le premier prix du pool → **+0,82 %** (402),
+  contre **−1,50 %** (1 086) pour ceux déjà montés. L'analogie tient à l'envers de ce que disent les guides.
+
+**Convergence utile** : flux qui accélère, prix qui monte, foule d'acheteurs — trois mesures indépendantes disent
+que l'agitation des 45 premières secondes annonce une perte. C'est le mécanisme derrière la règle G.
+
+**Règles I, J, K pré-enregistrées le 16/09 à 14h30** (l'opérateur : « ça ne coûte rien de l'ajouter »), **avec
+correction pour test multiple** : onze règles sont désormais en lice (A-H plus I, J, K). Une règle ne sera déclarée
+découverte que si elle réunit : moyenne ≥ +1,1 %, positive sans son meilleur ticket, positive sur les deux moitiés,
+**et** supérieure au témoin « sans filtre » sur la même période, **et** encore positive après retrait de sa
+meilleure journée. Sinon : observation, pas découverte.
+
+### 3.94 — DEUXIÈME MARCHÉ : les courbes pump.fun libellées en jeton PUMP, invisibles depuis le début, 2026-09-16
+
+En cherchant où passe le SOL des « courbes à autres réglages » (§3.90), la réponse est qu'il n'y en a pas : ces
+jetons se tradent **contre le jeton de la plateforme**, mint `pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn`. Vérifié
+sur transaction : un portefeuille donne 52 380 PUMP et reçoit 39,4 M de jetons ; les seuls lamports qui bougent sont
+les 0,0015 SOL de création d'un compte. Notre lecture cherchait des lamports : elle ne voyait donc rien.
+
+- **Taille** : 621 jetons sur 1 722 actifs (36 %) dans l'échantillon de 3 heures du 13/09.
+- **Enjeu** : **487 des 826 jetons** tradés par les trois portefeuilles qui font 89 % du gain réel des « bons »
+  (§3.88) sont sur ce marché. C'est le seul endroit où on a la preuve mesurée que quelqu'un gagne, et le seul qu'on
+  n'a jamais regardé. Le « +25 % à moins de 1 SOL » de §3.88 était cet artefact.
+- **Collecte lancée le 16/09 à 15h** : `courbe_pump.py`, 13/09 12h → 14/09 12h UTC, les deux côtés (jetons et PUMP)
+  lus pour chaque transaction, version 1 acceptée. Sonde : 54 lignes PUMP par minute (minorant, page tronquée),
+  prix de l'ordre de 2,5e-3 PUMP par jeton. Coût attendu ~280 000 crédits.
+- À mesurer ensuite : rendements par niveau de remplissage, coûts réels de ce marché, et ce que font les trois
+  portefeuilles dedans. Rien n'est conclu tant que ce n'est pas mesuré.
+
+- **Heure de la journée : RIEN de concluant.** 12h +12,4 % (5 jours positifs sur 5), 13h +9,1 %, 2h +7,0 %, contre
+  4h −10,2 %, 8h −9,4 %, 15h −4,9 %. Avec 24 heures testées sur 5-6 jours, une heure à 5/5 sort du hasard environ
+  une fois sur trois : pas de filtre horaire, à revoir quand on aura deux semaines.
+  Verdict quand la règle A a ≥ 150 pools : GO si moyenne ≥ +1,1 %, sans le meilleur > 0, deux moitiés (par date)
+  > 0 ; résultat donné en euros tout compris, avec le témoin « sans version 1 » à côté. Rien ne change d'ici là.
+
+### 3.95 — G+D, et la découverte qui compte : la prise de gain vaut ce que valent nos YEUX, 2026-09-16
+
+**Le mélange G+D** (foule ≤ 74, coffre < 100 SOL, tendance > 0, sortie +25 %, pause 30 min) donne le meilleur
+rendement PAR TICKET de toutes les règles testées — +9,71 % sur 126 tickets, +10,28 % hors échantillon sur 33 —
+mais 2,5 fois moins de tickets que G seule, donc moins d'euros au total (+367 € contre +607 €). Témoin
+indispensable : aux **mêmes instants**, un jeton tiré au hasard dans la demi-heure rend déjà **+4,49 %** (le filtre
+de tendance choisit des heures favorables) ; G+D est au 80ᵉ centile de ce témoin, soit p ≈ 0,20. Non significatif.
+
+**Test papier vers l'avant monté et gelé** : `intel/research/papier_gd.py`, gel 16/09 15h40 UTC, critère écrit
+avant les données (300 tickets ou 21 jours ; moyenne ≥ +4,5 %, deux moitiés > 0, positive sans son meilleur, et
+au-dessus du 95ᵉ centile du témoin). Il ne lance aucun processus : il relit `v1_avant` (acheteurs), les prix du
+moteur et la table `ref` de `papier_combo` (tendance). Zéro risque pour la production.
+
+**Et c'est en le branchant que le vrai résultat est sorti.** Rejoué sur les 24 h déjà passées, il donne −15,24 %
+là où le backtest donnait +10,28 % sur les mêmes jours. Diagnostic, une cause à la fois :
+
+- **Ce n'est pas la définition de l'entrée** : dernière lecture ≤ 47 s (backtest) +5,93 %, première lecture ≥ 47 s
+  (ce qu'on peut vraiment payer) +6,10 %. Aucun biais.
+- **C'est la FINESSE DES PRIX.** Les tickets construits sur les transactions (écart médian 0 s) rendent +16,91 % ;
+  les mêmes règles sur des lectures toutes les 10 s rendent +3,23 %.
+
+**Mesure propre, appariée** (mêmes 3 245 pools, même règle, seule la cadence d'observation change ; le délai
+d'exécution de 2 s reste partout) :
+
+| vision du marché | tous les pools | coffre < 100 | foule ≤ 74 et coffre < 100 |
+|---|---|---|---|
+| chaque transaction | −1,09 % | | +5,23 % |
+| une lecture / 2 s | −1,09 % | | +5,48 % |
+| une lecture / 5 s | −1,18 % | | +4,12 % |
+| une lecture / 10 s | −2,05 % | | +1,69 % |
+| une lecture / 20 s (**cadence actuelle du carnet**) | −2,23 % | | +2,46 % |
+| sortie à 287 s, sans prise de gain | −1,90 % | | — |
+
+Écart apparié **2 s − 20 s** : **+1,14 pt par ticket [+0,27 ; +2,04]** sur 3 245 pools, **+2,64 pts
+[+0,50 ; +4,65]** sur les 1 346 pools à coffre < 100 SOL. Les deux intervalles excluent zéro. Sur la période
+c'est +159 € et +152 €, soit ≈ +21 €/jour à 30 € le ticket.
+
+- **29 % des pools touchent +25 % entre 47 et 287 s, âge médian du déclenchement 93 s.** À 20 s de cadence on rate
+  le sommet une fois sur deux ; c'est là que part l'argent.
+- **Le coût est nul** : on n'a besoin d'yeux rapides que sur les positions TENUES, une ou deux à la fois. 120
+  lectures par ticket, ~4 800 lectures par jour. `book_poll_seconds: 20` dans `config/intel.yaml`.
+- **Ce que ça ne fait pas** : ça ne rend pas gagnante une sélection perdante. Tous pools confondus on reste à
+  −1,09 % même en voyant chaque transaction. C'est un multiplicateur, pas un avantage.
+
+**Conséquence sur tout ce qui a été annoncé avec une prise de gain.** Les chiffres des règles E, F, G, H, I, J, K
+et D reposent en partie sur des prix par transaction : ils sont **optimistes de 1 à 4 points par ticket** tant que
+le carnet lit à 20 s. Le chiffre exécutable de G est +2,46 %, pas +5,23 %. Toute mesure de sortie réactive doit
+désormais être annoncée AVEC la cadence d'observation supposée.
+
+**Déployé le 16/09 à 15h46** : `intel/engines/veille_rapide.py`, branché dans l'ordonnanceur à 2 s, 10 tests,
+suite complète verte (243). Le moteur est en `mode: paper` — rien n'est signé. Ce que le déploiement a appris :
+
+- **Un plancher de 5 s ralentissait EN SILENCE toutes les boucles.** `scheduler._loop` faisait
+  `delay = max(5.0, interval)` : la veille réglée sur 2 s tournait à 5 s (vu sur les horodatages du journal,
+  exactement 5,000 s d'écart). Le plancher devient un paramètre, à 1 s pour la veille seule. **`t1.poll_seconds: 2`
+  est dans le même cas depuis toujours** — la boucle d'entrée T+1, censée tourner à 2 s, tourne à 5 s. Laissée
+  telle quelle faute de mesure : à corriger seulement après avoir mesuré ce que la cadence vaut à l'ENTRÉE, comme
+  on vient de le faire pour la sortie.
+- **La veille a réveillé le carnet dès son premier passage** et les positions concernées se sont fermées.
+- **Quatre positions papier traînaient ouvertes depuis 40 heures** (BIFROST, Deg, Cuck, MIKEANSON), bien au-delà de
+  `max_hold_seconds: 900`. Deux d'entre elles n'ont aucune série de prix (leur pool n'a jamais été suivi), donc la
+  veille ne peut pas les juger et s'abstient — c'est le comportement voulu : sans prix d'entrée dans la MÊME unité,
+  on ne compare pas. Mais des positions papier bloquées faussent le carnet à blanc, à joindre au correctif du
+  garde-fou d'impact en attente.
+- **Deux modules de tests étaient déjà cassés avant cette séance**, tous deux sur `intel/execution/solana.py` :
+  `test_prix_reels.py` importe `echange_reel`, supprimée du fichier (44 lignes retirées, plus aucun appelant) alors
+  que le commit 7cabc4c l'avait ajoutée pour enregistrer le prix RÉELLEMENT payé ; `test_ecart_pool.py` attend une
+  clé `ecart_pool_pct` qui n'est pas produite sur le chemin testé. Signalé, non corrigé : ce n'est pas à moi de
+  décider si la suppression était voulue.
+
+### 3.96 — Trois passes de vérification sur G et D, et la convention de vente qui gonflait tout, 2026-09-16
+
+Mido : « si t'es sûr de toi tu peux refaire 3 passes ». Trois vérifications indépendantes, et elles ont trouvé.
+
+**Passe 1 — une implémentation écrite à part.** Elle retombe EXACTEMENT sur l'original (D +610 € sur 621 tickets,
+G+D +367 € sur 126) : pas de bug de calcul. Mais en changeant une convention à la fois, elle isole deux choix
+arbitraires que je n'avais jamais justifiés :
+
+- **La vente après déclenchement.** `toutes_regles.py` prenait la DERNIÈRE lecture ≤ déclenchement + 2 s —
+  c'est-à-dire, sur une série à 10 s, le prix du déclenchement lui-même, donc **une vente sans délai**. En prenant
+  la première lecture ≥ +2 s (ce qu'on peut vraiment exécuter) : **D +610 → +377 €, G +607 → +391 €, G+D +367 →
+  +300 €.** Tous mes chiffres de la journée étaient gonflés de 20 à 40 %.
+- **La série de référence de la tendance.** Sortie à heure fixe (le choix d'origine, et celui qu'implémente
+  `papier_combo`) ou sortie avec prise de gain : D passe de +377 € à +151 €. Très sensible ; on garde la sortie à
+  heure fixe, qui est celle qui tourne en direct.
+
+**Passe 2 — tous les seuils bougent, un à la fois** (convention exécutable) :
+
+| | foule | coffre | pause | fenêtre tendance | objectif | coût |
+|---|---|---|---|---|---|---|
+| **G+D** | +97 à +305 € (50→150) | +232 à +300 € (100→250) | +286 à +316 € (0→60 min) | +252 à +359 € (25/50/100) | +256 à +300 € (+15→+25 %) | +268 € à 3,5 pts |
+| D | — | **+14 € à coffre 75** | +162 à +377 € | **+51 € à fenêtre 25** | — | — |
+| G | +138 à +516 € | +100 à +391 € | +289 à +476 € | — | — | — |
+
+**G+D est positif dans TOUTES les variantes testées.** D s'effondre sur deux réglages. Le seuil de 74 acheteurs
+n'est pas un pic choisi après coup : 60 à 150 donnent tous du positif, l'optimum est plutôt vers 90.
+
+**Passe 3 — contre le hasard** (2 000 tirages, mêmes instants, jeton tiré au hasard dans la demi-heure) :
+
+| règle | vrai | hasard au même instant | centile |
+|---|---|---|---|
+| D | +2,85 % | +2,78 % | **50** |
+| G | +4,19 % | +0,03 % | **99** |
+| G+D | +8,14 % | +1,86 % | **98** |
+
+**D ne choisit pas les jetons, il choisit les moments** : à instant égal, un tirage au hasard fait aussi bien.
+C'est G qui sélectionne. Ça renverse ce que j'avais annoncé une heure plus tôt (« hors 10/09, D bat G+D »).
+
+**Taille de mise.** Le coût ne dépend de la taille que par l'impact : ancré sur la calibration réelle
+(2,62 pts à 30 €), il passe seulement à 3,47 % à 60 €, et le rendement par ticket reste à ~8,5 %. Les euros
+montent donc presque proportionnellement : +46 €/jour à 30 €, +93 €/jour à 60 €. **Mais** sur 185 € de capital,
+19 tickets/jour, 30 jours, 20 000 vies simulées, en rejouant la même distribution RECENTRÉE À ZÉRO (le scénario
+« je me trompe ») : ruine 21 % à 10 €, 45 % à 20 €, 63 % à 30 €, 75 % à 50 €, **80 % à 60 €**. Conseillé : 20 €
+tant que le test papier n'a pas parlé.
+
+**Test papier G+D en direct** : `intel/research/papier_gd_direct.py`, gelé le 16/09 à 16h10 Paris. Il décide à
+45 s en direct (le compte des acheteurs vient d'une lecture de chaîne payée seulement pour les pools qui ont
+passé les deux filtres gratuits), suit jusqu'à 25 positions en parallèle dans UNE seule lecture, et la logique de
+sortie est isolée dans `avancer()` avec 9 tests. Trois bugs à moi corrigés le soir même : deux `commit()`
+manquants (la base paraissait vide, j'en ai conclu à tort que le test ne voyait aucun pool), un format d'affichage,
+et un suivi séquentiel qui rendait le test aveugle 4 minutes par ticket alors que le moteur, lui, tient 4 lignes
+en parallèle — Mido : « mais un truc ça veut dire que le bot parallélisé et pas le test ? ».
+
+**Le test papier « régime + risque » est mort** : 187 tickets depuis le 15/09, **−3,26 % par ticket**, les deux
+moitiés négatives, −165 €/jour. Son critère était ≥ +1,1 %. Verdict acquis avant l'échéance du 29/09.
+
+### 3.97 — Le marché PUMP : pas un trésor, le contraire, 2026-09-16
+
+24 h collectées (13/09 12h → 14/09 12h UTC) : **119 196 échanges réels, 1 072 jetons**. Le PUMP vaut 0,0036 $,
+donc ce marché fait **4,8 M$ par jour** — réel, mais l'échange médian n'y fait que **9,74 $** et la réserve
+médiane d'une courbe à l'entrée ~700 €.
+
+**Notre règle appliquée telle quelle (entrée 45 s, sortie +25 % ou 287 s), 250 tickets exécutables :
+−12,38 % par ticket**, intervalle 95 % [−15,83 ; −8,86], 28 % de gagnants, −928 € sur 24 h. Six à dix fois pire
+que le marché SOL sur la même période.
+
+Contrôles faits AVANT d'annoncer, cette fois :
+- cohérence des prix : 77 % des échanges successifs montent — normal sur une courbe dominée par les achats ;
+- **achat au tout premier échange : +27,28 %** (36 % de gagnants) ; à 45 s : −12,92 % ; à un instant au
+  hasard : −14,85 % ;
+- forme de la courbe, base 100 à 45 s : **99 à 60 s, 97 à 120 s, 90 à 180 s, 84 à 287 s, 76 après 10 min.**
+
+**Ce que c'est** : un marché où les tout premiers acheteurs prennent l'argent des suivants, plus brutalement que
+sur PumpSwap. Toute notre famille de stratégies entre à 45 s, c'est-à-dire du mauvais côté. Et c'est
+l'explication la plus simple de la présence des « bons » portefeuilles là-bas (§3.94) : ils y sont tôt.
+La piste est fermée pour nous, sauf à faire du sniping dans le bloc de création — autre métier, autres
+concurrents.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
@@ -4296,3 +5042,17 @@ bout en bout, du seuil jusqu a la signature.*
   écarté le NFT parce qu'il ne se trade pas en 4 minutes — vrai et hors sujet. La bonne question
   était : où est l'inefficacité sur un marché LENT ? (§3.80) La réponse était mesurable et a fermé
   la piste pour une bonne raison au lieu d'une mauvaise.
+- **Un contraste positif n'est pas une stratégie gagnante.** Le contraste juge un filtre ; l'argent ne
+  dépend que du NIVEAU du groupe gardé, après coûts d'exécution MESURÉS en chaîne, sur toute la
+  période. Le filtre propre battait le reste de +0,080 et rapportait lui-même +0,004 avant coûts,
+  −0,006 après : 229 tickets réels et −436 EUR plus tard (§3.81). Avant d'engager un euro : écrire
+  l'espérance par ticket en EUR, coûts réels inclus.
+- **Rien ne part en production sans son P&L rejoué, coupé en deux moitiés.** Le 15/09 la vente sur
+  cascade a été mise en live avant d'avoir le P&L ; rejouée ensuite : +123 EUR sur une moitié, −81
+  sur l'autre (§3.81). Des tests unitaires qui passent prouvent que le code fait ce qu'on veut, pas
+  que ce qu'on veut rapporte.
+- **Une moyenne sur une traîne épaisse se lit avec et sans ses meilleurs tickets.** +0,232 par euro
+  sur 1 103 tickets devenait −0,054 en retirant UN ticket à ×316 (§3.81).
+- **Avant d'attribuer une cause, la chercher dans le code.** « `pool_quote` a cessé d'être remplie
+  après l'échange de base » : faux, aucun moteur ne l'a jamais remplie (§3.81). Une recherche d'une
+  seconde l'aurait montré.

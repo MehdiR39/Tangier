@@ -103,10 +103,15 @@ class Runtime:
             log.info("%s cycle done ok=%s %.1fs stats=%s", name, ok, time.monotonic() - t0, json.dumps(slim, default=str)[:600])
         return stats or {}
 
-    async def _loop(self, name: str, fn: Any, interval: int) -> None:
+    async def _loop(self, name: str, fn: Any, interval: int, plancher: float = 5.0) -> None:
+        """Le plancher protege d une boucle folle, mais il RALENTISSAIT en silence qui demandait
+        mieux : la veille rapide reglee sur 2 s tournait en realite a 5 s (mesure sur les
+        horodatages du journal, 16/09). Une boucle qui sait ce qu elle coute passe son propre
+        plancher ; les autres gardent les 5 s par defaut. Voir aussi `t1.poll_seconds`, dans le
+        meme cas et laisse tel quel faute de mesure."""
         while not self._stop.is_set():
             await self._run_engine(name, fn)
-            delay = max(5.0, interval + random.uniform(-0.05, 0.05) * interval)
+            delay = max(plancher, interval + random.uniform(-0.05, 0.05) * interval)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
             except asyncio.TimeoutError:
@@ -258,6 +263,19 @@ class Runtime:
             # toutes les 35 a 95 s -- une eternite pour un stop de perte. Voir SolanaWatcher.run_carnet.
             tasks.append(asyncio.create_task(self._loop("solana_carnet", self.solana.run_carnet,
                                                         int(self.ctx.config.get("solana.book_poll_seconds", 5)))))
+            # LA VEILLE RAPIDE, a 2 s : le prix des positions ouvertes lu directement dans le pool,
+            # sans aucune cotation. Voir a quelle vitesse on regarde le marche vaut +1,14 pt par
+            # ticket [+0,27 ; +2,04] entre 20 s et 2 s, mesure appariee sur 3 245 pools, positive sur
+            # les deux moities et les sept jours (§3.95). Elle ne vend jamais : elle reveille
+            # `run_carnet`, qui garde la cotation, les garde-fous et le verrou anti-double-vente --
+            # donc la charge Jupiter ne peut pas depasser celle d aujourd hui, contrairement au
+            # `book_poll_seconds: 5` du 11/09 qui avait sature le quota et bloque les ventes (§3.55).
+            if self.ctx.config.get("solana.veille_rapide.enabled", True):
+                from intel.engines.veille_rapide import VeilleRapide
+                self.veille = VeilleRapide(self.ctx, self.solana)
+                tasks.append(asyncio.create_task(self._loop(
+                    "solana_veille", self.veille.cycle,
+                    int(self.ctx.config.get("solana.veille_rapide.pas_secondes", 2)), plancher=1.0)))
             # Le prix lu dans les reserves du pool, des la creation. DexScreener n indexe pas ces
             # pools avant ~T+1,5 min -- 6 sur 74 en une heure -- et se rafraichit toutes les 30 a
             # 60 s, ce qui rend toute rejouee de sortie deux fois trop pessimiste (§3.61) et laisse

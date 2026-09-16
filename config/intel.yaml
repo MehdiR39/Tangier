@@ -22,12 +22,12 @@ portfolio:
       entry_ts: null
 
 engine:
-  portfolio_cycle_seconds: 60
+  portfolio_cycle_seconds: 86400   # EVM mis en veille le 14/09 23h : sa passe lit 45 Go et bloquait tout le moteur, Telegram compris
   # These tokens are tradeable for a median of six minutes, so the cycle length is what decides
   # how late a decision arrives. An evaluation costs 2.9 s since migration 6 — capacity is no
   # longer the constraint, the appointment is.
-  scanner_cycle_seconds: 60
-  scanner_deep_cycle_seconds: 120
+  scanner_cycle_seconds: 86400
+  scanner_deep_cycle_seconds: 86400
 
 scoring:
   # Derived from measurement on 2026-09-04, not from judgement: 3 942 evaluations paired with the
@@ -160,7 +160,8 @@ t1:
 execution:
   # live depuis le 2026-09-07 sur ordre de l'operateur ("lance tout"), portefeuille 0x2a33086d...c908
   # verifie (0.186 ETH). Plafonds inchanges: 25 EUR/ordre, 40 ordres et 200 EUR/jour, 5 % slippage.
-  mode: live
+  # REEL ARRETE le 15/09 a la demande de l operateur (« arrete le reel »), comme telegram_rapide.
+  mode: paper
   # ARRET DE L EXECUTEUR EVM, pose le 09/09 a 21h10.
   #
   # Contexte : un plafond de positions comptait le papier (§5.18, §5.21). Le carnet du scanner
@@ -263,6 +264,22 @@ solana:
   # consecutifs en erreur 429 « Rate limit exceeded » et n a pas pu sortir a son sommet. Un stop plus
   # reactif qui empeche de vendre est pire que pas de stop du tout. Journal §3.55.
   book_poll_seconds: 20
+  # LA VEILLE RAPIDE (intel/engines/veille_rapide.py). Ce qui bloquait, c etait la COTATION, pas la
+  # lecture : `run_carnet` demande au routeur ce que vaut chaque position, donc on ne peut pas le
+  # faire tourner vite. Le PRIX, lui, se lit dans les deux comptes de reserve du pool par notre
+  # propre RPC, pour rien. Cette boucle lit a 2 s et se contente de REVEILLER le carnet quand un
+  # seuil est franchi : aucune vente, aucune cotation, et `reveil_min_secondes` interdit de
+  # reveiller la meme position plus souvent que `book_poll_seconds` -- la charge Jupiter du pire
+  # cas est donc exactement celle d aujourd hui.
+  # Mesure appariee (memes 3 245 pools, meme regle, seule la cadence change, §3.95) : 20 s -> 2 s
+  # vaut +1,14 pt par ticket [+0,27 ; +2,04], et +2,64 pts [+0,50 ; +4,65] a coffre < 100 SOL.
+  # Rejouee en deux moities +1,27 / +1,02, et les SEPT jours de la periode positifs. Cause : 29 %
+  # des pools touchent +25 % entre 47 et 287 s, declenchement median a 93 s.
+  # Ne rend PAS gagnante une selection perdante : tous pools confondus on reste a -1,09 %.
+  veille_rapide:
+    enabled: true
+    pas_secondes: 2
+    reveil_min_secondes: 20     # jamais deux reveils de la meme position plus rapproches que ca
   # Le prix lu dans les reserves du pool, des la creation (intel/engines/prix_chaine.py).
   # DexScreener n indexe pas ces pools avant ~T+1,5 min et se rafraichit toutes les 30 a 60 s : la
   # zone ou agit l argent informe n a jamais ete observee, et toute rejouee de sortie batie dessus
@@ -677,7 +694,12 @@ paliers_vente:
 # `cle_fichier`. Tant que l un des deux manque, ce moteur n envoie aucun ordre.
 telegram_rapide:
   enabled: true
-  mode: live                   # paper | live
+  # REEL ARRETE le 15/09 a la demande de l operateur (« arrete le reel »). Mesure qui le justifie,
+  # simulation complete du 12 au 14/09 (1 180 jetons) avec le cout d execution MESURE en chaine :
+  # propre +0,004/euro avant cout, -0,006 apres ; Telegram +0,010 avant, -0,069 apres. Aucun des
+  # deux carnets n a d esperance positive. Le carnet reel : -436 EUR sur 229 tickets.
+  # Le papier continue : memes decisions, aucun ordre, pour mesurer sans payer.
+  mode: paper                  # paper | live
   pas_secondes: 10
   # 50 -> 160 EUR le 14/09, apres alimentation du portefeuille (+506,47 EUR, solde 706,88 EUR).
   #
@@ -962,6 +984,33 @@ telegram_rapide:
   # ici un chemin de fichier designerait un autre portefeuille. Le portefeuille manuel de
   # l operateur n est pas utilise : une erreur du robot ne doit pas pouvoir y toucher.
   cle_fichier: null
+  # VENTE SUR CASCADE, ajoutee le 15/09 (intel/engines/vente_cascade.py). Lit le pool de chaque
+  # position ouverte toutes les secondes et vend tout de suite si le prix tombe de `seuil_pct` sous
+  # son plus haut des `fenetre_s` dernieres secondes.
+  #
+  # Mesure qui la justifie, carnet reel : un vidage est une cascade de quelques secondes, pas une
+  # vente. Prix obtenu selon notre delai (carnet propre) : 1,6 s -46 % · 3,2 s -49 % · 10 s -68 %.
+  # Le moteur lisait toutes les 10 s et vendait a 240 s : il encaissait tout.
+  #
+  # LE SEUIL, sur les lectures a 10 s pendant la detention :
+  #     chute    vidages vus    bons jetons vendus pour rien   cout median sur ceux-la
+  #     15 %       20 / 22           33 / 123 (27 %)                -14 %
+  #     20 %       20 / 22           22 / 123 (18 %)                -14 %
+  #     30 %       20 / 22           12 / 123 (10 %)                -10 %
+  # 30 % attrape autant de vidages et vend trois fois moins de bons jetons. Estimation du gain :
+  # le carnet propre passe d environ -0,03 a environ 0 par euro. Ca arrete la perte, ca ne cree pas
+  # l avantage. A remesurer sur les transactions (`tg_cascade` note chaque declenchement).
+  #
+  # mode : off | papier (note sans vendre) | live (vend)
+  vente_cascade:
+    mode: papier
+    seuil_pct: 30.0
+    fenetre_s: 10.0
+    periode_s: 1.0
+    slippage_pct: 40.0          # sortir a -40 % vaut mieux que rester a -90 %
+    priorite_lamports: 200000   # 0,0002 SOL : rien a cote de ce qu une seconde coute pendant un crash
+    reessai_s: 2.0
+    max_essais: 5
 
 # ---------------------------------------------------------------------------
 # Collecte BNB Chain, LECTURE SEULE. N achete rien, ne signe rien, aucune cle BNB.
@@ -992,7 +1041,7 @@ bnb_collecte:
   # ET L HORODATAGE RESTE VITAL : ces liens sont dans la base de four.meme, modifiables apres coup.
   # Ecart mesure entre 8-24 h (40,0 %) et plus de 24 h (44,4 %) -- faible mais non nul, et la
   # tranche qui compte, moins de 2 h, manquait faute de collecte.
-  enabled: true
+  enabled: false
   pas_secondes: 20
   rpc: "https://bsc.publicnode.com"   # `bsc-dataseed` refuse eth_getLogs (limit exceeded)
   max_blocs: 200                      # apres un arret, on ne rattrape pas au-dela
@@ -1008,7 +1057,7 @@ bnb_collecte:
 # On sait deja que 6,5 % des DIPLOMES en portent un. Le rapport donne le multiplicateur.
 # Sondage du 13/09 sur 45 creations : 2,2 %, donc x2,9. Trop peu pour conclure.
 pump_courbe:
-  enabled: true
+  enabled: false
   pas_secondes: 20
   slots_par_cycle: 40     # ~16 s de chaine par cycle : on echantillonne, on ne recense pas
   max_slots: 300          # apres un arret on ne rattrape pas au-dela
