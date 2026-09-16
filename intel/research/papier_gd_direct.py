@@ -81,10 +81,11 @@ N_REGIME, PLAFOND_JOUR = 50, 40_000
 # portefeuille de 185. Mais un test PAPIER n a pas de capital : on enregistre tout, et on rejouera
 # n importe quel plafond ensuite sur les tickets collectes. L inverse est impossible -- un ticket refuse
 # ne revient jamais. La contrainte de capital se remet a l analyse, pas a la collecte.
-# En mode large les positions sont tenues 30 min au lieu de 5 : a ~500 tickets/jour la moyenne
-# simultanee monte a ~10 et les pointes bien au-dela de 25. On releve le plafond -- mais pas plus de
-# 45, car `getMultipleAccounts` n accepte que 100 comptes et chaque position en occupe deux.
-MAX_OUVERTS = 45 if os.environ.get("PAPIER_GD_REGLE") == "large" else 25
+# En mode large les positions sont tenues 30 min au lieu de 5 : la nuit ca fait ~14 simultanees
+# (mesure : 0,5 ticket/minute), mais le flux de journee est trois a quatre fois plus dense. Comme
+# `prix_multiples` decoupe desormais ses lectures par 100 comptes, le plafond n est plus dicte par
+# l API : 120 laisse de la marge sans jamais refuser un ticket aux heures pleines.
+MAX_OUVERTS = 120 if os.environ.get("PAPIER_GD_REGLE") == "large" else 25
 
 # EMISSION VERS LE MOTEUR, inerte par defaut. Mise a 1, chaque ticket pris ecrit AUSSI une ligne dans
 # la table `decisions` du moteur, avec un `model_version` a part : c est la SEULE chose qui separe deux
@@ -279,9 +280,18 @@ def prix_multiples(ouverts):
     comptes = []
     for t in ouverts:
         comptes += [t["comptes"][0], t["comptes"][1]]
-    res = cc.rpc({"jsonrpc": "2.0", "id": 1, "method": "getMultipleAccounts",
-                  "params": [comptes, {"encoding": "jsonParsed", "commitment": "processed"}]}) or {}
-    vals = (res or {}).get("value") or []
+    # `getMultipleAccounts` n accepte que 100 comptes : on decoupe, sinon le plafond de positions
+    # serait dicte par une limite d API plutot que par la strategie. En journee le flux est trois a
+    # quatre fois plus dense que la nuit et 45 positions simultanees seraient atteintes.
+    vals = []
+    for d in range(0, len(comptes), 100):
+        res = cc.rpc({"jsonrpc": "2.0", "id": 1, "method": "getMultipleAccounts",
+                      "params": [comptes[d:d + 100],
+                                 {"encoding": "jsonParsed", "commitment": "processed"}]}) or {}
+        lot = (res or {}).get("value") or []
+        if len(lot) < len(comptes[d:d + 100]):
+            lot = lot + [None] * (len(comptes[d:d + 100]) - len(lot))   # garder l alignement
+        vals += lot
     out = {}
     for i, t in enumerate(ouverts):
         a, b = (vals[2 * i] if 2 * i < len(vals) else None), (vals[2 * i + 1] if 2 * i + 1 < len(vals) else None)
@@ -408,6 +418,19 @@ def main():
     if "--rapport" in sys.argv:
         rapport(ici)
         return
+    # Un redemarrage perd les positions en cours : elles restent « prises » sans issue, et l analyse
+    # les compterait comme des tickets alors qu on ne connait pas leur sortie. On les marque
+    # explicitement interrompues -- avec `jalons` vide, donc ecartees par le rapport -- plutot que de
+    # les laisser disparaitre en silence. Le chien de garde redemarre, cela arrivera encore.
+    orphelines = ici.execute(
+        "SELECT pair FROM decision WHERE pris=1 AND pair NOT IN (SELECT pair FROM issue)").fetchall()
+    for (p,) in orphelines:
+        ici.execute("INSERT OR IGNORE INTO issue(pair, motif, ts) VALUES(?, 'interrompu', ?)",
+                    (p, time.time()))
+    if orphelines:
+        ici.commit()
+        print("papier_gd: %d position(s) perdue(s) au redemarrage, marquees interrompues"
+              % len(orphelines), flush=True)
     vus = {r[0] for r in ici.execute("SELECT pair FROM decision")}
     cache, depenses, jusqu, ouverts, recotes = {}, deque(), 0.0, [], []
     print("papier_gd_direct: demarre · gel %s · %d pools deja juges · %d positions au plus"
@@ -580,6 +603,8 @@ def rapport_large(ici):
             " i.jalons, i.net_reel, i.net_reel_4min FROM decision d JOIN issue i ON i.pair = d.pair"
             " WHERE d.pris = 1 ORDER BY d.t_dec"):
         j = json.loads(jal) if jal else {}
+        if not j:
+            continue            # ticket interrompu par un redemarrage : sortie inconnue, on l ecarte
         lignes.append({"t": t_dec, "fin": fin, "n_ach": n_ach, "coffre": coffre, "tend": tendance,
                        "p0": p0, "j": j, "net_reel": net_reel, "net4": net4})
     if not lignes:
