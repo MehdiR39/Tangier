@@ -4450,6 +4450,30 @@ l'explication la plus simple de la présence des « bons » portefeuilles là-ba
 La piste est fermée pour nous, sauf à faire du sniping dans le bloc de création — autre métier, autres
 concurrents.
 
+**Correction, le soir même : j'avais fermé ce marché sur le TÉMOIN, pas sur notre règle.** Mido : « mais G+D ne
+tourne pas sur PUMP ? ». Refait avec les filtres :
+
+| règle | tickets | par ticket | intervalle 95 % |
+|---|---|---|---|
+| témoin | 250 | −12,38 % | −15,88 ; −8,83 |
+| foule ≤ 74 | 212 | −12,65 % | −16,14 ; −9,19 |
+| foule ≤ 30 | 146 | −13,35 % | −16,71 ; −9,80 |
+| foule ≤ 15 | 84 | −10,87 % | −14,31 ; −7,30 |
+| réserve > médiane + foule ≤ 74 | 88 | −15,05 % | −22,16 ; −7,84 |
+| **tendance > 0, et donc G+D** | **0** | — | — |
+
+Le filtre de foule n'y sert à rien (85 % des jetons PUMP ont déjà moins de 74 acheteurs à 45 s) et le resserrer
+ne renverse rien. **Et G+D n'aurait pris AUCUN ticket** : la tendance — moyenne des 50 derniers résultats connus —
+n'est jamais positive sur un marché où chaque ticket perd 12 %. Le filtre de tendance nous aurait tenus dehors
+tout seul, sans qu'on ait rien su de ce marché. C'est le meilleur argument en sa faveur qu'on ait.
+
+**Et la taille réelle de ce marché, pour ne pas la surestimer une seconde fois** : 36 % des JETONS mais **3,9 % des
+TRANSACTIONS** (119 873 lignes PUMP trouvées en balayant 3 085 256 transactions du programme pump.fun sur 24 h).
+C'est une longue traîne de petits jetons presque morts — médiane **6 échanges par jeton** sur toute leur vie.
+
+**Leçon de méthode** : fermer une famille sur le témoin sans filtre, c'est fermer sur le mauvais test. Le témoin
+dit si le marché est porteur ; il ne dit pas si NOTRE règle y gagne. Les deux mesures sont nécessaires.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
