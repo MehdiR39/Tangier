@@ -60,6 +60,14 @@ def test_le_declenchement_ne_se_perd_pas():
     assert d == 100.0 and motif is None
 
 
+def test_une_panne_reseau_ne_ferme_aucune_position():
+    """Le 16/09 une erreur DNS d une seconde a tue le test a 30 s apres trois heures. Une lecture
+    absente doit se comporter comme une lecture illisible : on garde la position et on reessaie."""
+    for declenche in (None, 100.0):
+        d, motif = P.avancer(P0, declenche, None, 150.0)
+        assert motif is None and d == declenche
+
+
 def test_les_seuils_sont_ceux_annonces():
     assert (P.TP, P.RETARD, P.FIN_S) == (0.25, 2.0, 287)
     assert P.FOULE_MAX == 74 and P.COFFRE_MAX == 100.0

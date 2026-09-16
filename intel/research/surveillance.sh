@@ -63,6 +63,38 @@ print(c.execute('SELECT COUNT(*) FROM decision').fetchone()[0])" 2>/dev/null)
   fi
   age_coffre=$(( $(date +%s) - $(stat -c %Y $R/coffre.log 2>/dev/null || echo 0) ))
   [ "$age_coffre" -gt 7800 ] && echo "ALERTE $(date +%H:%M) coffre : pas de passage depuis $((age_coffre / 60)) min"
+
+  # CHIEN DE GARDE. Le 16/09 au soir, deux coupures d internet ont tue l ecoute des creations de
+  # pool ; au retour du reseau elle ne s est PAS reconnectee toute seule -- les boucles tournaient,
+  # le conteneur resolvait les noms, mais plus un seul lancement n arrivait, et les deux tests ont
+  # cesse de juger pendant une heure. Il a fallu un redemarrage a la main. Si ca se produit la nuit,
+  # on perd la nuit. Ici on le detecte et on repare : uniquement si le reseau est REVENU (sinon
+  # redemarrer ne sert a rien), et au plus une fois par demi-heure.
+  dernier_lancement=$(MSYS_NO_PATHCONV=1 docker exec "$CONTENEUR" python -c "
+import sqlite3, time
+c = sqlite3.connect('file:/app/db/intel.sqlite?mode=ro', uri=True)
+print(int(time.time() - (c.execute('SELECT MAX(ts) FROM solana_stream_launches').fetchone()[0] or 0)))" 2>/dev/null)
+  if [ -n "$dernier_lancement" ] && [ "$dernier_lancement" -gt 900 ] \
+     && [ $(( $(date +%s) - ${dernier_soin:-0} )) -gt 1800 ]; then
+    if MSYS_NO_PATHCONV=1 docker exec "$CONTENEUR" python -c "
+import socket; socket.create_connection(('mainnet.helius-rpc.com', 443), timeout=8).close()" 2>/dev/null; then
+      echo "ALERTE $(date +%H:%M) aucun lancement depuis $((dernier_lancement / 60)) min alors que le reseau repond : redemarrage du moteur"
+      MSYS_NO_PATHCONV=1 docker restart "$CONTENEUR" >/dev/null 2>&1
+      sleep 20
+      for c in "intel.research.detenteurs >> /app/db/detenteurs.log" \
+               "intel.research.coffre --boucle >> /app/data/recherche/coffre.log" \
+               "intel.research.papier_combo >> /app/db/papier_combo.log" \
+               "intel.research.v1_enregistreur >> /app/data/recherche/v1_enregistreur.log"; do
+        MSYS_NO_PATHCONV=1 docker exec -d "$CONTENEUR" sh -c "cd /app && python -m $c 2>&1"
+      done
+      MSYS_NO_PATHCONV=1 docker exec -d "$CONTENEUR" sh -c "cd /app && PAPIER_GD_AGE=45 python -m intel.research.papier_gd_direct >> /app/db/papier_gd.log 2>&1"
+      MSYS_NO_PATHCONV=1 docker exec -d "$CONTENEUR" sh -c "cd /app && PAPIER_GD_AGE=30 PAPIER_GD_DB=/app/db/papier_gd30.sqlite python -m intel.research.papier_gd_direct >> /app/db/papier_gd30.log 2>&1"
+      dernier_soin=$(date +%s)
+      echo "INFO $(date +%H:%M) moteur redemarre et six processus de recherche relances"
+    else
+      echo "INFO $(date +%H:%M) aucun lancement depuis $((dernier_lancement / 60)) min, mais le reseau ne repond pas : on attend son retour"
+    fi
+  fi
   maintenant=$(date +%s)
   if [ $((maintenant - dernier_ok)) -ge 3600 ]; then
     a=$(compter /app/db/papier_gd.sqlite)

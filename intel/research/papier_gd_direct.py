@@ -260,7 +260,15 @@ def main():
         # --- 1. LES POSITIONS OUVERTES D ABORD, toujours, avant tout travail lent. Une seule lecture
         #        de chaine pour toutes. C est ce qui garantit la cadence de 2 s sur les sorties.
         if ouverts:
-            prix = prix_multiples(ouverts)
+            # Une panne reseau passagere ne doit PAS tuer le test : `avancer` sait deja quoi faire
+            # d une lecture absente (elle garde la position). Le 16/09 a 21h10, une erreur DNS d une
+            # seconde a fait sortir l exception de la boucle et arrete le test a 30 s au bout de
+            # trois heures -- sur treize jours de collecte, c est la seule chose qui compte vraiment.
+            try:
+                prix = prix_multiples(ouverts)
+            except Exception as exc:  # noqa: BLE001
+                prix = {}
+                print("papier_gd: prix illisibles (%s)" % str(exc)[:90], flush=True)
             restants = []
             for t in ouverts:
                 age = maintenant - t["naissance"]
@@ -331,9 +339,13 @@ def main():
                             (pair, mint, naissance, t_dec, n_ach, coffre, tend))
                 ici.commit()
                 continue
-            comptes = comptes_du_pool(pair, cache)
-            age = time.time() - naissance
-            p = prix_du_pool(comptes) if comptes else None
+            try:
+                comptes = comptes_du_pool(pair, cache)
+                age = time.time() - naissance
+                p = prix_du_pool(comptes) if comptes else None
+            except Exception as exc:  # noqa: BLE001
+                print("papier_gd: pool illisible %s (%s)" % (pair[:8], str(exc)[:70]), flush=True)
+                continue
             if not p or age > ENTREE_MAX:
                 ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'trop tard',?,?,?,?,NULL)",
                             (pair, mint, naissance, t_dec, n_ach, coffre, tend, age))
