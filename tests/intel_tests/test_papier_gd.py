@@ -68,6 +68,15 @@ def test_une_panne_reseau_ne_ferme_aucune_position():
         assert motif is None and d == declenche
 
 
+def test_l_emission_est_inerte_par_defaut():
+    """Premiere des quatre etapes avant le reel : elle doit etre DESACTIVEE tant qu on ne l allume pas,
+    et meme allumee elle ecrit sous un `model_version` a part, que le carnet du moteur ne regarde pas."""
+    assert P.EMETTRE is False
+    assert P.emettre("pair", "mint", 40, 80.0, 0.05, 46.0, 1e-6) is None
+    assert P.MODELE_GD == "sol-gd-v0.1"          # jamais celui du carnet en service (sol-t1-v0.1)
+    assert P.MISE_EMISE == 10.0
+
+
 def test_les_seuils_sont_ceux_annonces():
     assert (P.TP, P.RETARD, P.FIN_S) == (0.25, 2.0, 287)
     assert P.FOULE_MAX == 74 and P.COFFRE_MAX == 100.0

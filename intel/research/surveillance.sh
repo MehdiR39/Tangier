@@ -37,8 +37,10 @@ while true; do
     # et les jours accumules sont perdus ; trois = une instance fantome ecrit dans la base d une autre
     # (c est arrive le 16/09). On ancre sur « ^python » : sinon on compterait aussi les enveloppes
     # `sh -c ...`, il y en a une par test, et ca ferait une fausse alerte toutes les dix minutes.
+    # Trois depuis le 17/09 : G+D a 45 s, G+D a 30 s, et le collecteur LARGE (coffre seul, qui
+    # enregistre foule et tendance pour evaluer toutes les regles apres coup sur les memes tickets).
     n_gd=$(echo "$procs" | grep -c "^python -m intel.research.papier_gd_direct")
-    [ "$n_gd" -ne 2 ] && echo "ALERTE $(date +%H:%M) tests G+D : $n_gd instance(s) au lieu de 2"
+    [ "$n_gd" -ne "${GD_ATTENDUS:-3}" ] && echo "ALERTE $(date +%H:%M) tests G+D : $n_gd instance(s) au lieu de ${GD_ATTENDUS:-3}"
   fi
   v1=$(cat $R/v1_avant/*.jsonl 2>/dev/null | wc -l)
   err=$(cat $R/v1_avant/*.jsonl 2>/dev/null | grep -c '"erreur"')
@@ -89,6 +91,9 @@ import socket; socket.create_connection(('mainnet.helius-rpc.com', 443), timeout
       done
       MSYS_NO_PATHCONV=1 docker exec -d "$CONTENEUR" sh -c "cd /app && PAPIER_GD_AGE=45 python -m intel.research.papier_gd_direct >> /app/db/papier_gd.log 2>&1"
       MSYS_NO_PATHCONV=1 docker exec -d "$CONTENEUR" sh -c "cd /app && PAPIER_GD_AGE=30 PAPIER_GD_DB=/app/db/papier_gd30.sqlite python -m intel.research.papier_gd_direct >> /app/db/papier_gd30.log 2>&1"
+      # Le collecteur LARGE relit son gel dans sa propre base (table `meta`), donc une relance ne
+      # remet jamais son compteur a zero -- pas besoin de lui repasser PAPIER_GD_GEL.
+      MSYS_NO_PATHCONV=1 docker exec -d "$CONTENEUR" sh -c "cd /app && PAPIER_GD_REGLE=large PAPIER_GD_AGE=45 PAPIER_GD_DB=/app/db/papier_large.sqlite python -m intel.research.papier_gd_direct >> /app/db/papier_large.log 2>&1"
       dernier_soin=$(date +%s)
       echo "INFO $(date +%H:%M) moteur redemarre et six processus de recherche relances"
     else

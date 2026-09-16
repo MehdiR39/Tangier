@@ -66,6 +66,12 @@ FOULE_MAX, COFFRE_MAX = 74, 100.0
 # a 45 s +5,02 % sur 115 (moities +15,02 / -4,80). Le pic a 30 s peut etre du hasard -- quatre ages
 # testes -- mais la STABILITE des deux moities, elle, ne l est pas. D ou ce second test, gele a part.
 A = int(os.environ.get("PAPIER_GD_AGE", "45"))
+# REGLE = "large" : on prend TOUT ce qui passe le coffre, sans regarder la foule, la tendance ni la
+# pause -- mais on enregistre leurs valeurs A L INSTANT DE LA DECISION. On peut alors evaluer apres
+# coup n importe quelle regle (coffre seul, D, G, D+F, G+D) sur exactement les memes tickets, ce qu un
+# test par regle ne permet pas : chacun verrait des pools differents et on comparerait des periodes.
+# L inverse est impossible -- un ticket refuse ne revient jamais.
+REGLE = os.environ.get("PAPIER_GD_REGLE", "gd")
 GEL = float(os.environ.get("PAPIER_GD_GEL") or GELS.get(A) or time.time())
 ENTREE_MAX, FIN_S = A + 10, 287
 TP, PLAFOND, COUT, MISE_EUR, MISE_SOL = 0.25, 3.0, 0.0262, 30.0, 0.31
@@ -76,8 +82,20 @@ N_REGIME, PLAFOND_JOUR = 50, 40_000
 # n importe quel plafond ensuite sur les tickets collectes. L inverse est impossible -- un ticket refuse
 # ne revient jamais. La contrainte de capital se remet a l analyse, pas a la collecte.
 MAX_OUVERTS = 25
+
+# EMISSION VERS LE MOTEUR, inerte par defaut. Mise a 1, chaque ticket pris ecrit AUSSI une ligne dans
+# la table `decisions` du moteur, avec un `model_version` a part : c est la SEULE chose qui separe deux
+# carnets (§5.17), et `_positions` ne regarde que le sien, donc ces lignes ne declenchent rien tant
+# qu on ne branche pas deliberement l execution dessus. C est la premiere des quatre etapes avant le
+# reel : ecrire, verifier que l ecrit correspond au decide, executer a blanc, rejouer en deux moities.
+EMETTRE = os.environ.get("PAPIER_GD_EMETTRE") == "1"
+MODELE_GD = os.environ.get("PAPIER_GD_MODELE", "sol-gd-v0.1")
+CHAIN_ID = os.environ.get("INTEL_CHAIN_ID", "4663")
+MISE_EMISE = float(os.environ.get("PAPIER_GD_MISE_EUR", "10"))
 TAILLE_POOL, OFF_BASE_TA, OFF_VIRTUELLE = 301, 43 + 32 * 3, 245
 SOL_MINT = "So11111111111111111111111111111111111111112"   # en dur : ce module ne doit dependre de rien
+SLIPPAGE_BPS = int(os.environ.get("PAPIER_GD_SLIPPAGE_BPS", "2500"))   # 25 %, comme le moteur a la vente
+LAMPORTS = 1_000_000_000
 
 
 def schema(c):
@@ -87,7 +105,25 @@ def schema(c):
             prix_entree REAL);
         CREATE TABLE IF NOT EXISTS issue(pair TEXT PRIMARY KEY, brut REAL, net REAL, age_sortie REAL,
             motif TEXT, sommet REAL, ts REAL);
+        CREATE TABLE IF NOT EXISTS meta(cle TEXT PRIMARY KEY, valeur TEXT);
     """)
+    # Mesure ISO-PROD, ajoutee le 17/09 : ce que le ROUTEUR cote reellement, a l entree et a la
+    # sortie. `net` reste le calcul sur le prix du pool moins 2,62 pts ; `net_reel` est le
+    # rendement d un aller-retour reellement cote. Les deux cote a cote disent enfin de combien le
+    # cout forfaitaire se trompe.
+    # Le COUT DU RETARD, mesure et non suppose : on recote la meme entree quelques secondes plus tard.
+    # Entre la decision et le remplissage il y a la file du moteur (cotation, construction, envoi,
+    # confirmation) et je supposais 2 s. `jetons_2s`, `jetons_5s`, `jetons_10s` disent ce qu on aurait
+    # vraiment recu a chacun de ces retards -- l ecart avec `jetons_cotes` est le prix de la lenteur.
+    for table, col in (("decision", "jetons_cotes REAL"), ("decision", "impact_entree REAL"),
+                       ("decision", "jetons_2s REAL"), ("decision", "jetons_5s REAL"),
+                       ("decision", "jetons_10s REAL"),
+                       ("issue", "sol_recu REAL"), ("issue", "net_reel REAL"),
+                       ("issue", "impact_sortie REAL")):
+        try:
+            c.execute("ALTER TABLE %s ADD COLUMN %s" % (table, col))
+        except Exception:  # noqa: BLE001
+            pass
     c.commit()
 
 
@@ -233,25 +269,110 @@ def prix_multiples(ouverts):
     return out
 
 
+def emettre(pair, mint, n_ach, coffre, tend, age, prix_sol):
+    """Ecrit la decision dans la table du moteur, sous un `model_version` a part. N execute rien.
+
+    Le prix est en SOL par jeton -- c est ce qu on a lu dans le pool. Le carnet du moteur, lui, stocke
+    des dollars pour les lignes T+1 : on ne melange pas les deux, d ou le `model_version` distinct et
+    l unite ecrite noir sur blanc dans metrics_json.
+    """
+    if not EMETTRE:
+        return None
+    try:
+        c = sqlite3.connect(BASE, timeout=30)
+        cur = c.execute(
+            "INSERT INTO decisions(ts, chain_id, token_address, label, kind, reason, price, size_eur,"
+            " sent, metrics_json, model_version) VALUES(?,?,?,?,'BUY',?,?,?,0,?,?)",
+            (int(time.time()), CHAIN_ID, mint, (mint or pair)[:8],
+             "G+D a %d s · %d acheteurs, coffre %.1f SOL, tendance %+.4f" % (A, n_ach, coffre, tend),
+             prix_sol, MISE_EMISE,
+             json.dumps({"pair": pair, "age_decision": A, "age_entree": round(age, 1),
+                         "acheteurs": n_ach, "coffre_sol": round(coffre, 3), "tendance": round(tend, 6),
+                         "prix_unite": "SOL par jeton", "objectif": TP, "echeance_s": FIN_S}),
+             MODELE_GD))
+        c.commit()
+        rid = cur.lastrowid
+        c.close()
+        return rid
+    except Exception as exc:  # noqa: BLE001
+        print("papier_gd: emission impossible (%s)" % str(exc)[:90], flush=True)
+        return None
+
+
+JUP = "https://lite-api.jup.ag/swap/v1/quote"
+
+
+def coter(entree, sortie, montant):
+    """La VRAIE cotation du routeur, celle que le moteur utiliserait pour passer l ordre.
+
+    Rend le montant recu (en unites de `sortie`), ou None. C est ce qui rend la mesure iso-prod :
+    elle contient le glissement, l impact et les frais de route, au lieu du cout forfaitaire de
+    2,62 points calibre sur d anciens tickets a un tout autre rythme. Ne signe rien, ne construit
+    aucune transaction -- une cotation est une lecture.
+    """
+    import urllib.request
+    url = "%s?inputMint=%s&outputMint=%s&amount=%d&slippageBps=%d" % (
+        JUP, entree, sortie, int(montant), int(SLIPPAGE_BPS))
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Tangier/1.0"}),
+                                   timeout=10)
+        d = json.loads(r.read().decode())
+        return int(d["outAmount"]), float(d.get("priceImpactPct") or 0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def clore(ici, t, prix, motif):
     brut = min(prix / t["p0"] - 1, PLAFOND)
     net = brut - COUT
-    ici.execute("INSERT OR IGNORE INTO issue VALUES(?,?,?,?,?,?,?)",
-                (t["pair"], brut, net, time.time() - t["naissance"], motif, t["sommet"] / t["p0"] - 1, time.time()))
+    # ISO-PROD : ce que le routeur nous rendrait vraiment en revendant les jetons qu il nous aurait
+    # donnes a l entree. L aller-retour cote contient tous les couts, sans aucune hypothese.
+    sol_recu = net_reel = impact = None
+    if t.get("jetons"):
+        q = coter(t["mint"], SOL_MINT, t["jetons"])
+        if q:
+            sol_recu, impact = q[0] / LAMPORTS, q[1]
+            net_reel = min(sol_recu / MISE_SOL - 1, PLAFOND)
+    ici.execute("INSERT OR IGNORE INTO issue(pair, brut, net, age_sortie, motif, sommet, ts,"
+                " sol_recu, net_reel, impact_sortie) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (t["pair"], brut, net, time.time() - t["naissance"], motif,
+                 t["sommet"] / t["p0"] - 1, time.time(), sol_recu, net_reel, impact))
     ici.commit()
-    print("papier_gd: %s sortie %s a x%.2f -> %+.2f %% (%+.2f EUR)"
-          % (t["pair"][:8], motif, prix / t["p0"], 100 * net, MISE_EUR * net), flush=True)
+    print("papier_gd: %s sortie %s a x%.2f -> %+.2f %% (%+.2f EUR)%s"
+          % (t["pair"][:8], motif, prix / t["p0"], 100 * net, MISE_EUR * net,
+             (" · routeur %+.2f %%" % (100 * net_reel)) if net_reel is not None else ""), flush=True)
     return net
+
+
+def gel_de(ici):
+    """Le gel est ECRIT DANS LA BASE a la premiere execution, et relu ensuite.
+
+    Sans ca, chaque relance devait recevoir son gel par variable d environnement : un oubli, et le
+    test recommencait a zero -- ou pire, jugeait des pools nes avant sa propre decision, ce qui
+    n est plus un test vers l avant. Le chien de garde relance sans rien savoir : c est a la base
+    de se souvenir.
+    """
+    global GEL
+    r = ici.execute("SELECT valeur FROM meta WHERE cle='gel'").fetchone()
+    if r:
+        GEL = float(r[0])
+    else:
+        ici.execute("INSERT INTO meta VALUES('gel', ?)", (str(GEL),))
+        ici.execute("INSERT OR REPLACE INTO meta VALUES('regle', ?)", (REGLE,))
+        ici.execute("INSERT OR REPLACE INTO meta VALUES('age', ?)", (str(A),))
+        ici.commit()
+    return GEL
 
 
 def main():
     ici = sqlite3.connect(ICI, timeout=30)
     schema(ici)
+    gel_de(ici)
     if "--rapport" in sys.argv:
         rapport(ici)
         return
     vus = {r[0] for r in ici.execute("SELECT pair FROM decision")}
-    cache, depenses, jusqu, ouverts = {}, deque(), 0.0, []
+    cache, depenses, jusqu, ouverts, recotes = {}, deque(), 0.0, [], []
     print("papier_gd_direct: demarre · gel %s · %d pools deja juges · %d positions au plus"
           % (dt.datetime.fromtimestamp(GEL, dt.timezone.utc).strftime("%d/%m %H:%M UTC"), len(vus), MAX_OUVERTS),
           flush=True)
@@ -285,6 +406,21 @@ def main():
                 else:
                     restants.append(t)
             ouverts = restants
+        # les recotations dues : elles mesurent le prix de la lenteur, sans rien bloquer
+        if recotes:
+            restantes = []
+            for rc in recotes:
+                if rc["quand"] > maintenant:
+                    restantes.append(rc)
+                    continue
+                try:
+                    q = coter(SOL_MINT, rc["mint"], MISE_SOL * LAMPORTS)
+                except Exception:  # noqa: BLE001
+                    q = None
+                if q:
+                    ici.execute("UPDATE decision SET %s=? WHERE pair=?" % rc["col"], (q[0], rc["pair"]))
+                    ici.commit()
+            recotes = restantes
         while depenses and depenses[0][0] < maintenant - 86400:
             depenses.popleft()
         if sum(x for _, x in depenses) >= PLAFOND_JOUR:
@@ -304,18 +440,18 @@ def main():
             # « tendance » n avaient pas de commit, et comme aucun ticket n etait pris, rien n etait
             # jamais valide -- la base paraissait vide et j ai cru que le test ne voyait aucun pool.
             if coffre >= COFFRE_MAX:
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'coffre',NULL,?,NULL,NULL,NULL)",
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,0,'coffre',NULL,?,NULL,NULL,NULL)",
                             (pair, mint, naissance, t_dec, coffre))
                 ici.commit()
                 continue
             tend = tendance(t_dec)
-            if tend is None or tend <= 0:
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'tendance',NULL,?,?,NULL,NULL)",
+            if REGLE != "large" and (tend is None or tend <= 0):
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,0,'tendance',NULL,?,?,NULL,NULL)",
                             (pair, mint, naissance, t_dec, coffre, tend))
                 ici.commit()
                 continue
-            if maintenant < jusqu:
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'pause',NULL,?,?,NULL,NULL)",
+            if REGLE != "large" and maintenant < jusqu:
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,0,'pause',NULL,?,?,NULL,NULL)",
                             (pair, mint, naissance, t_dec, coffre, tend))
                 ici.commit()
                 continue
@@ -323,7 +459,7 @@ def main():
             # meme limite, sinon il mesure une strategie qu on ne pourrait pas jouer. On enregistre ces
             # refus pour savoir plus tard ce que le plafond coute.
             if len(ouverts) >= MAX_OUVERTS:
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'plafond',NULL,?,?,NULL,NULL)",
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,0,'plafond',NULL,?,?,NULL,NULL)",
                             (pair, mint, naissance, t_dec, coffre, tend))
                 ici.commit()
                 continue
@@ -334,8 +470,8 @@ def main():
                 print("papier_gd: acheteurs illisibles %s (%s)" % (pair[:8], str(exc)[:70]), flush=True)
                 continue
             depenses.append((time.time(), max(10, n_tx // 10)))
-            if n_ach > FOULE_MAX:
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'foule',?,?,?,NULL,NULL)",
+            if REGLE != "large" and n_ach > FOULE_MAX:
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,0,'foule',?,?,?,NULL,NULL)",
                             (pair, mint, naissance, t_dec, n_ach, coffre, tend))
                 ici.commit()
                 continue
@@ -347,26 +483,96 @@ def main():
                 print("papier_gd: pool illisible %s (%s)" % (pair[:8], str(exc)[:70]), flush=True)
                 continue
             if not p or age > ENTREE_MAX:
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'trop tard',?,?,?,?,NULL)",
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,0,'trop tard',?,?,?,?,NULL)",
                             (pair, mint, naissance, t_dec, n_ach, coffre, tend, age))
                 ici.commit()
                 continue
             if MISE_SOL / p[1] > 0.15:
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,0,'non executable',?,?,?,?,?)",
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,0,'non executable',?,?,?,?,?)",
                             (pair, mint, naissance, t_dec, n_ach, coffre, tend, age, p[0]))
                 ici.commit()
                 continue
-            ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,1,'pris',?,?,?,?,?)",
+            ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, pris, motif, acheteurs, coffre, tendance, age_entree, prix_entree) VALUES(?,?,?,?,1,'pris',?,?,?,?,?)",
                         (pair, mint, naissance, t_dec, n_ach, coffre, tend, age, p[0]))
             ici.commit()
+            # ISO-PROD : on demande au routeur ce qu on recevrait vraiment pour notre mise. C est la
+            # cotation que le moteur utiliserait ; elle contient glissement, impact et frais de route.
+            q = coter(SOL_MINT, mint, MISE_SOL * LAMPORTS) if mint else None
+            if q:
+                ici.execute("UPDATE decision SET jetons_cotes=?, impact_entree=? WHERE pair=?",
+                            (q[0], q[1], pair))
+                ici.commit()
+                # et ce qu on recevrait si la file du moteur nous faisait arriver 2, 5 ou 10 s plus tard
+                for retard, col in ((2.0, "jetons_2s"), (5.0, "jetons_5s"), (10.0, "jetons_10s")):
+                    recotes.append({"pair": pair, "mint": mint, "quand": time.time() + retard, "col": col})
             ouverts.append({"pair": pair, "naissance": naissance, "comptes": comptes, "p0": p[0],
-                            "sommet": p[0], "dernier": p[0], "declenche": None})
-            print("papier_gd: ENTREE %s · %d acheteurs · coffre %.1f SOL · tendance %+.4f · a %.0f s · %d ouverte(s)"
-                  % (pair[:8], n_ach, coffre, tend, age, len(ouverts)), flush=True)
+                            "sommet": p[0], "dernier": p[0], "declenche": None,
+                            "mint": mint, "jetons": q[0] if q else None})
+            rid = emettre(pair, mint, n_ach, coffre, tend, age, p[0])
+            print("papier_gd: ENTREE %s · %d acheteurs · coffre %.1f SOL · tendance %+.4f · a %.0f s · %d ouverte(s)%s"
+                  % (pair[:8], n_ach, coffre, tend, age, len(ouverts),
+                     (" · decision #%d emise" % rid) if rid else ""), flush=True)
         time.sleep(PAS_SUIVI)
 
 
+def rapport_large(ici):
+    """Toutes les regles evaluees sur LES MEMES tickets, ceux collectes en mode large.
+
+    C est le seul montage qui permet de les comparer : un test par regle verrait des pools
+    differents, donc on comparerait des periodes de marche plutot que des regles.
+    """
+    lignes = [dict(zip(("t", "fin", "n_ach", "coffre", "tend", "net"), r)) for r in ici.execute(
+        "SELECT d.t_dec, d.naissance + 289, d.acheteurs, d.coffre, d.tendance, i.net"
+        " FROM decision d JOIN issue i ON i.pair = d.pair WHERE d.pris = 1 ORDER BY d.t_dec")]
+    if not lignes:
+        n = ici.execute("SELECT COUNT(*) FROM decision WHERE pris=1").fetchone()[0]
+        print("collecte large : %d tickets pris, aucun termine pour l instant" % n)
+        return
+    jours = max((lignes[-1]["t"] - lignes[0]["t"]) / 86400, 1e-9)
+    print("collecte LARGE (coffre < %.0f SOL) · %d tickets termines sur %.2f jour(s)"
+          % (COFFRE_MAX, len(lignes), jours))
+
+    def pause(sel):
+        pris, att, bl = [], [], 0.0
+        for l in sel:
+            att.sort(key=lambda z: z["fin"])
+            while att and att[0]["fin"] <= l["t"]:
+                f = att.pop(0)
+                if f["net"] <= SEUIL_PAUSE:
+                    bl = max(bl, f["fin"] + PAUSE)
+            if l["t"] >= bl:
+                pris.append(l)
+            att.append(l)
+        return pris
+
+    G = lambda l: (l["n_ach"] or 0) <= FOULE_MAX
+    D = lambda l: (l["tend"] or 0) > 0
+    print("   %-28s %5s %11s %10s %11s %9s" % ("regle", "n", "par ticket", "total", "sans best", "gagnants"))
+    for nom, f, p in (("coffre seul", lambda l: True, False),
+                      ("coffre + pause", lambda l: True, True),
+                      ("G  + foule <= 74", G, True),
+                      ("D  + tendance > 0", D, False),
+                      ("D+F  tendance + pause", D, True),
+                      ("G+D  les trois", lambda l: G(l) and D(l), True)):
+        sel = [l for l in lignes if f(l)]
+        pris = pause(sel) if p else sel
+        if not pris:
+            print("   %-28s aucun ticket" % nom)
+            continue
+        v = sorted((l["net"] for l in pris), reverse=True)
+        moy = sum(v) / len(v)
+        sans = (sum(v[1:]) / (len(v) - 1)) if len(v) > 1 else float("nan")
+        print("   %-28s %5d %+10.2f %% %+9.0f E %+10.2f %% %8.0f %%" % (
+            nom, len(v), 100 * moy, MISE_EUR * sum(v), 100 * sans,
+            100 * sum(1 for x in v if x > 0) / len(v)))
+    print("   Tickets collectes sans filtre autre que le coffre : chaque regle est donc jugee sur")
+    print("   exactement les memes pools, aux memes instants. Verdict a 300 tickets ou 21 jours.")
+
+
 def rapport(ici):
+    if REGLE == "large":
+        rapport_large(ici)
+        return
     rows = ici.execute("SELECT d.t_dec, i.net, i.motif FROM decision d JOIN issue i ON i.pair=d.pair"
                        " WHERE d.pris=1 ORDER BY d.t_dec").fetchall()
     n_vus = ici.execute("SELECT COUNT(*) FROM decision").fetchone()[0]
