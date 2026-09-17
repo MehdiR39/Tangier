@@ -663,6 +663,19 @@ def rapport_large(ici):
             px = fin
         elif sortie == "tp25":                   # la notre : +25 % avant 287 s, sinon 287 s
             px = apres_de(franchi("s1.25", FIN_S)) or fin
+        elif sortie == "tp25stop":
+            # la notre PLUS un stop a 0,7 : aucune de nos regles n en a, et le carnet du moteur,
+            # qui en a un, encaissait bien mieux sur les premiers tickets de la nuit du 17/09.
+            # On prend celui des deux seuils qui arrive EN PREMIER, jamais le plus flatteur.
+            haut, bas = franchi("s1.25", FIN_S), franchi("s0.7", FIN_S)
+            ah = haut.get("age") if haut else None
+            ab_ = bas.get("age") if bas else None
+            if ah is not None and (ab_ is None or ah <= ab_):
+                px = apres_de(haut) or fin
+            elif ab_ is not None:
+                px = apres_de(bas) or fin
+            else:
+                px = fin
         elif sortie == "moteur":                 # x1,5, stop 0,7, echeance 1800 s
             haut, bas = franchi("s1.5", 1800), franchi("s0.7", 1800)
             aa = haut.get("age") if haut else None
@@ -689,11 +702,14 @@ def rapport_large(ici):
             ("PROD telegram : sortie 4 min", lambda l: True, False, "tg"),
             ("coffre seul + sortie 4 min", lambda l: True, False, "tg"),
             ("coffre seul + gain +25 %", lambda l: True, False, "tp25"),
+            ("coffre + gain +25 % + STOP 0,7", lambda l: True, False, "tp25stop"),
             ("coffre + pause", lambda l: True, True, "tp25"),
             ("G  + foule <= 74", G, True, "tp25"),
+            ("G  + foule + STOP 0,7", G, True, "tp25stop"),
             ("D  + tendance > 0", D, False, "tp25"),
             ("D+F  tendance + pause", D, True, "tp25"),
-            ("G+D  les trois", lambda l: G(l) and D(l), True, "tp25")):
+            ("G+D  les trois", lambda l: G(l) and D(l), True, "tp25"),
+            ("G+D + STOP 0,7", lambda l: G(l) and D(l), True, "tp25stop")):
         for l in lignes:
             l["net"] = issue_de(l, sortie)
         sel = [l for l in lignes if f(l) and l["net"] is not None]
