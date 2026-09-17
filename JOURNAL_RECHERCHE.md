@@ -4574,6 +4574,43 @@ reste : le hasard donne −0,70 %, le filtre en service +0,68 %. La décision du
 PAS été touchée — il garde son seuil 0,2694, sinon son propre test gelé ne voudrait plus rien dire ;
 la bande se rejoue sur les scores déjà enregistrés, comme le collecteur large rejoue ses règles.
 
+### 3.100 — 12,3 % du modèle tire à blanc, et le NaN qui fabrique de fausses découvertes, 2026-09-17 soir
+
+Question de Mido : faut-il finetuner LightGBM, essayer d'autres architectures, empiler des modèles,
+et peut-on améliorer la prévision des CHUTES ? Réponse mesurée, et deux trouvailles au passage.
+
+**Ce que le score prédit vraiment.** Sur 1 369 tickets, AUC du score pour prédire la chute > 50 % :
+**0,672** ; pour le gros gain > +50 % : **0,724** ; pour > +100 % : **0,740**. Le modèle a été
+entraîné à détecter le vidage et il est MEILLEUR à détecter l'inverse. Ce n'est pas un détecteur de
+danger, c'est un détecteur de mouvement, plus fort du côté haussier (§3.99). Le finetuner sur la
+chute optimiserait donc la moins bonne de ses deux capacités : l'effort utile est sur la CIBLE
+(entraîner sur le gain attendu) et sur des variables NON-PRIX, pas sur l'architecture.
+
+**Le piège du NaN, qui m'a fabriqué une fausse découverte en une minute.** En cherchant si
+l'information « ça chute » est séparable de « ça monte » à l'intérieur de la bande, j'ai obtenu
+AUC 0,221 pour `ret_30` — spectaculaire. C'était faux. Les variables contiennent des NaN, **et en
+Python toute comparaison avec NaN est fausse : `sorted()` rend alors un ordre arbitraire sans lever
+la moindre erreur**, ce qui corrompt silencieusement tri et AUC. Corrigé et recoupé
+chronologiquement en deux moitiés, avec une barre de bruit tirée d'une variable continue aléatoire
+(0,063 au 99e centile, pour 17 variables testées) : **aucune variable ne tient sur les deux
+moitiés**. `ret_30` fait 0,488/0,469 puis 0,442/0,417 ; seul `dd_max` frôle la barre, ce que le
+hasard produit sur 17 essais. **Conclusion : avec les variables de prix actuelles, la prévision des
+chutes n'est pas améliorable — l'information n'y est pas.** La leçon de méthode :
+*nettoyer les NaN AVANT tout tri ou toute AUC ; un NaN ne lève pas d'erreur, il fabrique un résultat.*
+
+**Le défaut trouvé grâce au bug : le modèle appris n'est pas le modèle exécuté.** En comptant les
+NaN, trois variables sortent à **100 % manquantes sur les 1 376 tickets** : `ret_60`, `ret_120`,
+`q_croiss_60`. C'est mécanique — on décide à **45 s**, un rendement à 60 ou 120 s n'existe pas
+encore. Or le modèle **coupe 518 fois sur elles, soit 12,3 % de ses 4 200 coupes** ; et s'il a
+construit ces coupes, c'est qu'à l'entraînement ces variables avaient des valeurs, sinon l'algorithme
+n'aurait eu aucun gain à les choisir. Le modèle a donc appris sur des jetons observés à 120 s ou plus
+et on l'applique à 45 s : à chaque coupe concernée il part du côté « par défaut », à l'aveugle.
+**C'est la première raison SOLIDE de réentraîner** — pas la dérive du marché, un défaut de
+construction. La réparation est mesurable : même recette, mêmes données, seulement les variables
+disponibles à 45 s, puis comparaison des AUC sur les mêmes tickets. Réserve : le défaut est prouvé,
+le gain de sa réparation ne l'est pas. Le test gelé de la bande reste valide — elle est définie sur
+le score réellement produit en production, défaut compris.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
