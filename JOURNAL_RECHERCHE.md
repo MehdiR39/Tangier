@@ -4529,6 +4529,51 @@ lancement n'arrivait pendant une heure. `surveillance.sh` détecte l'absence de 
 que le réseau répond — sinon il attend, redémarrer pendant une coupure ne sert à rien — et relance le moteur et
 les six processus, au plus une fois par demi-heure.
 
+### 3.99 — Le modèle ne mesure pas le danger, il mesure la VIE, 2026-09-17
+
+Depuis le 15/09 le carnet `papier_combo` écarte les jetons dont le modèle d'arbres prédit une
+probabilité de vidage supérieure à 0,2694 (le 80e centile d'apprentissage). Ce seuil gagnait, et je
+n'avais jamais vérifié POURQUOI. En découpant les 1 356 tickets terminés en cinq groupes de risque
+prédit croissant, le résultat n'a rien d'un filtre de sécurité :
+
+| groupe | risque moyen | chute < −50 % | gain > +50 % | rendement |
+|---|---|---|---|---|
+| Q1, le plus « sûr » | 0,031 | 4,1 % | **0,0 %** (0 sur 271) | +1,03 % |
+| Q2 | 0,112 | 18,1 % | 1,1 % | −6,49 % |
+| Q3 | 0,225 | 23,2 % | 16,6 % | +2,28 % |
+| **Q4** | 0,270 | 25,1 % | **18,8 %** | **+5,57 %** |
+| Q5, le plus risqué | 0,355 | 33,1 % | 18,0 % | −5,70 % |
+
+**Un jeton incapable de s'effondrer est un jeton où il ne se passe rien.** Le modèle sépare le mort
+du vivant, pas le sain du pourri ; la probabilité de vidage et la probabilité de gros gain montent
+ensemble. Deux choses s'expliquent d'un coup : pourquoi toutes les pondérations continues par le
+score perdent de l'argent — elles concentrent la mise sur Q1 et Q2, c'est-à-dire sur le néant et sur
+le pire groupe ; et pourquoi 0,2694 « marchait » — il tombe par accident au milieu de Q4, le seul
+groupe rentable. Le seuil gagnait pour une raison qui n'était pas la sienne.
+
+**La bande du milieu.** Viser `0,20 ≤ risque < 0,35` plutôt qu'éviter le risque, sur ces mêmes
+1 356 tickets (H=240, coût réduit, mise 30 EUR) :
+
+| bande | tickets | par ticket | total | sans ses 3 meilleurs | 15/09 | 16/09 | 17/09 |
+|---|---|---|---|---|---|---|---|
+| tout | 1 356 | −0,67 % | −272 € | −1,33 % | +205 | −195 | −282 |
+| 0,00–0,2694, le filtre en service | 958 | +0,68 % | +197 € | −0,26 % | +54 | +75 | +67 |
+| **0,20–0,35** | **683** | **+3,90 %** | **+799 €** | **+2,59 %** | **+339** | **+156** | **+304** |
+| 0,24–0,30 | 326 | +7,64 % | +747 € | +4,92 % | +249 | +73 | +425 |
+| 0,25–0,45 | 523 | −0,18 % | −28 € | −1,91 % | +226 | −73 | −182 |
+
+99,9e centile contre 4 000 tirages de même taille (le hasard donne −0,70 %). C'est un plateau et non
+un pic — 0,22–0,32 donne +3,81 %, 0,20–0,30 +4,34 % — mais déborder vers le haut le détruit.
+
+**La réserve, et elle est décisive : ces 1 356 tickets ont servi à TROUVER la bande, ils ne peuvent
+donc pas la valider.** D'où le gel, écrit dans `papier_combo.py` le 17/09 à 16h30 UTC (18h30 Paris),
+avant l'arrivée du premier ticket concerné : bornes [0,20 ; 0,35[, critère ≥ +2,00 % par ticket,
+positif sur les deux moitiés et positif sans ses trois meilleurs, au premier atteint de 300 tickets
+postérieurs au gel ou de 21 jours. Sinon la bande est abandonnée. Le +2 % est ce qui la sépare du
+reste : le hasard donne −0,70 %, le filtre en service +0,68 %. La décision du carnet en service n'a
+PAS été touchée — il garde son seuil 0,2694, sinon son propre test gelé ne voudrait plus rien dire ;
+la bande se rejoue sur les scores déjà enregistrés, comme le collecteur large rejoue ses règles.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
