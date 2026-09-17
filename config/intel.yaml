@@ -278,7 +278,16 @@ solana:
   # Ne rend PAS gagnante une selection perdante : tous pools confondus on reste a -1,09 %.
   veille_rapide:
     enabled: true
-    pas_secondes: 2
+    # 2 s -> 1 s le 17/09. Il y a DEUX delais entre le franchissement du seuil et la vente : le temps
+    # de le VOIR (notre cadence, qu on controle) et le temps d EXECUTER (~1 s, un slot Solana plus la
+    # construction et l envoi, incompressible). A 2 s de cadence le total va jusqu a 3 s, a 1 s il
+    # tombe a 2 s. Mesure sur 3 245 pools, detection sur nos lectures et remplissage au vrai prix du
+    # marche : passer d un remplissage a 2 s a un remplissage a 1 s vaut +0,23 point par ticket
+    # [+0,06 ; +0,40] sur l ensemble, +0,80 pt sur les pools filtres (la, l intervalle contient zero).
+    # Faible, mais le cout est nul -- deux fois plus d appels sur 1 a 4 positions ouvertes -- et aucun
+    # mecanisme ne peut rendre la lecture plus rapide nuisible. En dessous de 1 s il n y a plus rien :
+    # 0,5 s et 0,0 s donnent le meme chiffre que 0,5 s, le plancher est l execution, pas la lecture.
+    pas_secondes: 1
     reveil_min_secondes: 20     # jamais deux reveils de la meme position plus rapproches que ca
   # Le prix lu dans les reserves du pool, des la creation (intel/engines/prix_chaine.py).
   # DexScreener n indexe pas ces pools avant ~T+1,5 min et se rafraichit toutes les 30 a 60 s : la
