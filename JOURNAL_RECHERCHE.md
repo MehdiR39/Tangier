@@ -4823,6 +4823,42 @@ c'est l'effet de l'horizon, pas du stop. À horizon égal (287 s) le stop **coû
 bande (−3,2 / −2,8 sur les deux moitiés) : logique, la bande sélectionne des jetons qui bougent, et
 un stop y coupe des positions qui seraient remontées.
 
+### 3.106 — La bande pourrait-elle tourner ? Oui, et voici ce qui manque exactement, 2026-09-17 nuit
+
+Un rendement par ticket ne devient de l'argent que si le moteur peut PRENDRE ces tickets. Trois
+contraintes existent dans `config/intel.yaml` et aucune n'avait été confrontée à la bande.
+
+**La file de 4 positions n'est PAS bloquante — j'ai failli l'annoncer comme telle.** Le calcul de
+capital donnait un pic de 7 positions simultanées contre `max_open_positions: 4`, ce qui laissait
+craindre des tickets perdus en masse. En rejouant les arrivées dans l'ordre avec une file de taille
+limitée — ce que fait réellement le moteur — le pic n'est qu'un pic :
+
+| contrainte | tickets pris | par ticket | à 5 EUR/jour | à 30 EUR/jour |
+|---|---|---|---|---|
+| aucune | 713 | +3,70 % | +59 € | +353 € |
+| **file de 4** | **704 (98,7 %)** | **+3,60 %** | **+57 €** | **+339 €** |
+| file de 8 | 713 | +3,70 % | +59 € | +353 € |
+
+Neuf tickets perdus sur 713, soit 4 % du gain. Même à la mise de production de **5 EUR**, la bande
+dépasserait l'objectif de 50 EUR/jour — en échantillon, donc sans valeur probante tant que le test
+gelé n'a pas parlé.
+
+**Ce qui manque vraiment : le moteur ne sait pas calculer le score.** Vérifié — `modele_vidage.json`
+n'est chargé que par `intel/research/papier_combo.py` ; **aucun moteur ne l'utilise**, et le carnet
+`solana` décide sur `min_buyers` seul (`solana_watcher.py:487`). Déployer la bande demanderait donc
+de porter dans le chemin de décision du moteur : le chargement du modèle, le calcul des 19 variables
+à 45 s, le score, puis les bornes.
+
+**Et le piège de ce portage est déjà documenté** : le 17/09 au matin, le filtre de tendance calculé
+par le backtest sur sa propre population laissait passer 41 % des pools, contre 28 % pour le moteur
+qui lisait `papier_combo.ref` — même jour, même règle, +74 EUR contre −6 EUR. Une réimplémentation
+des variables dans le moteur reproduirait exactement ce genre d'écart. **Le portage doit donc appeler
+LE MÊME code** (`variables()` extrait dans un module partagé), jamais une seconde version.
+
+Pré-requis, dans l'ordre : (1) le verdict de la bande ; (2) l'extraction de `variables()` en module
+partagé, avec un test qui compare moteur et recherche sur les mêmes pools ; (3) le rejeu du P&L en
+deux moitiés exigé avant toute mise en production.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
