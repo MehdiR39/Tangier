@@ -4611,6 +4611,45 @@ disponibles à 45 s, puis comparaison des AUC sur les mêmes tickets. Réserve :
 le gain de sa réparation ne l'est pas. Le test gelé de la bande reste valide — elle est définie sur
 le score réellement produit en production, défaut compris.
 
+### 3.101 — La foule dans la bande : pré-enregistrée faute de pouvoir la trancher, 2026-09-17 soir
+
+Puisque l'information de PRIX est épuisée à l'intérieur de la bande (§3.100), la suite logique est
+d'y apporter une variable **non-prix**. Le collecteur large en enregistre une qui ne doit rien au
+prix : le nombre d'**acheteurs uniques** avant la décision — la variable de la règle G, que le
+modèle n'a jamais vue.
+
+**Résultat : le test ne peut pas répondre aujourd'hui, et c'est ça le résultat.** Sur les 251
+tickets de la bande joignables avec le collecteur large, couper à la médiane donne +10,8 % puis
++6,7 % en faveur du groupe « beaucoup d'acheteurs », **même signe sur les deux moitiés**. Mais la
+barre de bruit — mêmes données, valeurs mélangées 400 fois — est de **±20 %**. L'écart observé est
+donc plus petit que ce que le hasard produit couramment. Aucune des six variables non-prix testées
+(acheteurs, coffre, impact d'entrée, jetons à 2/5/10 s) ne franchit sa barre.
+
+La raison est arithmétique : **un ticket de la bande varie de 70 points d'écart-type** (la bande
+contient les jetons qui bougent, c'est sa définition), donc 125 tickets par moitié ne laissent
+rien voir sous ~25 points. Le calcul de puissance donne la suite du calendrier :
+
+| tickets | écart détectable | date à 335/jour |
+|---|---|---|
+| 253 (17/09) | 25 pts | — |
+| 696 | 15 pts | 19/09 |
+| 1 088 | 12 pts | 20/09 |
+| 1 568 | 10 pts | 21/09 |
+
+**Ne pas confondre « rien ne tient » avec « la variable est inutile ».** L'instrument est trop
+grossier, comme un pèse-personne sous une lettre. D'où le pré-enregistrement, écrit dans
+`intel/research/piste_foule.py` et gelé le 17/09 à 20h00 UTC (22h00 Paris) : seuil **91 acheteurs**
+(la médiane observée AVANT le gel, jamais réajustée), direction annoncée (le groupe haut rend plus),
+critère **≥ +10 points de même signe sur les deux moitiés**, échéance **1 568 tickets postérieurs au
+gel ou 21 jours**. Le 1 568 n'est pas un chiffre rond : c'est 32 × (0,70/0,10)², la taille qu'il faut
+pour distinguer 10 points — un test verrouille cette égalité pour qu'on ne s'autorise pas à conclure
+plus tôt sur du bruit.
+
+**Bloqueur noté au passage** : le conteneur n'a ni `lightgbm`, ni `numpy`, ni `scikit-learn` — la
+réparation du modèle (§3.100, réentraîner sur les 16 variables réellement disponibles à 45 s) n'est
+donc pas faisable là où tournent les données. Il faudra exporter le jeu d'entraînement vers un
+environnement qui les possède.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
