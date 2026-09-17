@@ -4887,6 +4887,56 @@ vaudrait +1,2 à +2,4 points par ticket, c'est-à-dire de l'ordre de 190 EUR/jou
 toucher à l'âge maintenant : le test gelé de la bande décide à 45 s, le déplacer l'annulerait.
 À pré-enregistrer après le verdict, pas avant.
 
+### 3.108 — Changer la cible : fermé. Et la raison de fond : le SENS n'est pas dans les données, 2026-09-17 nuit
+
+Le modèle est entraîné à prédire la CHUTE (AUC 0,672) alors qu'il prédit spontanément mieux le GROS
+GAIN (0,724, et 0,740 au-delà de +100 %). L'entraîner sur la bonne cible semblait la piste la plus
+prometteuse. Elle est fermée, et ce qu'on a trouvé en la fermant vaut plus que la piste.
+
+**Quatre cibles, même recette, protocole R apprend / T choisit / F vérifie** (rendement de la bande
+en centiles, A=45) :
+
+| cible d'apprentissage | AUC chute | bande sur T | bande sur F |
+|---|---|---|---|
+| chute < −50 % *(en service)* | 0,757 | −3,30 % | −10,59 % |
+| gros gain > +50 % | 0,747 | −1,31 % | **−14,45 %** |
+| gros gain > +100 % | 0,744 | −4,38 % | −11,86 % |
+| le gain lui-même (régression) | 0,551 | **−1,17 %** | −8,48 % |
+
+Ce qui brillait sur T ne survit pas sur F : `gros gain > +50 %` était deuxième sur T et devient le
+**pire** sur F. Sans le protocole, j'annonçais une amélioration qui empirait les choses de 4 points.
+
+**J'avais d'abord conclu « les deux cibles sont la même fonction ». C'est faux, et je le retire.**
+Mesuré : corrélation de rang **0,772** entre les deux scores, et **46 % de recouvrement seulement**
+sur leurs 20 % les mieux notés. Ce sont deux fonctions différentes — mais leur différence ne porte
+pas sur la direction, donc elle n'achète rien.
+
+**J'ai aussi jugé la nouvelle cible dans l'ANCIENNE forme de stratégie** (la bande du milieu), ce qui
+était une faute : un modèle-gain monotone appellerait de prendre le HAUT. Balayage par décile,
+choix sur T puis vérification sur F : **aucune forme ne se reproduit**, pour aucune cible — le
+modèle en service lui-même passe de +17,7 (D8 sur T) à −8,9 (D8 sur F).
+
+**La raison de fond, et c'est le vrai résultat.** Parmi les jetons qui BOUGENT vraiment
+(|brut_240| ≥ 50 %, 5 434 cas), qu'est-ce qui prédit le SENS ?
+
+| population | AUC hors échantillon |
+|---|---|
+| tous âges, avec `A` | 0,683 |
+| tous âges, sans `A` ni `n_lect` | 0,675 |
+| **A=45 seul — la condition de service** | **0,509** |
+
+Le 0,68 était un **artefact** : le modèle devinait l'âge de décision, et dans cette table un jeton
+jugé à 600 s a déjà fait une partie de son mouvement. L'âge fuit même après retrait de `A` et
+`n_lect`, par le **motif des variables manquantes** (`ret_120` n'existe qu'aux âges élevés). À âge
+constant, **0,509 : rien**. (Réserve : 256 jetons seulement, ce qui exclut un effet fort, pas un
+effet faible.)
+
+**Conséquence sur la stratégie.** On ne peut pas choisir les gagnants : l'information directionnelle
+n'est pas dans les 45 premières secondes de prix. La seule stratégie possible est **sélectionner les
+jetons qui bougent et encaisser l'asymétrie** — la perte est bornée à −100 %, le gain ne l'est pas.
+C'est exactement ce que fait la bande ; ce n'était pas le raisonnement qui l'avait produite, c'est
+celui qui la justifie.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
