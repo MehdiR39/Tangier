@@ -4937,6 +4937,65 @@ jetons qui bougent et encaisser l'asymétrie** — la perte est bornée à −10
 C'est exactement ce que fait la bande ; ce n'était pas le raisonnement qui l'avait produite, c'est
 celui qui la justifie.
 
+### 3.109 — La faute de la journée : j'ai soustrait un coût qui décrit un bot qu'on n'a pas construit, 2026-09-17 nuit
+
+**Tous les chiffres que j'ai donnés le 17/09 utilisaient `cout_reduit` (1,57 pt médian) alors que le
+coût total réel, mesuré de bout en bout, vaut 2,62 pts.** L'écart, environ un point par ticket,
+retourne le signe de trois lignes sur quatre.
+
+Ce n'est pas une erreur de recopie. `papier_combo.py` documente lui-même les deux lignes :
+
+```
+couts   reduit = 1,25 % + impact/2   (depot recupere, priorite baissee)
+        reel actuel = 1,7 % + impact + 0,5 %   (depot)
+```
+
+Le coût réduit est donc **le coût qu'on aurait SI on faisait deux optimisations qui ne sont pas
+faites** — récupérer le dépôt de compte-jeton et baisser les frais de priorité — plus une hypothèse
+de diviser l'impact par deux. Mes tableaux décrivaient un bot qui n'existe pas, et je les ai
+présentés comme « iso-prod » toute la journée, en répondant « oui, c'est vérifié » chaque fois que
+Mido posait la question.
+
+**Le pire : c'est la DEUXIÈME fois en deux jours que je me trompe sur le même chiffre, dans l'autre
+sens.** Le 16/09 j'avais construit un coût de 5,04 % en ajoutant 2,4 pts par-dessus le 2,62 déjà
+end-to-end (double comptage, « −239 € » retiré). Cause identique : **je ne pars jamais de la mesure
+vérifiée, je recalcule à partir de ce que je trouve sous la main.**
+
+**La mesure, re-vérifiée ce soir en relançant `calibration_corrigee.py`** — 236 tickets `mode='live'`,
+gain réel du portefeuille contre prix simulé corrigé : **moyenne −0,0262, médiane −0,0241, quartiles
+−0,0312 et −0,0126**. C'est la seule référence.
+
+**La table corrigée (mise 30 €, coût 2,62 pts, collecteurs uniquement) :** douze lignes, **douze
+totaux négatifs**. `RISQUE seul` passe de +174 € à **−139 €** ; les « moins pires » (G+D 45 s −6 €,
+G+D les trois −21 €, D+F −37 €) ne le sont que parce qu'elles prennent 24 à 34 tickets — c'est de
+l'abstention, pas de la performance. Les lignes du collecteur G+D étaient déjà correctes : ce
+collecteur utilise 2,62 depuis sa création. **Seules les cinq lignes de `papier_combo` étaient
+fausses, toutes dans le même sens.**
+
+**RÈGLE, à appliquer sans exception : le coût de référence est 2,62 pts.** Tout chiffre publié dit
+quel coût il contient. Ne jamais reprendre une variante « optimisée » sans dire, dans la même
+phrase, ce qu'elle suppose et si c'est implémenté.
+
+**Ce que la correction révèle, et qui est la vraie information de la journée.** En rendement BRUT,
+avant tout coût : bande **+4,73 %**, RISQUE seul **+2,15 %**, régime+risque +1,65 %, témoin +0,84 %.
+Le coût réel étant de 2,62 pts, **seule la bande a un brut qui le dépasse** — et `RISQUE seul` rate
+de 0,33 point seulement. La question décisive de ce projet n'est donc pas « quelle règle » mais
+**« de combien peut-on baisser le coût »**. Deux leviers mesurés : récupérer le dépôt de
+compte-jeton vaut **0,39 pt à 50 €** (il est récupérable en fermant le compte, ce n'est pas
+implémenté) ; et surtout la **taille du ticket**, parce que les frais fixes (priorité 0,048 € par
+ordre, soit 0,096 € l'aller-retour, plus le dépôt) ne dépendent pas de la mise :
+
+| mise | 5 € | 15 € | 30 € | 50 € | 75 € | 100 € |
+|---|---|---|---|---|---|---|
+| coût moyen (bande) | **6,91 pts** | — | 2,78 | 2,86 | 3,24 | 3,72 |
+| bande, EUR/jour | −37 | +57 | +172 | +274 | **+320** | +276 |
+| RISQUE seul, EUR/jour | −107 | −76 | −55 | −76 | −179 | −368 |
+
+**À la mise de production (5 €), le coût est de 6,91 pts et AUCUNE règle ne peut gagner**, avant même
+de parler de stratégie. Monter la mise ne sauve que ce qui est déjà positif : pour une ligne
+négative, une mise plus grosse multiplie la perte. Réserve : la colonne 75 € repose sur le modèle
+d'impact, pas sur une mesure.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
