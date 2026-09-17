@@ -4996,6 +4996,76 @@ de parler de stratégie. Monter la mise ne sauve que ce qui est déjà positif :
 négative, une mise plus grosse multiplie la perte. Réserve : la colonne 75 € repose sur le modèle
 d'impact, pas sur une mesure.
 
+### 3.110 — La nuit du 17 au 18/09 : un seul modèle est un TIRAGE, et le premier expert décorrélé
+
+**LA MESURE QUI EXPLIQUE TOUTE LA NUIT.** 96 entraînements **identiques** — mêmes données, même
+recette, seule la graine aléatoire change — appliqués aux mêmes 1 568 tickets vivants :
+
+| | étendue | écart-type | tirages perdants |
+|---|---|---|---|
+| un seul LightGBM | **−252 à +348 €** | **117 €** | **30 %** |
+| ensemble de 12 | +38 à +190 € | 54 € | 0 sur 8 |
+| forêt aléatoire | −63 à +92 € | 54 € | — |
+
+LightGBM tire au sort 80 % des lignes et 70 % des variables à chaque arbre. **Le modèle en service
+est donc un tirage, et il se trouve être au-dessus de la moyenne** (+140 € contre +66 €). Ce n'est
+pas une qualité de la stratégie.
+
+Cela **explique les sept pistes mortes de la nuit** : déplacer le seuil, filtrer sur la taille du
+pool, découper les ordres, réentraîner sur des données fraîches, changer la cible, construire des
+variables (`qualite_30`, `souffle`, `taille_vol`…), corriger `cout` et l'heure. Toutes se jouaient
+entre 20 et 160 €, c'est-à-dire **sous le bruit du tirage**, que je ne mesurais pas. Je comparais
+des coups de dés en croyant comparer des méthodes.
+
+**DEUX CORRECTIONS QUE MIDO A IMPOSÉES, ET QUI ÉTAIENT JUSTES.**
+- Le **découpage des ordres ne réduit rien** : sur un AMM à produit constant, vendre en n morceaux
+  donne le même résultat **à la 8e décimale** (vérifié numériquement), parce que le second morceau
+  repart du prix où le premier s'est arrêté. Il ne gagne que si le pool se reconstitue entre les
+  tranches — mesuré sur 12 pools lus à 0,35 s pendant 210 s : après une baisse de 0,6-1,2 % (notre
+  ordre à 60 €), le rebond médian est de **−0,143 %** et le prix remonte 50 % du temps. Aucune
+  reconstitution. Et chaque tranche paie 0,16 % de frais de priorité en plus.
+- **Ma « fuite » d'entrée n'en était pas une.** J'avais durci la règle (première lecture ≥ 47 s au
+  lieu de la plus proche), ce qui dégradait tout de 0,47 pt. Mido a objecté que la décision ne
+  dépend pas du prix : vrai. La lecture retenue est avant 47 s dans 51 % des cas et après dans 49 %
+  — c'est du bruit symétrique, pas un biais. Correction **retirée**.
+
+**LE RÉSULTAT POSITIF DE LA NUIT : un expert qui se trompe DIFFÉREMMENT.** L'agrégation d'experts
+ne vaut que si les experts divergent. Notre ensemble et notre forêt sont corrélés à **0,939** et se
+recouvrent à **91 %** : rien à échanger. Un expert entraîné **uniquement** sur la concentration des
+détenteurs, sans voir un seul prix, atteint **AUC 0,682** avec une corrélation au prix de **0,682**.
+
+Mesure faite **avant** d'écrire la moindre ligne de collecte, pour savoir quoi collecter :
+
+| expert | n var | AUC | corrélation au prix |
+|---|---|---|---|
+| PRIX (référence) | 19 | 0,747 | — |
+| les 11 variables non-prix | 11 | 0,678 | 0,649 |
+| les 5 « utiles » | 5 | 0,699 | 0,680 |
+| **`sac1` + `n_sacs5` seules** | **2** | **0,682** | **0,682** |
+
+Les variables **gratuites** (Telegram, Twitter, site, description, régime de marché) ne valent
+**rien** : 0,563 à elles seules, et les retirer améliore le reste. Le créateur n'est **pas**
+récupérable à bas coût — ces jetons sont en Token-2022 avec métadonnées intégrées et
+`updateAuthority` à `null`. Le financeur demande la même pagination lourde. Ni l'un ni l'autre ne
+justifie son coût quand deux parts de détention donnent déjà 0,682.
+
+Et exiger les **deux** experts améliore à chaque étape : sans filtre −9,95 %, prix seul −8,66 %,
+détenteurs seuls −7,56 %, **les deux d'accord −6,43 %**.
+
+**PIÈGE DE MESURE, À NE JAMAIS REFAIRE.** J'ai chronométré `getSignaturesForAddress` avec
+`limit: 1` (57 ms) puis l'ai implémenté avec `limit: 1000`. **Ce n'est pas le même appel** : il
+bloque des minutes sur un jeton actif ET ne remonte même pas jusqu'à la création. Le collecteur est
+resté bloqué **sans lever d'erreur** et n'a rien écrit pendant deux minutes. *Toujours chronométrer
+l'appel EXACT qu'on va écrire.* Le coût réel retenu : un `getTokenLargestAccounts` + un
+`getTokenSupply`, **82 ms en médiane, 186 au pire**, sur une fenêtre de 45 s.
+
+**QUATRE TESTS GELÉS AJOUTÉS CETTE NUIT**, tous notés en parallèle, aucun collecteur en marche
+modifié : bande + pause (23h30), ensemble de 12 et forêt aléatoire (01h30), expert détenteurs
+(03h00). Le modèle en service continue de décider seul.
+
+**Sur les jetons vivants, la concentration est extrême** : le plus gros détenteur tient **58 %** en
+médiane, les cinq premiers **92 %**.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
