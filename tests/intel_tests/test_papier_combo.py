@@ -78,3 +78,33 @@ def test_un_pool_normal_rend_ses_variables_et_la_lecture_d_entree():
     assert f["A"] == 45 and f["V"] == 1 and f["n_lect"] == 4
     assert f["lancements_10min"] == 3          # 900, 1000 et 1030 dans la fenetre (435 ; 1035]
     assert f["cout"] == pytest.approx(0.017 + 2 * 0.31 / (400 + 17.5845))
+
+
+def test_la_bande_pause_reste_celle_qui_a_ete_gelee():
+    assert PC.GEL_BP == 1789680600.0          # 17/09/2026 21h30 UTC = 23h30 Paris
+    assert (PC.PAUSE_S, PC.SEUIL_PAUSE) == (1800.0, -0.30)
+
+
+def test_la_pause_part_de_la_CLOTURE_du_perdant_pas_de_son_ouverture():
+    """Un moteur ne peut pas reagir a une perte qu il n a pas encore constatee. Le blocage doit
+    donc courir depuis la cloture du ticket perdant, pas depuis son entree."""
+    perdant = {"t": 0.0, "fin": 242.0, "r": -0.60}
+    juste_avant = {"t": 100.0, "fin": 342.0, "r": 1.0}      # ouvert avant que la perte soit connue
+    pendant = {"t": 300.0, "fin": 542.0, "r": 1.0}          # dans les 30 min qui suivent la cloture
+    apres = {"t": 2100.0, "fin": 2342.0, "r": 1.0}          # 242 + 1800 = 2042, donc autorise
+    pris = PC.appliquer_pause([perdant, juste_avant, pendant, apres])
+    assert pris == [perdant, juste_avant, apres]
+
+
+def test_un_petit_perdant_ne_declenche_pas_la_pause():
+    perdant = {"t": 0.0, "fin": 242.0, "r": -0.20}          # au-dessus du seuil de -30 %
+    suivant = {"t": 300.0, "fin": 542.0, "r": 1.0}
+    assert PC.appliquer_pause([perdant, suivant]) == [perdant, suivant]
+
+
+def test_les_pauses_successives_prolongent_le_blocage():
+    a = {"t": 0.0, "fin": 242.0, "r": -0.60}
+    b = {"t": 200.0, "fin": 442.0, "r": -0.60}              # ouvert avant, ferme plus tard
+    tard = {"t": 2100.0, "fin": 2342.0, "r": 1.0}           # bloque par b jusqu a 442 + 1800 = 2242
+    pris = PC.appliquer_pause([a, b, tard])
+    assert tard not in pris

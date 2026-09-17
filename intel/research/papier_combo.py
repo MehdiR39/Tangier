@@ -196,6 +196,79 @@ BANDE = (0.20, 0.35)
 CRITERE_BANDE = 0.0200
 
 
+# BANDE + PAUSE, PRE-ENREGISTREE le 17/09 a 21h30 UTC (23h30 Paris).
+#
+# POURQUOI. Le soir du gel de la bande, la perte n est pas venue d une degradation lente : elle est
+# venue d UNE fenetre de deux heures ou 37 tickets sont tombes ensemble (-150 EUR), suivie d une
+# autre (-66 EUR). Le marche entier avait tourne. Une pause -- on arrete 30 min apres un ticket qui
+# ferme sous -30 % -- est exactement faite pour ca. Rejouee sur cette soiree : elle n a pris AUCUN
+# ticket dans les deux mauvaises fenetres, et la bande serait passee de -181 EUR a +48 EUR.
+#
+# CE QU ELLE N EST PAS. Elle n augmente pas le gain, elle limite la casse. Sur les 2,25 jours
+# d avant le gel elle donne +13,03 %/ticket contre +2,78 % pour la bande seule, mais en ne gardant
+# que 84 tickets sur 684 : en EUROS par jour, 151 contre 263. Et garder 84 tickets AU HASARD parmi
+# les 684 donne +2,78 % en moyenne avec un 95e centile a +14,82 % -- la pause tombe au centile 92,5,
+# donc SOUS la barre du hasard. Ce n est pas un filtre qui trouve les bons tickets ; c est une
+# reduction d exposition qui coupe les mauvais moments.
+#
+# HONNETETE. C est le dixieme candidat essaye le 17/09, et il a ete trouve en regardant la soiree
+# qui venait de mal se passer. Il ne peut donc etre juge que sur ce qui vient APRES ce gel.
+#
+# CRITERE, FIGE : au premier atteint de 300 tickets de bande posterieurs au gel ou de 21 jours --
+#   (a) le total de BANDE+PAUSE doit depasser celui de BANDE SEULE sur la meme periode, et
+#   (b) BANDE+PAUSE doit etre positive.
+# La comparaison est APPARIEE (memes tickets, meme marche, seule la regle change), ce qui est bien
+# plus puissant qu un seuil absolu -- et c est la seule question qui compte : la pause aide-t-elle ?
+GEL_BP = 1789680600.0             # 17/09/2026 21h30 UTC = 23h30 Paris
+PAUSE_S, SEUIL_PAUSE = 1800.0, -0.30
+TENUE_S = 242.0                   # entree a 47 s, sortie a 287 s
+
+
+def appliquer_pause(tickets):
+    """Ecarte les tickets ouverts pendant les 30 min qui suivent une cloture sous -30 %.
+
+    Le blocage part de la CLOTURE du perdant, pas de son ouverture : c est a ce moment-la qu on
+    apprend la perte. Un moteur ne peut pas reagir a une information qu il n a pas encore.
+    """
+    pris, attente, bloque = [], [], 0.0
+    for t in tickets:
+        attente.sort(key=lambda z: z["fin"])
+        while attente and attente[0]["fin"] <= t["t"]:
+            f = attente.pop(0)
+            if f["r"] <= SEUIL_PAUSE:
+                bloque = max(bloque, f["fin"] + PAUSE_S)
+        if t["t"] >= bloque:
+            pris.append(t)
+        attente.append(t)
+    return pris
+
+
+def rapport_bande_pause(ici):
+    """La bande avec pause, comparee a la bande seule sur EXACTEMENT les memes tickets."""
+    rows = ici.execute("""SELECT d.t_dec, d.risque, i.brut_240, d.cout_reduit FROM decision d
+                          JOIN issue i ON i.pair=d.pair WHERE d.eligible=1 AND i.brut_240 IS NOT NULL
+                          AND d.risque IS NOT NULL AND d.t_dec >= ? ORDER BY d.t_dec""",
+                       (GEL_BP,)).fetchall()
+    b = [{"t": r[0], "fin": r[0] + TENUE_S, "r": min(r[2] - r[3], 3.0)}
+         for r in rows if BANDE[0] <= r[1] < BANDE[1]]
+    print("\nBANDE + PAUSE · PRE-ENREGISTREE le 17/09 a 23h30 Paris")
+    print("   %d ticket(s) de bande depuis le gel, sur les 300 du critere" % len(b))
+    if b:
+        p = appliquer_pause(b)
+        ts = sum(x["r"] for x in b)
+        tp = sum(x["r"] for x in p)
+        print("   bande seule   : n=%4d · %+7.2f %% · %+7.0f EUR (a 30 EUR)"
+              % (len(b), 100 * ts / len(b), 30 * ts))
+        if p:
+            print("   bande + pause : n=%4d · %+7.2f %% · %+7.0f EUR" % (len(p), 100 * tp / len(p), 30 * tp))
+            tenu = tp > ts and tp > 0
+            print("   -> la pause apporte %+.0f EUR · %s" % (30 * (tp - ts),
+                                                             "CRITERE TENU" if tenu else "critere non atteint"))
+        else:
+            print("   bande + pause : aucun ticket (pause active tout du long)")
+    print("   CRITERE : total(bande+pause) > total(bande seule) ET positif, a 300 tickets ou 21 jours.")
+
+
 def rapport_bande(ici):
     """La bande de risque, jugee UNIQUEMENT sur les tickets posterieurs a son gel."""
     rows = ici.execute("""SELECT d.t_dec, d.risque, i.brut_240, d.cout_reduit FROM decision d
@@ -254,6 +327,7 @@ def rapport(ici):
                          100 * sum(1 for x in v if x <= -0.5) / len(v), m1, m2, len(v) / jours * (sum(v) / len(v)) * 30,
                          "   <- CRITERE ESSENTIEL" if (H == 120 and cout_nom == "reduit" and nom == "REGIME + RISQUE") else ""))
     rapport_bande(ici)
+    rapport_bande_pause(ici)
 
 
 def main():
