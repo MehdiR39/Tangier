@@ -4768,6 +4768,61 @@ modèle réentraîné, lui, a une autre calibration encore. **Il n'existe aucun 
 bande sur l'historique** ; le seul test valable est celui gelé le 17/09 à 18h30. De plus la période
 12→15/09 était négative pour tout (−5,29 % sans filtre) : elle ne pouvait ni valider ni réfuter.
 
+### 3.105 — La durée de tenue : ce qui sauve une tenue longue, c'est la prise de gain, 2026-09-17 nuit
+
+On décide à 45 s et on tient 240 s sans l'avoir jamais comparé à autre chose. La table historique a
+**dix âges de décision** (20 à 600 s) et six horizons : de quoi poser la question. Protocole imposé
+par les tranches du fichier — apprentissage sur R, **choix sur T**, vérification sur F une seule
+fois. Sur les 50 cases, tout est négatif (la période 12→15/09 l'était pour tout), mais **un motif
+énorme survit aux deux tranches** : sur F, H=30 s donne −2,8 à −5,3 %, H=240 s donne −6,1 à −17,3 %,
+**H=480 s donne −23,5 à −29,7 %**. Vingt points d'écart, pour un bruit de 5.
+
+**Confirmé sur le vivant, et avec un optimum.** Tenue sèche, sans prise de gain, sur les tickets du
+collecteur à 1 s :
+
+| horizon | dans la bande | hors bande |
+|---|---|---|
+| 167 s | −1,99 % | −16,83 % |
+| **287 s** | **+0,70 %** | −23,02 % |
+| 600 s | −18,02 % | −46,70 % |
+| 900 s | −36,52 % | −63,05 % |
+| 1800 s | **−60,25 %** | −69,29 % |
+
+**J'ai failli en tirer une alerte fausse.** Le carnet de production `solana` tient **1 800 s** : à
+lire ce tableau, il serait catastrophique. Mais il a une prise de gain ×1,5 ET un stop à 0,7, donc
+il ne tient jamais 1 800 s en réalité. En rejouant sa VRAIE règle sur 300 tickets :
+
+| échéance | tenue seule | règle du carnet (TP ×1,5 + stop 0,7) |
+|---|---|---|
+| 287 s | +0,70 % | −3,21 % |
+| 900 s | −36,52 % | −1,97 % |
+| 1 800 s | **−60,25 %** | **−1,83 %** |
+
+**Le critère pré-enregistré du 09/09, resté dans `config/intel.yaml` sans jamais être évalué, est
+TENU** : il exigeait « mieux que −0,157 par euro sinon retour à 900 s » ; on mesure **−0,0183**.
+`max_hold_seconds: 1800` reste justifié. Leçon de méthode : ne jamais extrapoler d'une tenue sèche
+vers une règle qui a des sorties conditionnelles — il faut rejouer la règle entière.
+
+**Le mécanisme, décomposé** (tickets de la bande, comparaison appariée, chaque ticket son témoin) :
+
+| à 1 800 s | rendement | ce que ça ajoute |
+|---|---|---|
+| tenue sèche | −60,25 % | — |
+| + stop 0,7 | −39,73 % | **+20 pts** |
+| + stop **et** prise de gain ×1,5 | +1,37 % | **+41 pts** |
+
+**C'est la prise de gain qui sauve une tenue longue, pas le stop.** Ces jetons montent puis
+redescendent : sans plafond on rend tout. Et tenue courte (287 s, +0,70 %) ≈ tenue longue avec
+TP+stop (+1,37 %) — les deux chemins arrivent au même endroit.
+
+**Pour la bande précisément, aucune sortie n'est départageable** : les différences appariées ont
+toutes leur intervalle contenant zéro et des moitiés de signes opposés (TP ×1,5 + stop à 1 800 s :
++0,67 pt, [−7,89 ; +9,05], +11,1 / −9,8). Seule exception nette, le stop **seul** à long horizon,
+franchement négatif et cohérent sur les deux moitiés (−24,9 pts à 900 s, −40,4 pts à 1 800 s) — mais
+c'est l'effet de l'horizon, pas du stop. À horizon égal (287 s) le stop **coûte** 3 points à la
+bande (−3,2 / −2,8 sur les deux moitiés) : logique, la bande sélectionne des jetons qui bougent, et
+un stop y coupe des positions qui seraient remontées.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
