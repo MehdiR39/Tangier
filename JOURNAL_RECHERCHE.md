@@ -4650,6 +4650,63 @@ réparation du modèle (§3.100, réentraîner sur les 16 variables réellement 
 donc pas faisable là où tournent les données. Il faudra exporter le jeu d'entraînement vers un
 environnement qui les possède.
 
+### 3.102 — La bande passe tous les contrôles de fragilité, et sa sortie n'est pas optimisable, 2026-09-17 nuit
+
+**Deux instruments indépendants mesurent les mêmes tickets.** `papier_combo` (donc la bande) évalue
+ses sorties sur la table du moteur, **cadencée à 10 s**, en tenue sèche de 240 s. `papier_large` suit
+les MÊMES pools en lisant la chaîne lui-même **toutes les 1 s**, avec une autre sortie. Sur les 282
+tickets communs — c'est le contrôle de fragilité le plus sévère qu'on puisse faire sans attendre :
+
+| | grille 10 s, tenue 240 s | grille 1 s, TP +25 %/287 s |
+|---|---|---|
+| dans la bande | +3,11 % | −1,18 % |
+| hors bande | −22,01 % | −13,29 % |
+| **écart** | **+25,1 pts** | **+12,1 pts** |
+
+**Le NIVEAU dépend de l'instrument, l'AVANTAGE non.** C'est exactement la distinction de §3.81 : un
+contraste juge une sélection, seul le niveau fait de l'argent. Ici la sélection tient.
+
+**Cinq sorties, données identiques à 1 s, seule la règle change** (223 tickets dans la bande) :
+
+| sortie | dans la bande | hors bande | écart |
+|---|---|---|---|
+| tenue sèche 167 s | −0,91 % | −16,53 % | +15,6 pts |
+| tenue sèche 287 s | +0,86 % | −24,63 % | +25,5 pts |
+| TP +25 % sinon 287 s | −1,18 % | −13,29 % | +12,1 pts |
+| TP +25 % + stop 0,7 | +0,99 % | −5,69 % | +6,7 pts |
+| TP +50 % sinon 287 s | +2,90 % | −18,19 % | +21,1 pts |
+
+**L'avantage de la bande survit aux cinq** (+6,7 à +25,5 points). C'est le résultat solide.
+
+**Et la sortie n'est PAS optimisable sur ces données — je m'en suis abstenu.** Le tableau ci-dessus
+crie « prends TP +50 % » (+2,90 % contre −1,18 %). Comparaison APPARIÉE, chaque ticket étant son
+propre témoin, ce qui divise fortement le bruit :
+
+| contre la tenue sèche 287 s | différence/ticket | intervalle 95 % | verdict |
+|---|---|---|---|
+| TP +25 % | −2,03 pts | [−9,66 ; +5,29] | indiscernable |
+| TP +50 % | +2,05 pts | [−4,62 ; +8,18] | indiscernable |
+| TP +25 % + stop | +0,13 pts | [−7,72 ; +7,26] | indiscernable |
+
+Et les deux moitiés chronologiques changent de signe : TP +25 % fait **+8,28** puis **−12,25**.
+Avec 223 tickets à 70 points d'écart-type, une différence de 2 points est invisible même appariée.
+**Choisir TP +50 % ici, ce serait optimiser du bruit** — la faute exacte qui a coûté 800 EUR.
+
+### 3.103 — Audit iso-prod du 17/09 au soir : sain, et deux précisions de fonctionnement
+
+Quatre collecteurs écrivent, dernière décision il y a moins d'une minute, **zéro position prise sans
+issue** après une heure (les « 907 sans issue » du premier passage étaient les pools REJETÉS,
+`pris=0` — vérifié avant d'alerter). Un seul trou historique, 16/09 21h23→23h42, celui des coupures
+d'internet déjà traitées par le chien de garde.
+
+Deux précisions qui comptent pour lire les chiffres, et qui ne sont PAS des défauts :
+- **`solana_prix_chaine` est cadencée à 10 s** et n'est écrite que par `prix_chaine.py`. La veille à
+  1 s ne remplit pas cette table — elle réveille le carnet et met à jour `positions.peak_price`.
+  La cadence observée (médiane 10,0 s, min 9, max 11) est donc conforme au réglage.
+- **Les tests papier n'ont pas la même source** : `papier_combo` lit cette table (10 s),
+  `papier_gd_direct` lit la chaîne lui-même à 1 s. Toutes les règles comparées à l'intérieur d'un
+  même collecteur restent comparables ; entre collecteurs, la granularité diffère.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
