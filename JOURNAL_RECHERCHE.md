@@ -4707,6 +4707,67 @@ Deux précisions qui comptent pour lire les chiffres, et qui ne sont PAS des dé
   `papier_gd_direct` lit la chaîne lui-même à 1 s. Toutes les règles comparées à l'intérieur d'un
   même collecteur restent comparables ; entre collecteurs, la granularité diffère.
 
+### 3.104 — Réparer le modèle et l'enrichir : les deux pistes se ferment, la découverte de fond tient, 2026-09-17 nuit
+
+L'environnement conda `qrt` de l'hôte possède `lightgbm 4.7`, `pandas`, `numpy`, `scikit-learn` — la
+réparation du §3.100 est donc faisable hors ligne, et `data/recherche/balayage/table.pkl` (27 135
+lignes, 47 colonnes) est toujours là. **Rien n'a été déployé : le modèle en service alimente le test
+gelé de la bande, le remplacer l'annulerait.**
+
+**Le défaut est entièrement expliqué.** La table contient **dix âges de décision** (20 à 600 s) et le
+modèle a été entraîné « tous âges confondus » (`grand_balayage_ml.py`). À A=45 — le seul âge où on
+s'en sert — `ret_120` est manquante à 100 %, `ret_60` et `q_croiss_60` à 98,4 %, alors qu'elles ne
+manquent qu'à 49,6 % et 27,9 % sur l'ensemble. Le modèle a donc appris ces variables sur les autres
+âges. Seules **3 010 lignes sur 27 135 sont à A=45**.
+
+**La réparation marche, et ne rapporte presque rien.** Apprentissage sur la tranche R (60 % les plus
+anciens), mesure sur la tranche F (20 % les plus récents, jamais vue), restreinte à A=45 :
+
+| modèle | AUC hors éch. à A=45 | coupes à blanc |
+|---|---|---|
+| en service : 19 var, tous âges | 0,757 | **12,3 %** |
+| sans les mortes : 16 var, tous âges | **0,763** | 0 % |
+| sans les mortes : 16 var, A=45 seul | 0,757 | 0 % |
+| 16 var + non-prix, tous âges | **0,765** | 0 % |
+| 16 var + non-prix, A=45 seul | 0,755 | 0 % |
+
+Retirer les variables mortes supprime bien les 12,3 % de coupes à l'aveugle mais ne gagne que
+**+0,006 d'AUC** — LightGBM absorbait déjà presque tout par ses directions par défaut. N'entraîner
+que sur A=45 **ne vaut rien** (0,757) : perdre 90 % des lignes annule le bénéfice de conditions
+identiques. Et les **variables non-prix n'ajoutent que +0,002** (`createur_prec`, `det_a_vide`,
+`fin_a_vide`, `marche_*`, `sac1`, `n_sacs5`, `n_descr`, `telegram`, `twitter`, `site`). Vérifié
+avant usage : elles **ne fuitent pas** — `grand_balayage_table.py` ne retient que ce qui était
+CONNU avant la décision (`connu = naissance + 302 s`, `bisect_right`, le jeton lui-même exclu).
+Réserve : elles sont très lacunaires (`sac1` 60 % manquante, `telegram` 58 %), donc « n'ajoutent
+rien » vaut pour cette collecte-ci, pas pour l'idée en général.
+
+**En euros, aucun des cinq ne se distingue** : bande en centiles sur la tranche F à A=45, les cinq
+modèles rendent entre −10,59 % et −11,74 % par ticket, pour une erreur-type de 2,5 points. Un écart
+sous ~5 points n'est pas interprétable — donc il n'y a rien à choisir.
+
+**Ce qui tient, et c'est le point important : la découverte de fond se reproduit sur une période
+indépendante.** Sur le 12→15/09, avec un modèle entraîné uniquement sur le 09→12/09 (1 198 tickets
+hors échantillon) :
+
+| quintile | risque | chute < −50 % | gain > +50 % | rendement |
+|---|---|---|---|---|
+| Q1 | 0,007 | 2,9 % | **0,0 %** | −1,32 % |
+| Q2 | 0,020 | 5,9 % | **0,0 %** | −2,06 % |
+| Q3 | 0,062 | 10,4 % | 1,2 % | −8,16 % |
+| Q4 | 0,218 | 25,1 % | **13,8 %** | −3,25 % |
+| Q5 | 0,319 | 32,9 % | 14,6 % | −11,65 % |
+
+**Zéro gros gain dans les deux quintiles les plus « sûrs », sur 479 tickets, période indépendante,
+modèle indépendant.** Le modèle mesure la VIE : confirmé deux fois.
+
+**Ce qui NE tient pas, et que je retire.** J'ai d'abord conclu que « la bande perd sur l'historique »
+(−6,27 % contre −5,29 % sans filtre). **Cette comparaison est confondue** : le modèle déployé a été
+entraîné SUR ces lignes, et un modèle est systématiquement plus tranché sur ce qu'il a vu — sa
+médiane de score y est de 0,085 contre 0,227 en vivant, ce qui déplace complètement les bornes. Le
+modèle réentraîné, lui, a une autre calibration encore. **Il n'existe aucun moyen propre de juger la
+bande sur l'historique** ; le seul test valable est celui gelé le 17/09 à 18h30. De plus la période
+12→15/09 était négative pour tout (−5,29 % sans filtre) : elle ne pouvait ni valider ni réfuter.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
