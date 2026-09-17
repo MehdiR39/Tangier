@@ -640,21 +640,40 @@ def rapport_large(ici):
         if not j or not p0:
             return None
         fin = j.get("h287")
+
+        def franchi(cle, avant):
+            """Le seuil, SEULEMENT s il a ete franchi avant l echeance de la regle.
+
+            Sans cette borne on vend a un prix qui n existe qu APRES la fermeture de la position :
+            un jeton qui touche +25 % a 314 s alors que la regle sort a 287 s comptait quand meme
+            comme une prise de gain. C est du look-ahead, et ca donnait 100 % de gagnants sur les
+            huit premiers tickets de la nuit du 17/09 -- impossible, et c est ce qui l a trahi.
+            """
+            s = j.get(cle)
+            if not isinstance(s, dict) or s.get("age") is None or s["age"] > avant:
+                return None
+            return s
+
+        # On ne vend JAMAIS au prix du declenchement : il faut le prix d au moins 2 s plus tard,
+        # sinon on suppose une execution instantanee et on gonfle le resultat de 20 a 40 % (§3.96).
+        # Si ce prix-la manque, on considere que la sortie n a pas eu lieu -- prudent, jamais flatteur.
+        apres_de = lambda s: s.get("apres") if (s and "apres" in s) else None
+
         if sortie == "tg":                       # 4 minutes pile, la regle de production
             px = fin
-        elif sortie == "tp25":                   # la notre : +25 % sinon 287 s
-            s = j.get("s1.25")
-            px = (s.get("apres") or s.get("prix")) if isinstance(s, dict) else fin
+        elif sortie == "tp25":                   # la notre : +25 % avant 287 s, sinon 287 s
+            px = apres_de(franchi("s1.25", FIN_S)) or fin
         elif sortie == "moteur":                 # x1,5, stop 0,7, echeance 1800 s
-            haut, bas = j.get("s1.5"), j.get("s0.7")
-            aa = haut.get("age") if isinstance(haut, dict) else None
-            ab = bas.get("age") if isinstance(bas, dict) else None
+            haut, bas = franchi("s1.5", 1800), franchi("s0.7", 1800)
+            aa = haut.get("age") if haut else None
+            ab = bas.get("age") if bas else None
+            echeance = j.get("h1800") or j.get("h1500") or j.get("h1200") or fin
             if aa is not None and (ab is None or aa <= ab):
-                px = haut.get("apres") or haut.get("prix")
+                px = apres_de(haut) or echeance
             elif ab is not None:
-                px = bas.get("apres") or bas.get("prix")
+                px = apres_de(bas) or echeance
             else:
-                px = j.get("h1800") or j.get("h1500") or j.get("h1200") or fin
+                px = echeance
         else:
             px = fin
         if not px:
