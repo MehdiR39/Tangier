@@ -4595,7 +4595,33 @@ la bande se rejoue sur les scores déjà enregistrés, comme le collecteur large
    **créateur** viserait la bonne chose.
 4. **Dette de qualité sur `token_snapshots`** : des prix aberrants y produisent des moyennes à
    +3 000 000 % (§3.15). À nettoyer avant toute étude qui utilise ces relevés.
-5. **Sonde de vente avant achat** : le nœud Robinhood **honore les overrides d'état de `eth_call`**
+5. **Réentraîner le modèle : à quelle fréquence, et faut-il seulement le faire ?** Question posée par
+   Mido le 17/09, ouverte volontairement — rien à décider avant le verdict de la bande. Ce qui est
+   déjà mesuré ce jour-là, sur les tickets du 15 au 17/09 (le modèle a été entraîné le 15/09 sur le
+   09→15/09, donc le 16 et le 17 sont hors échantillon) :
+   - **Le pouvoir de discrimination ne se dégrade pas.** AUC sur « chute > 50 % à 240 s » : 0,652 le
+     15, **0,678** le 16, **0,670** le 17. Aucune décroissance en deux jours hors échantillon. (Cette
+     AUC n'est PAS comparable au 0,74 d'entraînement — l'étiquette diffère ; seule la comparaison
+     entre les trois jours est valide, elle utilise la même définition.)
+   - **C'est l'ÉCHELLE du score qui bouge, pas sa qualité.** Médiane 0,218 → 0,227 → 0,229 ; la part
+     de la population sous le seuil fixe 0,2694 passe de **75,2 % à 68,7 % en deux jours**. Le modèle
+     est intact et la règle change toute seule. C'est la dérive dangereuse, parce qu'elle est
+     invisible : aucune métrique de modèle ne l'attrape.
+   - **Une bande à deux bords y résiste, un seuil à un bord non.** [0,20 ; 0,35[ vaut « centile 40 à
+     centile 91 » les trois jours (44,7→92,3 / 39,0→90,8 / 40,5→90,2) et sa part de population tient
+     à ±2 points, là où le seuil en perd 6,5. Quand la distribution monte, la bande perd en bas mais
+     regagne en haut.
+   - **Réserve : trois jours ne font pas une tendance.** Le 75 → 71 → 69 est monotone mais tient sur
+     trois points. À re-mesurer avant d'en conclure quoi que ce soit.
+
+   Les trois pistes qui en découlent, dans cet ordre : (a) **exprimer les bornes en centiles du
+   jour** plutôt qu'en valeurs absolues — ça supprime la dérive d'échelle sans réentraîner ;
+   (b) si on réentraîne un jour, **geler la RECETTE et non les poids** (mêmes variables, même
+   fenêtre, même périodicité, bornes en centiles) pour qu'un test en avant valide la procédure,
+   réentraînement compris ; (c) ne jamais réentraîner pendant qu'un test gelé tourne — un modèle qui
+   change en cours de route ramène à « ça a l'air bien sur les données passées », l'état exact qui a
+   coûté 800 EUR.
+6. **Sonde de vente avant achat** : le nœud Robinhood **honore les overrides d'état de `eth_call`**
    (vérifié le 08/09, mapping des soldes au slot 4 sur les jetons testés). On peut donc simuler une
    vente en s'inventant un solde. Ça n'aurait pas sauvé les trois tickets du 08/09 (pools morts, pas
    pièges), mais ça reste la seule défense contre les vrais pièges.
