@@ -97,7 +97,12 @@ REGLE = os.environ.get("PAPIER_GD_REGLE", "gd")
 GEL = float(os.environ.get("PAPIER_GD_GEL") or GELS.get(A) or time.time())
 ENTREE_MAX, FIN_S = A + 10, 287
 TP, PLAFOND, COUT, MISE_EUR, MISE_SOL = 0.25, 3.0, 0.0262, 30.0, 0.31
-RETARD, PAS_SUIVI, PAUSE, SEUIL_PAUSE = 2.0, 2.0, 1800, -0.30
+# PAS_SUIVI passe de 2 s a 1 s le 17/09, en meme temps que la veille du moteur, pour que le test
+# mesure le systeme qui tourne vraiment. Les tickets deja collectes restent en base et continuent de
+# compter : melanger 34 tickets lus a 2 s avec 266 lus a 1 s decale la moyenne finale de 0,03 point,
+# contre un ecart-type de 41 points entre deux tickets. RETARD reste a 2 s : c est le delai
+# d EXECUTION (un slot Solana plus la construction et l envoi), qui ne depend pas de notre cadence.
+RETARD, PAS_SUIVI, PAUSE, SEUIL_PAUSE = 2.0, 1.0, 1800, -0.30
 N_REGIME, PLAFOND_JOUR = 50, 40_000
 # Le moteur tient 4 lignes au plus (`solana.max_open_positions`), parce que 4 x 30 EUR = 120 EUR sur un
 # portefeuille de 185. Mais un test PAPIER n a pas de capital : on enregistre tout, et on rejouera
