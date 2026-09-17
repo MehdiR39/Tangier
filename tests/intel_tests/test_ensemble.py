@@ -73,3 +73,33 @@ def test_le_rapport_ne_juge_rien_avant_le_gel(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(E, "Ensemble", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError))
     E.rapport(c)
     assert "fichier absent" in capsys.readouterr().out
+
+
+def test_une_foret_ne_passe_PAS_par_la_sigmoide(tmp_path):
+    """Un boosting additionne des scores puis applique la sigmoide. Une foret moyenne des
+    PROPORTIONS deja comprises entre 0 et 1. Confondre les deux donnerait des probabilites fausses
+    -- 0,5 deviendrait 0,62 -- et un seuil qui ne selectionne plus rien de comparable."""
+    p = tmp_path / "f.json"
+    p.write_text(json.dumps({
+        "feature_names": ["x"], "seuil_p80": 0.5, "n_modeles": 1, "sigmoide": False,
+        "modeles": [{"tree_info": [{"tree_structure": {"leaf_value": 0.2}},
+                                   {"tree_structure": {"leaf_value": 0.8}}]}]}))
+    f = E.Ensemble(str(p))
+    assert f.sigmoide is False
+    assert f.probabilite({"x": 1.0}) == pytest.approx(0.5)          # la moyenne des feuilles
+    assert f.probabilite({"x": 1.0}) != pytest.approx(1 / (1 + math.exp(-1.0)))
+
+
+def test_une_foret_remplace_une_valeur_absente_par_la_mediane_d_apprentissage(tmp_path):
+    """Une foret n a pas de « cote par defaut » : elle a ete entrainee sur des donnees ou les
+    trous etaient deja bouches. On transporte donc ces medianes avec elle, sinon un NaN partirait
+    du mauvais cote a chaque coupe."""
+    arbre = {"split_feature": 0, "threshold": 5.0, "missing_type": "None", "default_left": True,
+             "left_child": {"leaf_value": 0.1}, "right_child": {"leaf_value": 0.9}}
+    p = tmp_path / "f.json"
+    p.write_text(json.dumps({"feature_names": ["x"], "seuil_p80": 0.5, "n_modeles": 1,
+                             "sigmoide": False, "medianes": {"x": 9.0},
+                             "modeles": [{"tree_info": [{"tree_structure": arbre}]}]}))
+    f = E.Ensemble(str(p))
+    assert f.probabilite({"x": 1.0}) == pytest.approx(0.1)          # 1 <= 5 -> gauche
+    assert f.probabilite({}) == pytest.approx(0.9)                  # mediane 9 > 5 -> droite

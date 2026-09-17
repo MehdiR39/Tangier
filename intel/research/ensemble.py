@@ -34,6 +34,7 @@ import sqlite3
 
 GEL_ENSEMBLE = 1789687800.0        # 17/09/2026 23h30 UTC = 18/09 01h30 Paris
 CHEMIN = os.environ.get("ENSEMBLE_VIDAGE", "/app/data/recherche/balayage/ensemble_vidage.json")
+CHEMIN_FORET = os.environ.get("FORET_VIDAGE", "/app/data/recherche/balayage/foret_vidage.json")
 N_CRITERE, JOURS_CRITERE = 1000, 21
 ZERO = 1e-35
 
@@ -56,30 +57,52 @@ def _feuille(noeud, x):
 
 class Ensemble:
     """Douze modeles, une moyenne. Le seuil est le 80e centile de cette moyenne, calcule sur les
-    donnees d apprentissage -- jamais sur celles qui le jugeront."""
+    donnees d apprentissage -- jamais sur celles qui le jugeront.
+
+    Deux formats de fichier, et la difference n est pas cosmetique :
+      - BOOSTING (`sigmoide` absent ou vrai) : les feuilles sont des scores qui s ADDITIONNENT
+        dans un modele, et la sigmoide s applique a leur somme. On moyenne ensuite les
+        probabilites, pas les scores bruts -- les deux donnent des resultats differents.
+      - FORET (`sigmoide` faux) : chaque feuille porte deja une proportion de classe, et le modele
+        est la MOYENNE de ses arbres. Aucune sigmoide, aucune somme.
+    Une foret ne sait pas non plus traiter une valeur absente : elle a ete entrainee sur des
+    donnees ou les trous avaient ete remplaces par la mediane d apprentissage, qu on transporte
+    donc avec elle (`medianes`).
+    """
 
     def __init__(self, chemin: str = CHEMIN) -> None:
         d = json.load(open(chemin, encoding="utf-8"))
         self.variables = d["feature_names"]
         self.seuil_p80 = d["seuil_p80"]
+        self.sigmoide = bool(d.get("sigmoide", True))
+        self.medianes = d.get("medianes") or {}
         self.modeles = [[t["tree_structure"] for t in m["tree_info"]] for m in d["modeles"]]
 
     def probabilite(self, valeurs: dict) -> float:
-        x = [valeurs.get(v) for v in self.variables]
-        x = [float("nan") if a is None else float(a) for a in x]
+        x = []
+        for v in self.variables:
+            a = valeurs.get(v)
+            if a is None or (isinstance(a, float) and math.isnan(a)):
+                a = self.medianes.get(v)           # vide pour un boosting : le NaN passe tel quel
+            x.append(float("nan") if a is None else float(a))
         total = 0.0
         for arbres in self.modeles:
-            brut = sum(_feuille(t, x) for t in arbres)
-            total += 1.0 / (1.0 + math.exp(-brut))
+            if self.sigmoide:
+                total += 1.0 / (1.0 + math.exp(-sum(_feuille(t, x) for t in arbres)))
+            else:
+                total += sum(_feuille(t, x) for t in arbres) / len(arbres)
         return total / len(self.modeles)
 
 
 def rapport(ici: sqlite3.Connection, mise: float = 25.0, cout: float = 0.0262) -> None:
     """L ensemble contre le modele en service, sur EXACTEMENT les memes tickets."""
-    try:
-        ens = Ensemble()
-    except FileNotFoundError:
-        print("\nENSEMBLE : fichier absent (%s)" % CHEMIN)
+    modeles = []
+    for nom, chemin in (("ENSEMBLE de 12", CHEMIN), ("FORET ALEATOIRE", CHEMIN_FORET)):
+        try:
+            modeles.append((nom, Ensemble(chemin)))
+        except FileNotFoundError:
+            print("\n%s : fichier absent (%s)" % (nom, chemin))
+    if not modeles:
         return
     rows = ici.execute("""SELECT d.risque, d.variables, i.brut_240 FROM decision d
                           JOIN issue i ON i.pair=d.pair WHERE d.eligible=1 AND i.brut_240 IS NOT NULL
@@ -88,19 +111,25 @@ def rapport(ici: sqlite3.Connection, mise: float = 25.0, cout: float = 0.0262) -
     print("\nENSEMBLE DE 12 MODELES · PRE-ENREGISTRE le 18/09 a 01h30 Paris")
     print("   %d ticket(s) depuis le gel, sur les %d du critere" % (len(rows), N_CRITERE))
     if rows:
-        serv, ense = [], []
+        serv = []
+        autres = {nom: [] for nom, _ in modeles}
         for risque, var, brut in rows:
             net = min(brut - cout, 3.0)
+            f = json.loads(var)
             if risque <= 0.2694:
                 serv.append(net)
-            if ens.probabilite(json.loads(var)) <= ens.seuil_p80:
-                ense.append(net)
-        for nom, v in (("modele en service", serv), ("ENSEMBLE de 12", ense)):
+            for nom, m in modeles:
+                if m.probabilite(f) <= m.seuil_p80:
+                    autres[nom].append(net)
+        for nom, v in [("modele en service", serv)] + [(n, autres[n]) for n, _ in modeles]:
             if v:
-                print("   %-20s n=%4d · %+7.2f %% · %+7.0f EUR" % (nom, len(v), 100 * sum(v) / len(v), mise * sum(v)))
-        if serv and ense:
-            ecart = mise * (sum(ense) - sum(serv))
-            print("   -> l ensemble apporte %+.0f EUR · %s" % (ecart, "MIEUX" if ecart > 0 else "moins bien"))
+                print("   %-20s n=%4d · %+7.2f %% · %+7.0f EUR"
+                      % (nom, len(v), 100 * sum(v) / len(v), mise * sum(v)))
+        for nom, _ in modeles:
+            if serv and autres[nom]:
+                ecart = mise * (sum(autres[nom]) - sum(serv))
+                print("   -> %-18s %+7.0f EUR contre le modele en service · %s"
+                      % (nom, ecart, "MIEUX" if ecart > 0 else "moins bien"))
     print("   CRITERE : faire mieux que le modele en service sur les memes tickets, a %d tickets ou %d jours."
           % (N_CRITERE, JOURS_CRITERE))
 
