@@ -4859,6 +4859,34 @@ Pré-requis, dans l'ordre : (1) le verdict de la bande ; (2) l'extraction de `va
 partagé, avec un test qui compare moteur et recherche sur les mêmes pools ; (3) le rejeu du P&L en
 deux moitiés exigé avant toute mise en production.
 
+### 3.107 — Décider plus tard n'est pas exécuter plus tard : la contradiction n'existait pas, 2026-09-17 nuit
+
+La grille du §3.105 suggérait que décider à 60 s bat 45 s sur les deux tranches, ce qui semblait
+contredire une mesure du matin — « entrer à 65 s au lieu de 47 s coûte 3,65 points ». La table
+contenant **le même pool à dix âges**, la comparaison peut se faire pool par pool, ce qui élimine
+la variabilité entre pools, de loin la plus grosse. Tranche F seulement, horizon 240 s :
+
+| âges comparés | pools | le plus jeune | le plus vieux | différence | erreur-type |
+|---|---|---|---|---|---|
+| 30 → 45 s | 470 | −7,45 % | −7,77 % | −0,33 pt | ±0,78 |
+| **45 → 60 s** | 566 | −7,43 % | −6,22 % | **+1,22 pt** | ±0,79 |
+| 45 → 90 s | 570 | −7,40 % | −6,60 % | +0,80 pt | ±1,50 |
+| 60 → 90 s | 566 | −6,08 % | −6,12 % | −0,03 pt | ±1,32 |
+| **45 → 180 s** | 571 | −7,18 % | −13,20 % | **−6,01 pts** | ±2,41 |
+
+Dans la bande seule (246 pools présents aux deux âges) : 45 → 60 s donne **+2,38 pts ± 1,45**.
+
+**La contradiction n'existait pas, je confondais deux choses opposées.** *Décider* à 60 s, c'est
+disposer de 15 secondes d'information en plus avant de choisir — légèrement bon. *Exécuter* à 65 s
+une décision prise à 45 s, c'est subir 18 secondes de dérive sans aucune information en échange —
+franchement mauvais. Les deux mesures disent la même chose : **l'information aide, le retard nuit.**
+
+La forme d'ensemble est 30 ≈ 45 < 60 ≈ 90 > 120 > 180, soit un optimum plat vers 60-90 s. L'effet
+vaudrait +1,2 à +2,4 points par ticket, c'est-à-dire de l'ordre de 190 EUR/jour à 30 EUR la mise —
+**mais il ne fait que 1,5 erreur-type, il n'est donc pas établi.** Et il est hors de question de
+toucher à l'âge maintenant : le test gelé de la bande décide à 45 s, le déplacer l'annulerait.
+À pré-enregistrer après le verdict, pas avant.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
