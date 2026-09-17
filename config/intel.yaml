@@ -1093,3 +1093,25 @@ pump_courbe:
   budget_blocs_s: 40      # lecture des blocs
   budget_social_s: 25     # lecture des metadonnees IPFS
   budget_prix_s: 30       # suivi des prix sur la courbe
+
+# ---------------------------------------------------------------------------
+# RECUPERATION DES CAUTIONS DE COMPTE-JETON
+# Solana immobilise 0,002039 SOL a l ouverture de chaque compte-jeton. Le moteur en cree un a
+# chaque achat et n en a jamais ferme un seul : cette caution n est pas perdue, elle est BLOQUEE.
+# Sur un ticket de 30 EUR (0,31 SOL) elle vaut 0,66 point ; le cout d execution total mesure sur
+# 236 tickets reels etant de 2,62 pts, la recuperer le ramene a ~1,96 -- assez pour faire passer
+# `RISQUE seul` (brut +2,15 %) de perdante a gagnante. C est le SEUL poste de frais reductible
+# sans contrepartie : baisser la priorite fait echouer des ordres (§3.40, quatre sur six), et
+# reduire l impact demande de changer la strategie. Journal §3.109.
+#
+# Le module ne peut qu une chose : fermer un compte dont le solde est EXACTEMENT zero. Il ne peut
+# ni acheter, ni vendre, ni transferer, ni bruler. Il epargne les jetons d une position ouverte, et
+# n agit que sur un compte vu vide depuis au moins un quart d heure -- un achat en vol cree un
+# compte a solde nul pendant quelques secondes, le fermer ferait echouer l achat.
+#
+# Comme tout ce qui signe ici, il faut DEUX actes pour qu il agisse : `enabled: true` ci-dessous ET
+# `execution.mode: live`. En papier il se contente d afficher ce qu il fermerait.
+recuperation:
+  enabled: false
+  pas_secondes: 1800            # boucle lente : rien ne presse, et ca evite de gener les ordres
+  max_transactions_par_passage: 3   # 3 x 20 comptes = 60 fermetures par passage au maximum

@@ -319,6 +319,20 @@ class Runtime:
             tasks.append(asyncio.create_task(self._loop(
                 "paliers", self.paliers.cycle,
                 int(self.ctx.config.get("paliers_vente.pas_secondes", 5)))))
+        # Recuperer les cautions des comptes-jetons vides. Boucle LENTE et volontairement a l ecart :
+        # elle ne touche ni l achat ni la vente, n a qu une instruction (`CloseAccount`), et son
+        # interet est purement comptable -- 0,002039 SOL par compte, soit 0,66 point sur un ticket
+        # de 30 EUR, le seul poste de frais reductible sans contrepartie (§3.109). La faire tourner
+        # doucement et sans frais de priorite evite qu elle dispute la place dans le bloc a nos
+        # propres ordres.
+        if self.ctx.config.get("recuperation.enabled", False):
+            from intel.engines.recuperation import Recuperation
+            import httpx as _hx2
+            self.recuperation = Recuperation(self.ctx, getattr(getattr(self, "solana", None), "client", None)
+                                             or _hx2.AsyncClient(headers={"User-Agent": "tangier-intel/recup"}))
+            tasks.append(asyncio.create_task(self._loop(
+                "recuperation", self.recuperation.cycle,
+                int(self.ctx.config.get("recuperation.pas_secondes", 1800)))))
         # Acheter un lancement qui a un Telegram, le revendre quatre minutes plus tard. Boucle a
         # part et rapide : la fenetre d entree ne dure que cent secondes et la sortie est a la
         # minute pres. Voir intel/engines/telegram_rapide.py pour la mesure qui la justifie.
