@@ -270,6 +270,11 @@ def jalonner(t, prix, age):
         j = t["jalons"].get(cle)
         if isinstance(j, dict) and "apres" not in j and age >= j["age"] + RETARD:
             j["apres"] = prix
+            # On note AUSSI l age de cette lecture. Sans lui, impossible de verifier que le delai
+            # etait bien de 2 s : s il y a un trou dans les lectures, `apres` est pris beaucoup plus
+            # tard et la perte affichee est exageree. Constate le 17/09 sur un ticket sorti « prise de
+            # gain » a -54 % : la logique etait juste, mais je ne pouvais pas le prouver.
+            j["age_apres"] = round(age, 1)
 
 
 def avancer(p0, declenche, prix, age):
@@ -723,7 +728,19 @@ def rapport_large(ici):
     G = lambda l: (l["n_ach"] or 0) <= FOULE_MAX
     D = lambda l: (l["tend"] or 0) > 0
     PROD = lambda l: (l["n_ach"] or 0) >= 75          # le plancher du carnet solana en service
-    print("   %-34s %5s %11s %10s %11s %9s" % ("regle", "n", "par ticket", "total", "sans best", "gagnants"))
+    # LA REFERENCE, calculee ici et affichee a cote de chaque regle. Sans elle je lis le signe au lieu
+    # de lire la comparaison : le 17/09 j ai dit « aucune regle ne gagne » alors que deux gagnaient,
+    # et « D+F ne tient pas » alors qu elle etait la meilleure ligne du tableau. Un chiffre seul ne
+    # veut rien dire sur un marche qui bouge ; ce qui compte est l ecart a ce qu on aurait eu sans
+    # filtre, sur LES MEMES tickets.
+    for l in lignes:
+        l["_ref"] = issue_de(l, "tp25")
+    _r = [l["_ref"] for l in lignes if l["_ref"] is not None]
+    REF = (sum(_r) / len(_r)) if _r else 0.0
+    print("   reference : acheter TOUT ce qui passe le coffre, meme sortie -> %+.2f %% par ticket"
+          " sur %d tickets" % (100 * REF, len(_r)))
+    print("   %-34s %5s %11s %10s %11s %9s %11s" % ("regle", "n", "par ticket", "total", "sans best",
+                                                    "gagnants", "vs reference"))
     for nom, f, p, sortie in (
             ("PROD moteur : >=75, x1,5/1800 s", PROD, False, "moteur"),
             ("PROD telegram : sortie 4 min", lambda l: True, False, "tg"),
@@ -747,9 +764,9 @@ def rapport_large(ici):
         v = sorted((l["net"] for l in pris), reverse=True)
         moy = sum(v) / len(v)
         sans = (sum(v[1:]) / (len(v) - 1)) if len(v) > 1 else float("nan")
-        print("   %-34s %5d %+10.2f %% %+9.0f E %+10.2f %% %8.0f %%" % (
+        print("   %-34s %5d %+10.2f %% %+9.0f E %+10.2f %% %8.0f %% %+10.2f pt" % (
             nom, len(v), 100 * moy, MISE_EUR * sum(v), 100 * sans,
-            100 * sum(1 for x in v if x > 0) / len(v)))
+            100 * sum(1 for x in v if x > 0) / len(v), 100 * (moy - REF)))
     # On compare ce qui est comparable : la cotation REELLE prise a 4 min contre le calcul sur le
     # prix du pool a 4 min. Comparer la cotation de fin de suivi (30 min) au calcul a 4 min
     # melangerait deux durees de detention et donnerait un ecart qui ne veut rien dire.

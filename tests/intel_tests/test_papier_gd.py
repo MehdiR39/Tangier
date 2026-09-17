@@ -60,6 +60,17 @@ def test_le_declenchement_ne_se_perd_pas():
     assert d == 100.0 and motif is None
 
 
+def test_le_jalon_note_l_age_du_prix_retenu():
+    """Sans l age du « 2 s apres », impossible de verifier que le delai etait bien de 2 s : un trou
+    dans les lectures le rendrait bien plus long et exagererait la perte affichee."""
+    t = {"p0": 1.0, "jalons": {}}
+    P.jalonner(t, 1.30, 50.0)          # franchissement de +25 %
+    P.jalonner(t, 1.10, 51.0)          # trop tot, on ne retient pas
+    P.jalonner(t, 0.90, 53.0)          # premiere lecture >= 2 s plus tard
+    s = t["jalons"]["s1.25"]
+    assert s["age"] == 50.0 and s["apres"] == 0.90 and s["age_apres"] == 53.0
+
+
 def test_une_panne_reseau_ne_ferme_aucune_position():
     """Le 16/09 une erreur DNS d une seconde a tue le test a 30 s apres trois heures. Une lecture
     absente doit se comporter comme une lecture illisible : on garde la position et on reessaie."""
