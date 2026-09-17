@@ -4474,6 +4474,61 @@ C'est une longue traîne de petits jetons presque morts — médiane **6 échang
 **Leçon de méthode** : fermer une famille sur le témoin sans filtre, c'est fermer sur le mauvais test. Le témoin
 dit si le marché est porteur ; il ne dit pas si NOTRE règle y gagne. Les deux mesures sont nécessaires.
 
+### 3.98 — Le collecteur large : une collecte, toutes les règles, et la mesure iso-prod, 2026-09-17 nuit
+
+Mido : *« l'important c'est d'avoir toutes ces règles qui tournent la nuit pour avoir plus de données »*, puis
+*« il faut que ça soit simulé dans les mêmes conditions que la prod »*, puis *« on peut ajouter les deux méthodes
+implémentées en prod aussi ? je veux être sûr que les autres font mieux »*. Les trois demandes sont justes et
+corrigent un défaut de méthode que j'avais depuis le début.
+
+**Un collecteur, pas cinq.** `papier_gd_direct.py --regle large` prend **tout ce qui a un coffre < 100 SOL** et
+enregistre, à l'instant de la décision, les acheteurs et la tendance. On évalue ensuite n'importe quelle règle
+— coffre seul, D, G, D+F, G+D — **sur exactement les mêmes tickets**. Un test par règle aurait vu des pools
+différents : on aurait comparé des périodes de marché, pas des règles. L'inverse est impossible, un ticket refusé
+ne revient jamais.
+
+**Iso-prod sur le prix.** Jusqu'ici la sortie était calculée sur le prix du pool moins 2,62 points forfaitaires,
+calibrés sur 236 tickets passés à un tout autre rythme. Le collecteur demande maintenant au **routeur**
+(`lite-api.jup.ag`) la vraie cotation à l'entrée et à la sortie : l'aller-retour coté contient le glissement,
+l'impact et les frais de route, sans aucune hypothèse. Les deux chiffres sont gardés côte à côte.
+
+**Le coût du retard, mesuré et non supposé.** Entre la décision et le remplissage il y a la file du moteur, et je
+supposais 2 s. Chaque entrée est recotée à **+2, +5 et +10 s** : l'écart avec la cotation initiale est le prix de
+la lenteur, obtenu sans toucher à la production.
+
+**Les deux carnets en service sont dans la comparaison.** Mon témoin était « acheter n'importe quoi » — la bonne
+référence est ce qui tourne déjà. Le suivi va donc jusqu'à **1800 s** et note des jalons (prix à 167/287/600/900/
+1200/1500/1800 s, premier franchissement de ×1,25, ×1,5, ×2 et du stop 0,7 avec le prix obtenable 2 s plus tard),
+ce qui permet de rejouer la sortie de `telegram_rapide` (`TENUE_S = 240`, quatre minutes — Mido m'a repris, je la
+croyais à 30 min) et celle du carnet `solana` (×1,5, stop 0,7, échéance 1800 s). **Réserve écrite dans le rapport
+lui-même** : on rejoue leur SORTIE, pas leur entrée — `solana` entre à T+1 min sur des critères DexScreener qu'on
+n'enregistre pas, `telegram_rapide` sur un signal Telegram qui ne se rejoue pas.
+
+**Sept défauts trouvés en relisant le code, tous réels** (Mido : *« refais 2 lectures de code pour voir si t'as pas
+loupé un truc »*) :
+
+1. la cotation de sortie était prise en fin de suivi (30 min) et comparée à un calcul à 4 min — **deux durées de
+   détention différentes**, donc un écart qui ne veut rien dire ; on cote désormais aussi à 287 s ;
+2. `MAX_OUVERTS` restait à 25 alors que les positions durent six fois plus longtemps ;
+3. le plafond de positions était en réalité **dicté par une limite d'API** (`getMultipleAccounts` accepte 100
+   comptes, deux par position) ; la lecture se fait par lots de 100 et le plafond passe à 120 — la nuit donne 14
+   positions simultanées (0,5 ticket/minute mesuré) mais le flux de journée est trois à quatre fois plus dense ;
+4. **les positions perdues à chaque redémarrage restaient « prises » sans issue** : l'analyse les aurait comptées
+   comme des tickets dont on ignore la sortie. Elles sont marquées `interrompu` et écartées ;
+5. les `INSERT` de `decision` utilisaient l'ordre implicite des colonnes : ajouter une colonne les cassait tous, et
+   un redémarrage des deux tests gelés par le chien de garde aurait planté ;
+6. `--rapport` posait un gel dans une base vierge — un rapport lit, il n'écrit jamais ;
+7. **le gel du collecteur large était faux** : au premier démarrage il avait repris par défaut celui du test à 45 s
+   (14h10 UTC) au lieu de son propre lancement (22h41 UTC). Le gel s'écrit maintenant dans la base (table `meta`)
+   et se relit tout seul, donc aucune relance ne peut plus remettre un test à zéro ni lui faire juger des pools
+   nés avant sa propre décision.
+
+**Chien de garde.** Deux coupures d'internet dans la soirée ont montré que l'écoute des créations de pool ne se
+reconnecte pas au retour du réseau : les boucles tournaient, le conteneur résolvait les noms, et plus un seul
+lancement n'arrivait pendant une heure. `surveillance.sh` détecte l'absence de lancement depuis 15 min, vérifie
+que le réseau répond — sinon il attend, redémarrer pendant une coupure ne sert à rien — et relance le moteur et
+les six processus, au plus une fois par demi-heure.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
