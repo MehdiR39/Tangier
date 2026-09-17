@@ -59,6 +59,28 @@ ICI = os.environ.get("PAPIER_GD_DB", "/app/db/papier_gd.sqlite")
 GELS = {45: dt.datetime(2026, 9, 16, 14, 10, tzinfo=dt.timezone.utc).timestamp(),
         30: dt.datetime(2026, 9, 16, 16, 10, tzinfo=dt.timezone.utc).timestamp()}
 
+# D+F PRE-ENREGISTREE, gelee le 17/09 a 11h20 UTC (13h20 Paris) a la demande de l operateur.
+#
+# POURQUOI UN GEL ET PAS UN QUATRIEME PROCESSUS. D+F est un sous-ensemble de « coffre < 100 SOL » :
+# un processus dedie verrait exactement les memes pools que le collecteur large et prendrait les
+# memes decisions. Il n apporterait aucune donnee. Ce qui manque a D+F n est pas de la collecte,
+# c est un ENGAGEMENT : aujourd hui elle est une regle parmi douze que je rejoue sur les memes
+# donnees, donc si elle gagne c est la gagnante d un concours a douze. A partir de ce gel elle est
+# annoncee d avance et jugee seulement sur des tickets posterieurs.
+#
+# LA REGLE, FIGEE : tendance > 0 (moyenne des 50 derniers resultats connus) ET coffre < 100 SOL ;
+# entree a 45 s ; sortie a la premiere lecture >= entree x 1,25 puis vente >= 2 s plus tard, sinon
+# 287 s ; pause de 30 min apres un ticket clos a <= -30 % ; ordre <= 15 % du coffre ; cout 2,62 pts.
+#
+# CRITERE, FIGE : au premier atteint de 300 tickets ou de 21 jours --
+#   moyenne >= +2,63 % par ticket (ce que rend un jeton tire au hasard AUX MEMES INSTANTS sur la
+#   periode de reference : c est ce chiffre qu il faut battre, pas zero),
+#   ET positive sur les deux moities, ET positive sans son meilleur ticket.
+# Sinon la regle est abandonnee. Mesure de reference au gel : +3,91 % par ticket sur 350 tickets
+# rejoues (10-16/09), intervalle 95 % [-0,35 ; +8,23] -- il contient zero, d ou ce test.
+GEL_DF = dt.datetime(2026, 9, 17, 11, 20, tzinfo=dt.timezone.utc).timestamp()
+CRITERE_DF = 0.0263
+
 FOULE_MAX, COFFRE_MAX = 74, 100.0
 # L AGE DE DECISION est le seul reglage variable : on en fait tourner deux en parallele, 45 s (le
 # reglage historique, jamais compare a rien) et 30 s. Mesure du 16/09 sur 3 268 pools, meme regle,
@@ -412,12 +434,17 @@ def gel_de(ici):
 
 
 def main():
+    # UN RAPPORT NE TOUCHE A RIEN. Le 17/09 a 12h36, lancer `--rapport` sur la base du test a 30 s a
+    # execute les ALTER TABLE de `schema()` : la table est passee de 11 a 16 colonnes, et le
+    # processus qui tournait encore avec le code de la veille -- ses INSERT attendaient 11 colonnes --
+    # a plante a son insert suivant. Un rapport a tue un test en cours. Il ouvre donc la base en
+    # LECTURE SEULE et ne cree, n altere et n ecrit plus rien.
+    if "--rapport" in sys.argv:
+        rapport(sqlite3.connect("file:%s?mode=ro" % ICI, uri=True, timeout=30))
+        return
     ici = sqlite3.connect(ICI, timeout=30)
     schema(ici)
     gel_de(ici)
-    if "--rapport" in sys.argv:
-        rapport(ici)
-        return
     # Un redemarrage perd les positions en cours : elles restent « prises » sans issue, et l analyse
     # les compterait comme des tickets alors qu on ne connait pas leur sortie. On les marque
     # explicitement interrompues -- avec `jalons` vide, donc ecartees par le rapport -- plutot que de
@@ -726,6 +753,25 @@ def rapport_large(ici):
     # On compare ce qui est comparable : la cotation REELLE prise a 4 min contre le calcul sur le
     # prix du pool a 4 min. Comparer la cotation de fin de suivi (30 min) au calcul a 4 min
     # melangerait deux durees de detention et donnerait un ecart qui ne veut rien dire.
+    # --- D+F, la seule regle PRE-ENREGISTREE : jugee uniquement sur les tickets posterieurs a son gel
+    apres = [l for l in lignes if l["t"] >= GEL_DF]
+    for l in apres:
+        l["net"] = issue_de(l, "tp25")
+    p_df = pause([l for l in apres if (l["tend"] or 0) > 0 and l["net"] is not None])
+    print("\n   D+F PRE-ENREGISTREE (gel du 17/09 a 11h20 UTC) · %d ticket(s) depuis le gel" % len(p_df))
+    if p_df:
+        v = sorted((l["net"] for l in p_df), reverse=True)
+        m = len(v) // 2
+        print("      %+.2f %% par ticket · %+.0f EUR · gagnants %.0f %%"
+              % (100 * sum(v) / len(v), MISE_EUR * sum(v), 100 * sum(1 for x in v if x > 0) / len(v)))
+        if len(v) > 1:
+            print("      sans le meilleur %+.2f %% · moities %+.2f %% / %+.2f %%"
+                  % (100 * sum(v[1:]) / (len(v) - 1), 100 * sum(v[:m]) / max(m, 1),
+                     100 * sum(v[m:]) / max(len(v) - m, 1)))
+    print("      CRITERE FIGE : >= %+.2f %% par ticket (ce que rend le hasard AU MEME INSTANT, pas zero),"
+          % (100 * CRITERE_DF))
+    print("      deux moities > 0, positive sans son meilleur ticket, a 300 tickets ou 21 jours.")
+
     paires = [(l["net4"], issue_de(l, "tg")) for l in lignes if l["net4"] is not None]
     paires = [(a, b) for a, b in paires if b is not None]
     if paires:
@@ -749,11 +795,18 @@ def rapport_large(ici):
 
 
 def rapport(ici):
-    if REGLE == "large":
+    try:
+        ici.execute("SELECT jalons FROM issue LIMIT 1")
+        large = True
+    except Exception:  # noqa: BLE001
+        large = False          # base d avant les jalons : on ne l altere pas, on lit ce qu il y a
+    if REGLE == "large" and large:
         rapport_large(ici)
         return
+    # `i.net IS NOT NULL` ecarte les tickets interrompus par un redemarrage : leur sortie est
+    # inconnue, ils n ont pas de resultat, et les compter ferait planter le tri autant que la moyenne.
     rows = ici.execute("SELECT d.t_dec, i.net, i.motif FROM decision d JOIN issue i ON i.pair=d.pair"
-                       " WHERE d.pris=1 ORDER BY d.t_dec").fetchall()
+                       " WHERE d.pris=1 AND i.net IS NOT NULL ORDER BY d.t_dec").fetchall()
     n_vus = ici.execute("SELECT COUNT(*) FROM decision").fetchone()[0]
     motifs = dict(ici.execute("SELECT motif, COUNT(*) FROM decision GROUP BY motif").fetchall())
     print("pools juges %d · %s" % (n_vus, " · ".join("%s %d" % kv for kv in sorted(motifs.items()))))
