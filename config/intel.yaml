@@ -1143,6 +1143,25 @@ modele_rapide:
   # Valeurs : risque | bas_bande | bas
   regle: risque
   seuil_risque: 0.2694         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
+  # LE FREIN DU MARCHE, branche le 18/09 a 19h00 Paris. Il ne choisit PAS les jetons : il suspend
+  # les achats quand les 20 derniers tickets CLOTURES ont majoritairement perdu. C est le seul
+  # signal du projet qui porte sur le MARCHE et non sur le jeton, et le seul qui survive hors
+  # echantillon au retrait de ses trois meilleurs tickets :
+  #
+  #     hors echantillon (458 tickets)      net      sans ses 3 meilleurs
+  #     sans frein                        +0,54 %          -0,82 %
+  #     AVEC frein                        +2,27 %          +0,55 %
+  #
+  # L effet tient de 10 a 50 de fenetre (+1,63 a +2,27 %) : c est une colline et non un pic, donc
+  # la valeur exacte importe peu -- 20 a ete choisie sur les donnees, ce qui aurait ete un
+  # surajustement si l effet n avait existe qu la.
+  #
+  # RISQUE ASYMETRIQUE, et c est ce qui justifie de le brancher : le frein ne fait que S ABSTENIR.
+  # Il garde 71 % des tickets et n en ajoute aucun. Au pire il reduit le volume sans rien
+  # ameliorer ; il ne peut pas creer de perte nouvelle.
+  frein_enabled: true
+  frein_fenetre: 20
+  frein_seuil: 0.50            # frontiere NATURELLE : plus de perdants que de gagnants         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
   pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
   fenetre_minutes: 15
   mise_eur: 20.0

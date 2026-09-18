@@ -187,6 +187,52 @@ class ModeleRapide:
         log.warning("modele_rapide: regle inconnue '%s' — aucun achat", r)
         return False
 
+    # ---------------------------------------------------------------- frein
+
+    def frein_ouvert(self, now: float) -> bool:
+        """Le marche autorise-t-il d acheter ? True si le frein ne s applique pas.
+
+        LE FREIN NE CHOISIT PAS LES JETONS : il suspend les ACHATS quand les `frein_fenetre`
+        derniers tickets CLOTURES ont majoritairement perdu. C est le seul signal du projet qui
+        porte sur le MARCHE et non sur le jeton, et le seul qui survive hors echantillon au retrait
+        de ses trois meilleurs tickets :
+
+            hors echantillon (458 tickets)      net      sans ses 3 meilleurs
+            sans frein                        +0,54 %          -0,82 %
+            AVEC frein                        +2,27 %          +0,55 %
+
+        L effet tient de 10 a 50 de fenetre (+1,63 a +2,27 %) : c est une colline, pas un pic, donc
+        la valeur exacte de la fenetre importe peu. Journal §3.121.
+
+        CAUSALITE, le point critique : un ticket decide a t ne rend son resultat qu a t+240 s. On ne
+        compte donc QUE les tickets dont la SORTIE est passee. Compter un ticket encore ouvert
+        reviendrait a lire l avenir -- c est ce qui a fabrique de faux regimes plus tot dans ce
+        projet.
+
+        EN CAS DE DOUTE, ON LAISSE PASSER. Trop peu d historique, table illisible : le frein s ouvre.
+        Un garde-fou qui bloque quand il ne sait pas finirait par tout bloquer en silence.
+        """
+        if not bool(self._cfg("frein_enabled", True)):
+            return True
+        fen = int(self._cfg("frein_fenetre", 20))
+        seuil = float(self._cfg("frein_seuil", 0.50))
+        try:
+            lignes = self.ctx.db.query(
+                "SELECT gain_eur, mise_eur FROM mr_lignes WHERE mode = 'live'"
+                " AND gain_eur IS NOT NULL AND ts_sortie IS NOT NULL AND ts_sortie <= ?"
+                " ORDER BY ts_sortie DESC LIMIT ?", (now, fen))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("modele_rapide: frein illisible (%s) — on laisse passer", str(exc)[:80])
+            return True
+        if len(lignes) < fen:
+            return True                     # pas encore assez d historique : on n invente pas
+        gagnants = sum(1 for r in lignes if float(r["gain_eur"] or 0) > 0)
+        ouvert = (gagnants / fen) > seuil
+        if not ouvert:
+            log.info("modele_rapide: FREIN ferme — %d gagnants sur les %d derniers (seuil %.0f %%)",
+                     gagnants, fen, 100 * seuil)
+        return ouvert
+
     # ---------------------------------------------------------------- schema
 
     def _schema(self) -> None:
@@ -270,6 +316,17 @@ class ModeleRapide:
             # demi-heure. Ces lignes restaient en outre OUVERTE pour toujours, `_sortir` exigeant
             # un `tx_achat`. On les enregistre donc comme BLOQUEE, sans `ts_entree`, ce qui garde
             # la trace de la decision sans polluer ni le compteur ni le carnet.
+            # LE FREIN EST EVALUE ICI, pas dans `retenu` : il ne choisit pas le jeton, il suspend
+            # l achat. Un ticket refuse par le frein garde donc sa trace avec son statut propre --
+            # on saura combien il en a ecartes et ce qu ils auraient donne.
+            if live and not bloque and not self.frein_ouvert(now):
+                self.ctx.db.execute(
+                    "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
+                    " risque, depuis_min, q, motif, variables) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (mint, str(p["pair_id"]), "live", "FREIN",
+                     float(p["naissance"] or 0), now, risque, f.get("depuis_min"), f.get("q"),
+                     "frein du marche ferme", json.dumps(f, default=str)))
+                continue
             if live and bloque:
                 self.ctx.db.execute(
                     "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"

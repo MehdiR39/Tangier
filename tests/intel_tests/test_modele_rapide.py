@@ -168,8 +168,12 @@ def test_un_ticket_bloque_par_le_plafond_ne_compte_pas_comme_un_ordre():
     assert "BLOQUEE" in bloc, "un ticket bloque doit avoir son propre statut"
     assert "ts_entree" not in bloc, "une ligne bloquee ne doit PAS porter de ts_entree"
     assert "continue" in bloc, "elle ne doit pas poursuivre vers l achat"
-    # et la ligne OUVERTE, elle, ne depend plus du plafond -- on n y arrive que si non bloque
-    assert "if live and not bloque" not in src
+    # l ACHAT lui-meme ne doit plus etre conditionne au plafond : on n atteint cette ligne que si
+    # le garde-fou ci-dessus a laisse passer. Un `if not bloque` a cet endroit signifierait que la
+    # ligne OUVERTE est ecrite meme quand le plafond bloque -- le defaut qu on corrige ici.
+    i_achat = src.index("await self._acheter_reel(")
+    ligne_achat = src[src.rindex("\n", 0, i_achat):i_achat]
+    assert "bloque" not in ligne_achat, "l achat ne doit plus dependre du plafond a cet endroit"
 
 
 def test_une_ligne_sans_ordre_ne_reste_jamais_ouverte():
@@ -179,3 +183,26 @@ def test_une_ligne_sans_ordre_ne_reste_jamais_ouverte():
     avant = src[:i]
     # l insertion OUVERTE doit etre precedee du garde-fou du plafond
     assert "if live and bloque:" in avant
+
+
+def test_le_frein_ne_compte_que_les_tickets_clotures():
+    """Compter un ticket encore ouvert serait lire l avenir."""
+    src = inspect.getsource(mr.ModeleRapide.frein_ouvert)
+    assert "ts_sortie IS NOT NULL" in src and "ts_sortie <= ?" in src
+    assert "gain_eur IS NOT NULL" in src, "un resultat pas encore lu ne doit pas compter"
+
+
+def test_le_frein_laisse_passer_en_cas_de_doute():
+    """Un garde-fou qui bloque quand il ne sait pas finirait par tout bloquer en silence."""
+    src = inspect.getsource(mr.ModeleRapide.frein_ouvert)
+    assert "len(lignes) < fen" in src and "return True" in src
+    i = src.index("except Exception")
+    assert "return True" in src[i:i+300], "une table illisible doit ouvrir le frein, pas le fermer"
+
+
+def test_le_frein_ne_choisit_pas_les_jetons():
+    """Il suspend l achat ; la selection reste dans `retenu`."""
+    assert "frein" not in inspect.getsource(mr.ModeleRapide.retenu)
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    assert "self.frein_ouvert(now)" in src
+    assert "'FREIN'" in src or '"FREIN"' in src, "un ticket freine garde sa trace"
