@@ -6783,3 +6783,29 @@ réel.** Ce n'est plus une question de piste. Ce qui reste d'inconnu : (a) `stoc
 vers 4 h), (b) **quatre jours ne distinguent pas « pas d'edge » de « mauvaise semaine »** — la
 machine est automatique maintenant, la rejouer chaque semaine sans un euro en jeu est la seule chose
 qui ait encore une valeur d'information.
+
+
+---
+
+### 3.130 — Réentraîner `risque` jusqu'à 18h : pire après 18h, 2026-09-18 22h40
+
+Mido : *« si tu réentraînes risque seul jusqu'à aujourd'hui 18h, améliore-t-il les données après 18h ? »*
+
+Même modèle (19 variables lues dans `modele_vidage.json`, cible `brut_240 ≤ −0,50`, mêmes
+hyperparamètres), seule la date de fin d'entraînement change. Comparaison à effectif égal sur la
+fenêtre de jugement, coût 6,55, tirage au hasard de k tickets en témoin. `reentrainer.py`.
+
+| coupe 18h → après 18h (126 tickets) | en service | réentraîné | hasard |
+|---|---|---|---|
+| AUC vidage | **0,651** | 0,550 | — |
+| k = 79 (la règle) | −13,81 % | **−17,02 %** | −14,75 % |
+| 50 % gardés | −8,26 % | −15,99 % | −14,67 % |
+| 30 % gardés | −5,41 % | −11,68 % | −14,59 % |
+
+Le modèle frais fait moins bien que le vieux **et** que le hasard. Le vieux classe encore (bat
+91–93 % des tirages à 30–50 % gardés) mais son niveau reste à −5 / −8 % : classer n'est pas gagner.
+
+Coupe de midi (156 tickets, jugés midi→18h) : le frais fait +0,20 % contre −3,44 % au k de la règle
+(AUC 0,614 contre 0,563), puis **s'inverse à 30 % gardés** (−6,21 contre −3,04), et son sans-3 est
+négatif partout. Deux coupes, deux réponses contraires : **réentraîner ne produit rien de stable.**
+L'information ne dérive pas ; elle est faible, et le péage la mange, frais ou vieux.
