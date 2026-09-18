@@ -6512,3 +6512,59 @@ faite maintenant, se demander si la lecture aurait pu échouer pour une raison l
 compte fermé, un jeton disparu, une page supprimée : l'absence est rarement au hasard.
 
 Script : `intel/research/sac_diagnostic.py`.
+
+
+---
+
+### 3.125 — Le frein débranché : « hors échantillon de la BANDE » n'était pas hors échantillon du frein, 2026-09-18 19h30
+
+Mido, en lisant le tableau des pistes : **« mec c'est toi qui a dit le frein fonctionne »**. Il avait
+raison de le demander, et la vérification lui donne raison sur le fond.
+
+#### Ce qui m'avait convaincu n'était pas un test
+
+Le commit qui branche le frein en production annonce :
+
+> HORS ECHANTILLON de la bande (458 tickets) : sans frein +0,54 %, **AVEC frein +2,27 %**
+
+Hors échantillon **de la bande** — pas du frein. Et le même commit écrit, deux lignes plus bas,
+« la fenêtre de 20, **choisie sur les données** ». J'ai donc jugé le frein sur les tickets qui
+l'avaient fait choisir. Coupé à la date de son propre gel (18/09 15h00 UTC) :
+
+| | tickets | sans frein | avec frein | écart |
+|---|---|---|---|---|
+| **avant** son gel | 1 383 | −0,25 % | +1,25 % | **+1,49 pt** |
+| **après** son gel | 82 | −1,47 % | −10,38 % | **−8,91 pt** |
+
+**C'est le même motif que `BAS + BANDE`** (+9,02 % avant / −7,10 % après). Troisième fois dans ce
+projet, et les trois fois c'est Mido qui l'a vu, pas moi.
+
+En deux moitiés chronologiques, le frein coûte **−23,50 pt** puis **−0,99 pt** : négatif des deux
+côtés, il n'aide jamais. Un tirage au hasard de même taille fait aussi mal dans 2,7 % des cas — donc
+juste au-delà du bruit, sur 82 tickets seulement.
+
+#### Et l'argument qui le tenait en production était faux
+
+J'avais écrit, et c'est ce qui a emporté la décision :
+
+> RISQUE ASYMÉTRIQUE […] le frein ne fait que S'ABSTENIR. Au pire il réduit le volume sans rien
+> améliorer ; **il ne peut pas créer de perte nouvelle**.
+
+**C'est faux, et l'erreur est générale.** S'abstenir n'est neutre que si l'on s'abstient au hasard.
+Un filtre écarte par construction un sous-ensemble ; s'il contient préférentiellement des gagnants,
+il crée bien une perte par rapport à ne pas l'avoir. **Aucune abstention sélective n'est gratuite** —
+c'est vrai de tous les filtres du projet, pas seulement de celui-ci.
+
+#### Ce qui a été fait
+
+`frein_enabled: false`. La production revient à **`risque` seul**. Le gel `frein_taux.py` continue
+de le juger en papier jusqu'à 1 500 tickets, sans rien coûter. 82 tickets ne tranchent pas une
+question ; ils suffisent à ne pas laisser un pari sur l'argent réel quand la seule raison de l'avoir
+pris s'est révélée fausse.
+
+**Règle de discipline 13 :** *« hors échantillon » n'a de sens que rapporté à UNE règle précise.*
+Un chiffre hors échantillon de A ne dit rien de B si B a été choisi sur ces mêmes données. Écrire
+systématiquement **de quoi** le hors-échantillon est hors.
+
+**Règle 14 :** *un garde-fou qui « ne fait que s'abstenir » n'est pas sans risque.* Écarter n'est
+gratuit que si l'on écarte au hasard.

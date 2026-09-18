@@ -1143,23 +1143,34 @@ modele_rapide:
   # Valeurs : risque | bas_bande | bas
   regle: risque
   seuil_risque: 0.2694         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
-  # LE FREIN DU MARCHE, branche le 18/09 a 19h00 Paris. Il ne choisit PAS les jetons : il suspend
-  # les achats quand les 20 derniers tickets CLOTURES ont majoritairement perdu. C est le seul
-  # signal du projet qui porte sur le MARCHE et non sur le jeton, et le seul qui survive hors
-  # echantillon au retrait de ses trois meilleurs tickets :
+  # LE FREIN DU MARCHE : DEBRANCHE le 18/09 a 19h30 Paris, apres 24 h en production. Mido : « mec
+  # c est toi qui a dit le frein fonctionne ». Il avait raison de le demander, et la verification
+  # lui donne raison sur le fond.
   #
-  #     hors echantillon (458 tickets)      net      sans ses 3 meilleurs
-  #     sans frein                        +0,54 %          -0,82 %
-  #     AVEC frein                        +2,27 %          +0,55 %
+  # CE QUI M AVAIT CONVAINCU N ETAIT PAS UN TEST. Le commit qui l a branche annonce « HORS
+  # ECHANTILLON de la bande (458 tickets) : sans frein +0,54 %, AVEC frein +2,27 % ». Hors
+  # echantillon de la BANDE -- pas du frein. Et le meme commit dit « la fenetre de 20, choisie sur
+  # les donnees ». J ai donc juge le frein sur les tickets qui l avaient fait choisir. Coupe a la
+  # date de son propre gel (18/09 15h00 UTC), le contraste est net :
   #
-  # L effet tient de 10 a 50 de fenetre (+1,63 a +2,27 %) : c est une colline et non un pic, donc
-  # la valeur exacte importe peu -- 20 a ete choisie sur les donnees, ce qui aurait ete un
-  # surajustement si l effet n avait existe qu la.
+  #                                 tickets   sans frein   avec frein     ecart
+  #     AVANT son gel (ce qui m a convaincu)  1383   -0,25 %   +1,25 %   +1,49 pt
+  #     APRES son gel (le juge propre)          82   -1,47 %  -10,38 %   -8,91 pt
   #
-  # RISQUE ASYMETRIQUE, et c est ce qui justifie de le brancher : le frein ne fait que S ABSTENIR.
-  # Il garde 71 % des tickets et n en ajoute aucun. Au pire il reduit le volume sans rien
-  # ameliorer ; il ne peut pas creer de perte nouvelle.
-  frein_enabled: true
+  # C est le MEME motif que `BAS + BANDE` (+9,02 % avant, -7,10 % apres), la troisieme fois dans ce
+  # projet. En deux moities, le frein coute -23,50 pt puis -0,99 pt : negatif des deux cotes, il
+  # n aide jamais. Un tirage au hasard de meme taille fait aussi mal dans 2,7 % des cas.
+  #
+  # ET L ARGUMENT QUI LE TENAIT EN PROD ETAIT FAUX. J avais ecrit : « le frein ne fait que
+  # s abstenir, au pire il reduit le volume, il ne peut pas creer de perte nouvelle ». Non :
+  # s abstenir n est PAS neutre, parce qu on n ecarte pas au hasard. Ecarter un sous-ensemble qui
+  # contient preferentiellement des gagnants cree bien une perte. **Aucune abstention selective
+  # n est gratuite** -- c est vrai de tout filtre, pas seulement de celui-ci.
+  #
+  # Le gel `frein_taux.py` continue de le juger en PAPIER, jusqu a 1 500 tickets, sans rien couter.
+  # 82 tickets ne tranchent pas une question ; ils suffisent a ne pas laisser un pari sur l argent
+  # reel quand la seule raison de l avoir pris s est revelee fausse.
+  frein_enabled: false
   frein_fenetre: 20
   frein_seuil: 0.50            # frontiere NATURELLE : plus de perdants que de gagnants         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
   pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
