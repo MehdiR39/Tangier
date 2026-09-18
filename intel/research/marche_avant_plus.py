@@ -244,9 +244,14 @@ def main() -> None:
             m = max(tp[v].mean() for v in VARIANTES)
             maxs.append(m)
             print("   hasard %2d : meilleure variante %+.2f %%" % (k + 1, 100 * m), flush=True)
-        barre = float(np.quantile(maxs, 0.95))
-        print("   -> barre (95e centile) %+.2f %% · vrai %+.2f %% -> %s"
-              % (100 * barre, 100 * vrai, "AU-DESSUS" if vrai > barre else "EN DESSOUS"))
+        # AVEC PEU DE TIRAGES, UN 95e CENTILE INTERPOLE MENT. Le 19/09 a 02h, 8 tirages dont un a
+        # +3,59 % ont donne une « barre » interpolee a +1,70 %, en dessous du vrai +1,89 % -- et le
+        # script a imprime AU-DESSUS alors qu un tirage sur huit depassait le vrai. La seule lecture
+        # honnete a petit N : combien de tirages font AUSSI BIEN ou mieux.
+        k = sum(1 for m in maxs if m >= vrai)
+        p_val = (k + 1) / (len(maxs) + 1)
+        print("   -> %d tirage(s) sur %d font aussi bien ou mieux que le vrai %+.2f %% (p ~ %.2f) -> %s"
+              % (k, len(maxs), 100 * vrai, p_val, "PASSE (p <= 0,05)" if p_val <= 0.05 else "NE PASSE PAS"))
 
 
 if __name__ == "__main__":

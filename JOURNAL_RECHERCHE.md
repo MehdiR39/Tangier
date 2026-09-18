@@ -7021,3 +7021,31 @@ est plus robuste). Cohérent : le signal est faible, tout ce qui ajoute de la va
 hasard mesurée pour UNE variante (§3.135 : +2,39 %)** — la barre du choix de la meilleure des sept
 sera plus haute encore. Lancée : 8 marches avant complètes, résultats permutés, meilleure des sept
 retenue à chaque fois (`NULLS=8`, ~80 min).
+
+
+---
+
+### 3.137 — Barre du hasard sur le choix de la meilleure des sept variantes : un tirage sur huit fait mieux, 2026-09-19 02h20
+
+8 marches avant complètes, résultats permutés, **meilleure des sept variantes retenue à chaque
+fois** — le maximum sous permutation de la procédure entière :
+
+```
++3,59  -1,91  -4,32  -2,32  -2,39  -2,74  -1,89  -1,83    (%/ticket)
+vrai (sélection) : +1,89 %
+```
+
+**Le script a imprimé « AU-DESSUS » et il a tort.** Avec 8 tirages, `np.quantile(·, 0,95)` interpole
+entre le 7ᵉ (−1,83) et le 8ᵉ (+3,59) et sort une « barre » à +1,70 % — un artefact : **un tirage
+sur huit dépasse le vrai résultat**, p ≈ (1+1)/(8+1) ≈ 0,22. Corrigé dans le script : à petit N on
+compte « k tirages sur N font aussi bien », pas un centile interpolé. C'est le même piège que le
+test de la loi du maximum des liens (§3.127, 0,0 % faux) : **un test qui rend le verdict qu'on
+espère se vérifie avant d'être cru.**
+
+**Lecture correcte, avec §3.135 (12 tirages, une variante : 2 sur 12 au-dessus) :** le vrai
+résultat bat 6 tirages sur 7 et 10 sur 12 — **au 80–88ᵉ centile du hasard, jamais au-delà du
+maximum.** Meilleur que la plupart des hasards, pas distinguable du meilleur des hasards. C'est la
+définition d'une direction, pas d'un edge, et elle est stable d'un test à l'autre.
+
+**Ce qui la ferait passer :** pas une huitième variante — des tickets. ±3,1 pt de marge à 370 ; ±1,5
+à 1 500. Une semaine de collecte de transactions à couverture complète.
