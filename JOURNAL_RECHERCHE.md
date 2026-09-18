@@ -6987,3 +6987,37 @@ serait de ±1,5. Le collecteur de transactions ne couvre que ~60 % des heures (q
 150 000/jour pour ~250 000 nécessaires). Couvrir 100 % des heures pendant une semaine donnerait
 ~3 000 tickets avec données de transactions, sans un euro en jeu — c'est la seule dépense qui ait
 encore une valeur d'information dans ce projet, et elle se chiffre en crédits RPC, pas en SOL.
+
+
+---
+
+### 3.136 — Pousser la modélisation à l'intérieur de la marche avant : sept variantes, 2026-09-19 01h05
+
+Mido : *« avant de geler, peut-on pousser la modélisation ? feature selection avec RF, toute autre
+idée »*. Fait, avec la seule discipline qui tienne : **chaque choix se fait sur les données
+antérieures à la coupe** (sélection de variables, taille de feuille hors-sac, poids), jamais sur la
+fenêtre jugée. `marche_avant_plus.py`, 1 409 tickets avec transactions, 9 fenêtres, 30 % gardés,
+coût 6,55.
+
+| variante | net/ticket | € | sans 3 meil. | gagnants |
+|---|---|---|---|---|
+| témoin (tout prendre, 1 242) | −4,72 % | −1 173 € | −5,81 % | 45 % |
+| base (§3.134) | +1,05 % | +78 € | −1,30 % | 72 % |
+| + 12 variables de transactions | +0,24 % | +18 € | −2,11 % | 71 % |
+| **sélection des 25 plus utiles à chaque coupe** | **+1,89 %** | **+140 €** | **−0,54 %** | 72 % |
+| feuilles réglées hors-sac | +0,85 % | +63 € | −1,58 % | 71 % |
+| espérance (régression du net) | **−3,58 %** | −265 € | −6,56 % | 52 % |
+| poids décroissant (½ à 24 h) | +1,77 % | +131 € | −0,71 % | 71 % |
+| rang forêt + boosting | +0,57 % | +42 € | −1,69 % | 71 % |
+
+**Ce qui aide :** enlever des variables (sélection : +1,89 %, sans-3 −0,54 %) et pondérer le
+récent (+1,77 %). Les deux réduisent le **bruit** — 72 variables pour ~1 000 lignes, c'est trop.
+**Ce qui nuit :** en ajouter (+12 variables → +0,24 %) et prédire le montant au lieu du sens
+(régression : −3,58 % — les queues à +300 % rendent la régression folle ; classer par P(gain)
+est plus robuste). Cohérent : le signal est faible, tout ce qui ajoute de la variance le noie.
+
+**Toujours vrai :** aucune variante n'est positive sans ses 3 meilleurs ; le 17/09 12h porte
++19 à +30 % dans toutes ; 3–4 fenêtres positives sur 9. Et **+1,89 % est déjà sous la barre du
+hasard mesurée pour UNE variante (§3.135 : +2,39 %)** — la barre du choix de la meilleure des sept
+sera plus haute encore. Lancée : 8 marches avant complètes, résultats permutés, meilleure des sept
+retenue à chaque fois (`NULLS=8`, ~80 min).
