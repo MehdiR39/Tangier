@@ -7267,3 +7267,11 @@ lancé à part) · stock : les 300 dans la matinée · 9 gels en cours. **Plus r
   plus de données d'abord, comparaison des familles ensuite**, quand une différence pourrait se voir.
 
 Le gel (§3.142) reste tel quel.
+
+
+**Amendement de §3.142, 04h30 — avant le premier ticket noté.** Mido : *« go 1 »* (moins de
+variables). Le gel de 04h00 n'avait encore noté aucun ticket (son premier passage ne fait
+qu'entraîner). Règle amendée : à chaque réentraînement, **une première forêt classe les variables
+par utilité sur le passé, on garde les 25 premières, on réentraîne dessus** — la variante mesurée à
++1,89 % (sans-3 −0,54) en §3.136. Gel re-daté à 04h30, base et modèle repartis de zéro. Aucune
+donnée postérieure au gel n'a été regardée. Le critère ne change pas.

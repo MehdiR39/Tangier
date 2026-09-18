@@ -1,4 +1,10 @@
-"""FORET DE GAIN, TOP 5 % -- GELEE le 19/09/2026 a 04h00 Paris. Papier, base separee, zero euro.
+"""FORET DE GAIN, 25 VARIABLES, TOP 5 % -- GELEE le 19/09/2026 a 04h30 Paris. Papier, zero euro.
+
+AMENDEMENT AVANT LE PREMIER TICKET. Gelee a 04h00 sur les 72 variables ; a 04h30, AUCUN ticket
+n avait encore ete note (le premier passage ne fait qu entrainer). Mido : « go 1 » -- moins de
+variables. La seule modification de modelisation qui ait aide en marche avant (§3.136 : selection
+des 25 plus utiles a chaque coupe, +1,89 % contre +1,05 %, sans-3 -0,54 contre -1,30). Regle
+amendee et gel re-date, sans qu aucune donnee posterieure au gel n ait ete regardee.
 
 CE QUI EST GELE, ET POURQUOI CELUI-LA. Apres quatre jours ou tout s est effondre hors echantillon,
 une chose a tenu : une foret entrainee a reconnaitre « net_240 > 0 apres le cout reel de 6,55 »
@@ -48,7 +54,8 @@ from sklearn.ensemble import RandomForestClassifier
 warnings.filterwarnings("ignore")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-GEL = 1789783200.0                    # 19/09/2026 02h00 UTC = 04h00 Paris
+GEL = 1789785000.0                    # 19/09/2026 02h30 UTC = 04h30 Paris (amende, voir en-tete)
+N_VARIABLES = 25                      # les 25 plus utiles sur le passe, a chaque reentrainement
 DOSSIER = "/app/data/recherche/foret_gel"
 TABLE = "/app/data/recherche/tout/table.pkl"
 BASE = "/app/db/papier_foret.sqlite"
@@ -88,6 +95,12 @@ def entrainer(df: pd.DataFrame, garde: list[str], now: float) -> None:
     med = A[garde].median()
     XA = A[garde].fillna(med).fillna(0.0)
     y = (((1 + A["ret_240"]) * (1 - COUT) - 1) > 0).astype(int).to_numpy()
+    # SELECTION SUR LE PASSE SEULEMENT : une premiere foret sur toutes les variables donne leur
+    # utilite, on garde les 25 premieres, on reentraine dessus. Le jugement ne voit que la seconde.
+    rf0 = RandomForestClassifier(n_estimators=200, min_samples_leaf=20, n_jobs=-1, random_state=0).fit(XA, y)
+    garde = [g for _, g in sorted(zip(rf0.feature_importances_, garde), reverse=True)[:N_VARIABLES]]
+    XA = XA[garde]
+    med = med[garde]
     rf = RandomForestClassifier(n_estimators=300, min_samples_leaf=20, n_jobs=-1, random_state=0).fit(XA, y)
     p_tr = rf.predict_proba(XA)[:, 1]
     seuils = {"seuil05": float(np.quantile(p_tr, 0.95)), "seuil10": float(np.quantile(p_tr, 0.90)),
@@ -95,8 +108,9 @@ def entrainer(df: pd.DataFrame, garde: list[str], now: float) -> None:
     os.makedirs(DOSSIER, exist_ok=True)
     joblib.dump({"rf": rf, "med": med}, os.path.join(DOSSIER, "modele.pkl"))
     json.dump(seuils, open(os.path.join(DOSSIER, "seuils.json"), "w"))
-    print("foret_gel: modele entraine sur %d tickets · seuil 5 %% = %.3f · seuil 10 %% = %.3f"
-          % (len(A), seuils["seuil05"], seuils["seuil10"]), flush=True)
+    print("foret_gel: modele entraine sur %d tickets · %d variables · seuil 5 %% = %.3f · seuil 10 %% = %.3f"
+          % (len(A), len(garde), seuils["seuil05"], seuils["seuil10"]), flush=True)
+    print("foret_gel: variables gardees : %s" % ", ".join(garde), flush=True)
 
 
 def noter(c: sqlite3.Connection, df: pd.DataFrame) -> int:
