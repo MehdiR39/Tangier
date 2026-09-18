@@ -7319,3 +7319,25 @@ dans la table (`FORET 45s` / `FORET 75s`, top 5 % gelé, top 10 % en lecture). S
 entraînement (25 variables) : 45 s → 0,857 ; 75 s → 0,866. (Le 45 s a dû être relancé une
 troisième fois à 23h55 : mon contrôle « déjà en marche » se reconnaissait lui-même — noté en mémoire.) Ce sont les tickets qui trancheront, et si les deux
 valent pareil, c'est le 75 s qui pourra passer en réel sans rien construire.
+
+
+---
+
+### 3.146 — Le collecteur de transactions était MORT depuis 9h13, pas en pause quota, 2026-09-19 00h10
+
+En vérifiant que « les strats vont continuer de tourner », la liste réelle des processus ne montrait
+pas `v1_enregistreur`. Ma vérification de 20h30 (« déjà en marche ») était le piège du contrôle qui
+se reconnaît lui-même (§3.145, mémoire). **Le collecteur était mort depuis 9h13** — les 15 heures de
+transactions manquantes du 18/09 ne sont pas un plafond de quota, c'est un processus tombé sans
+gardien. Relancé à 00h05 (pid 139653, « 1 668 pools déjà enregistrés »). Ajouté à la liste du
+gardien, avec les deux gels de la forêt ; le gardien en mémoire datait de 18h53 et n'en surveillait
+aucun des trois — arrêté et relancé avec la liste à sept (le scheduler ne le lance qu'au démarrage,
+donc pas de doublon).
+
+Conséquence sur §3.135–3.145 : la couverture de 60 % du 18/09 ne bornait pas la collecte — elle
+était accidentelle. À couverture complète, ~470 tickets/jour avec transactions, pas ~280.
+
+**État de nuit :** 7 processus sous le gardien (papier_combo, social_collecte, prix_rapide,
+stock_collecte, foret_gel, foret_gel75, v1_enregistreur). Carnet réel arrêté par le plafond de 24 h
+glissantes ; **le plus vieux ticket compté date du 18/09 09h32 → les achats réels reprennent seuls
+vers 09h32 le 19/09**, portefeuille 35,56 €, mise 20 €. Décision de Mido.

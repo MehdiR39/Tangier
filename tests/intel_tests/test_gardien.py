@@ -14,7 +14,7 @@ from intel.research import gardien
 
 def test_il_surveille_tous_les_collecteurs():
     assert set(gardien.COLLECTEURS) == {"papier_combo", "social_collecte", "prix_rapide",
-                                       "stock_collecte", "foret_gel", "foret_gel75"}
+                                       "stock_collecte", "foret_gel", "foret_gel75", "v1_enregistreur"}
 
 
 def test_il_ne_tue_rien_et_n_ecrit_dans_aucune_base():
