@@ -60,6 +60,13 @@ def main() -> None:
     if os.environ.get("V1_SEUL") == "1" and "v1_n_achats" in df.columns:
         df = df[df["v1_n_achats"].notna()].reset_index(drop=True)
         print("V1_SEUL : %d tickets avec donnees de transactions" % len(df))
+    # MELANGE=<graine> : la LOI DU MAXIMUM pour la marche avant. On permute les RESULTATS entre
+    # tickets (variables intactes) et on refait toute la marche avant : ce que la foret de gain
+    # « trouve » alors est ce qu elle fabrique toute seule. A comparer au +1,05 % reel.
+    if os.environ.get("MELANGE"):
+        g = np.random.default_rng(int(os.environ["MELANGE"]))
+        df["ret_240"] = df["ret_240"].to_numpy()[g.permutation(len(df))]
+    RAPIDE = os.environ.get("RAPIDE") == "1"        # seulement la foret de gain (pour les tirages)
     X_all = df[variables].apply(pd.to_numeric, errors="coerce").astype(float)
     # une variable constante ou vide sur toute la table n apprend rien et fait planter la foret
     garde = [v for v in variables if X_all[v].notna().sum() >= 100 and X_all[v].nunique(dropna=True) >= 2]
@@ -90,13 +97,16 @@ def main() -> None:
         XA, XJ = X_all[A], X_all[J]
         med = XA.median()
         XA_f, XJ_f = XA.fillna(med).fillna(0.0), XJ.fillna(med).fillna(0.0)
-        rf_v = RandomForestClassifier(n_estimators=300, min_samples_leaf=20, n_jobs=-1, random_state=0).fit(XA_f, y_vid[A])
         rf_g = RandomForestClassifier(n_estimators=300, min_samples_leaf=20, n_jobs=-1, random_state=0).fit(XA_f, y_gain[A])
         derniere_rf = rf_g
-        bo = [lgb.LGBMClassifier(**PARAMS, random_state=s).fit(XA, y_gain[A]) for s in range(N_MODELES)]
-        p_v = rf_v.predict_proba(XJ_f)[:, 1]
         p_g = rf_g.predict_proba(XJ_f)[:, 1]
-        p_b = np.mean([m.predict_proba(XJ)[:, 1] for m in bo], axis=0)
+        if RAPIDE:
+            p_v, p_b = p_g, p_g
+        else:
+            rf_v = RandomForestClassifier(n_estimators=300, min_samples_leaf=20, n_jobs=-1, random_state=0).fit(XA_f, y_vid[A])
+            bo = [lgb.LGBMClassifier(**PARAMS, random_state=s).fit(XA, y_gain[A]) for s in range(N_MODELES)]
+            p_v = rf_v.predict_proba(XJ_f)[:, 1]
+            p_b = np.mean([m.predict_proba(XJ)[:, 1] for m in bo], axis=0)
         nets = y_net[J]
         n = len(nets)
         k30, k50 = max(5, int(n * 0.3)), max(5, n // 2)

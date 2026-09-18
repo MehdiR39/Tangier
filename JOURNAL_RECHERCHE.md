@@ -6930,3 +6930,34 @@ et demie plus. C'est la seule famille du projet qui n'ait jamais été mise dans
 soir, et c'est celle que la forêt choisit. Ce n'est pas un edge : c'est une direction, la première
 qui ne soit pas une mesure de prix, avec des données à 1 409 tickets sur 2 208 seulement (le
 collecteur v1 s'est arrêté le 18/09 09h13, quota Helius).
+
+
+---
+
+### 3.134 — La même forêt, restreinte aux tickets qui ont des données de transactions : +1,05 %, 72 % de gagnants, v1 à 60 %, 2026-09-19 00h20
+
+Vérification de §3.133 : la forêt ne voit plus jamais de trou comblé à la médiane sur la famille
+qu'elle préfère. Couverture réelle du collecteur v1 : **16/09 et 17/09 à toutes les heures**
+(20–40 pools/h), 18/09 jusqu'à 9h seulement (quota Helius : 150 000 crédits/jour pour ~250 000
+nécessaires, par construction). Donc 1 409 tickets sur 2 208, 9 fenêtres au lieu de 11.
+`marche_avant_tout.py`, `V1_SEUL=1`.
+
+| toute la période | n | net/ticket | € | sans 3 meil. | gagnants | catastrophes |
+|---|---|---|---|---|---|---|
+| témoin | 1 242 | −4,72 % | −1 173 € | −5,81 % | 45 % | 20 % |
+| **gain, forêt 30 %** | 370 | **+1,05 %** | **+78 €** | **−1,30 %** | **72 %** | 15 % |
+| gain, boosting 50 % | 619 | +0,13 % | +16 € | −1,96 % | 63 % | 19 % |
+| vidage, forêt 50 % | 619 | −1,66 % | −205 € | −3,42 % | 47 % | 11 % |
+
+**Tout s'est amélioré en retirant les trous** : +0,41 → **+1,05 %**, 66 → **72 %** de gagnants,
+sans-3 −3,65 → **−1,30 %**. Et la famille v1 passe de 43 % à **60 %** du poids de la forêt (prix
+11 %). Le poids de 43 % n'était donc pas un artefact du remplissage — retirer le remplissage l'a
+augmenté.
+
+**Ce qui reste vrai :** sans ses 3 meilleurs, −1,30 % ; 3 fenêtres positives sur 9, le total porté
+par le 17/09 12h (+19,68 %) ; erreur standard sur 370 tickets ≈ ±3,1 pt, donc +1,05 % est à 0,34
+écart-type de zéro. **Pas un edge.** Une direction qui se renforce quand on la mesure mieux, ce
+qui est exactement l'inverse de tout ce qui a été testé ces quatre jours.
+
+Loi du maximum lancée dans la foulée : 12 marches avant complètes avec les résultats permutés
+(variables intactes), forêt de gain seule, pour savoir ce que cette machine « trouve » toute seule.
