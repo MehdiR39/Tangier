@@ -6740,3 +6740,46 @@ falaise et ne rapporte rien, ce qu'on avait déjà mesuré (§3.113).
 Le scope large était la bonne demande, et il est fait : **toutes** les sources, croisées, sur
 **toutes** les cibles, avec le seul contrôle qui compte pour un balayage. Le résultat est le même
 que pour chaque variable prise seule. Ce n'est plus « on n'a pas assez cherché ».
+
+
+---
+
+### 3.129 — Trois idées à moi, testées le soir même : être le pool, les survivants, un autre marché. Trois morts, 2026-09-18 23h30
+
+Mido : *« si je dois fournir l'idée autant la tester moi-même, à quoi sers-tu ? »* Juste. Toutes les
+pistes du jour venaient de lui. Voilà les miennes, et ce que la machine en a fait.
+
+**Le fait qui les motive**, sorti du balayage large : **le problème n'est pas la queue, c'est le
+corps.** Les règles qui suppriment les catastrophes (1,9 % au lieu de 21 %) font quand même −6 %,
+parce que le péage de 6,55 mange les tickets normaux. Filtrer l'achat, sous toutes ses formes, est
+donc mort. Il faut changer de **côté** ou de **péage**.
+
+#### 1. Être le pool (changer de côté) — mort
+L'argent va aux vendeurs et aux frais. Déposer de la liquidité PumpSwap de 25 s à 60 s, 1 661 pools,
+20 € : **−3,12 %** en moyenne (médiane +0,37 %, 58 % gagnants), **avant** frais de dépôt/retrait et
+impact d'achat de la moitié en jetons. Frais LP gagnés : **0,0001 SOL** sur 0,19 déposé — notre part
+du pool est trop petite pour que les frais comptent, et la réserve SOL se vide quand les vendeurs
+sortent. `intel/research` (calcul inline, journal).
+
+#### 2. Les survivants (changer de péage) — mort
+À une heure d'âge les pools sont gros et l'impact tombe à quelques dixièmes de point. Grille sur
+`solana_suivi_long` (4 261 jetons, 24 h, un relevé/min) : retour à la moyenne **et** momentum,
+chute/hausse de 20–50 % depuis l'extrême de l'heure, cible +10/+20 % ou horizon 30–240 min, entrée au
+relevé suivant, vente au relevé suivant la cible, coût 0,5 pt + 2×20 €/liquidité. **96 règles, 96
+négatives.** Meilleure : réversion 20 %, H=240 min, **−3,36 %**, médiane **−41,84 %**, 22 % de
+gagnants. Acheter une chute sur un survivant, c'est acheter la suite de la chute. Le momentum ne
+figure même pas dans les 15 premières. `survivants.py`.
+
+#### 3. Un autre marché : BNB / four.meme — mort
+`bnb_balayage.py` rejoué sur l'ancienne base (617 jetons du 13/09) : 35 cellules, presque toutes à
+**exactement −0,030** — le péage de 3 % et rien d'autre. **Les prix ne bougeaient pas.** Un marché
+sans mouvement ne paie même pas ses frais. Une journée de données : un ordre de grandeur, suffisant
+dans ce sens-là.
+
+#### Ce que ça dit, mis bout à bout
+Pool à 47 s, courbe, copie des gagnants, liquidité, survivants à 1 h, autre chaîne, 19 494 croisements
+de 107 variables : **tout ce qui est accessible à un acheteur de 20 € est négatif après le péage
+réel.** Ce n'est plus une question de piste. Ce qui reste d'inconnu : (a) `stock_collecte` (les 300
+vers 4 h), (b) **quatre jours ne distinguent pas « pas d'edge » de « mauvaise semaine »** — la
+machine est automatique maintenant, la rejouer chaque semaine sans un euro en jeu est la seule chose
+qui ait encore une valeur d'information.
