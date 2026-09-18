@@ -5428,6 +5428,57 @@ MODÈLE — celui-là même qui s'était déjà trompé de 0,14 pt face à la ca
 entièrement de la queue des petits coffres. **On reste à 2,62.** À la reprise du trading, relancer
 `calibration_corrigee.py` sur les premiers tickets avant de publier le moindre chiffre.
 
+### 3.117 — Le régime est mort, et la conjonction qui passe enfin les trois contrôles, 2026-09-18 11h30
+
+**LE RÉGIME NE MARCHE PAS, et il ne marchait déjà pas.** Mido a demandé pourquoi le régime
+n'améliore rien un mauvais jour. Réponse mesurée sur 1 850 tickets — il n'améliore rien, **aucun
+jour** :
+
+| quintile de `regime` | −0,126 | −0,080 | −0,040 | +0,015 | +0,103 |
+|---|---|---|---|---|---|
+| net du ticket | −3,87 % | **+1,01 %** | **−8,56 %** | −1,42 % | −0,72 % |
+
+Zigzag, aucune monotonie. Corrélation de rang **+0,026** pour un bruit de ±0,046. Et la règle telle
+qu'utilisée (`regime > 0`) : +1,07 pt sur le témoin, **IC95 [−3,23 ; +5,42]** sur 633 tickets —
+non distinguable de zéro. Le +4,85 pt affiché le 18/09 portait sur **39 tickets d'une journée** et
+s'évapore sur la période. Cohérent avec §3.111 par une voie indépendante : il n'y a pas de
+persistance du marché à cette échelle. **`regime` est clos.**
+
+**PIÈGE DE PRÉSENTATION, à ne pas refaire.** J'ai donné le +4,85 pt d'une seule journée dans un
+tableau à côté de chiffres de période, sans dire que son n valait 39. Mido : « t'as donné un truc
+sur au plus bas + bande alors que je te posais une question sur le régime ». Deux fautes dans le
+même échange : un effectif tu, et un changement de sujet non annoncé. *Un chiffre sur moins de 100
+tickets ne se met pas dans le même tableau qu'un chiffre de période.*
+
+**BANDE ET RÉGIME N'ONT AUCUN RAPPORT**, ce que la conversation avait confondu : la BANDE filtre le
+JETON (probabilité de vidage prédite, 0,20–0,35), le RÉGIME filtre le MARCHÉ. Vérifié : 35 % de la
+bande tombe aussi en régime, contre **34 % attendu si indépendants**. Recouvrement exactement au
+hasard.
+
+**LA CONJONCTION `AU PLUS BAS + BANDE`, gelée à 09h30 UTC** (`intel/research/bas_bande.py`). Elle
+vient de l'objection de Mido — « limiter une perte est un élément indispensable d'une stratégie
+gagnante » — et elle assemble les deux moitiés mesurées séparément : la BANDE limite la casse,
+`AU PLUS BAS` grossit le gain (§3.116).
+
+| | n | net | moitiés | sans ses 3 meilleurs | p contre le hasard |
+|---|---|---|---|---|---|
+| témoin | 1 892 | −2,35 % | −1,93 / −2,77 | −2,83 | 0,498 |
+| RISQUE seul | 1 320 | −0,58 % | −0,73 / −0,43 | −1,26 | 0,121 |
+| AU PLUS BAS | 421 | +0,89 % | +2,61 / −0,82 | −1,25 | 0,129 |
+| au plus bas + RISQUE | 205 | +3,42 % | −1,98 / +8,77 | −0,98 | 0,074 |
+| **au plus bas + BANDE** | **268** | **+5,10 %** | **+5,98 / +4,22** | **+1,76** | **0,017** |
+
+**C'est la première règle du projet à cocher les trois contrôles à la fois** : deux moitiés
+positives, positive sans ses trois meilleurs tickets, et au-delà du hasard. Gros gains : 21,6 %.
+
+**Réserves écrites d'avance** : combinaison choisie APRÈS avoir regardé (le p ne tient pas compte de
+la multiplicité) ; elle repose sur la BANDE, qui vient d'échouer seule hors échantillon (−8,38 %,
+§3.111) ; 2,8 jours de données, quand la bande affichait +3,90 % sur une fenêtre comparable avant de
+mourir. **Critère figé**, à 1 200 tickets (flux 96/jour, ~13 j) ou 21 jours : net positif, positif
+sur les deux moitiés, **et** positif sans ses trois meilleurs. Écart-type du net : 79,3 pts, donc
+1 200 tickets ne tranchent PAS le net seul — d'où les deux conditions de robustesse, qui elles se
+lisent à cet effectif.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
