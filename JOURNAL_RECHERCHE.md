@@ -5577,6 +5577,57 @@ de 2,62 pts reste valide et aucune reprise n'était nécessaire.**
 **RÈGLE À GARDER : tout motif monotone découvert sur une grandeur DÉRIVÉE doit être refait avec une
 autre formulation de la même grandeur avant d'être annoncé.**
 
+### 3.120 — Le coût n'est pas un frais, c'est le prix de la volatilité qu'on vient chercher, 2026-09-18
+
+**Mido : « tu dis qu'on paye beaucoup car les pools sont petits — on a essayé de miser sur des pools
+plus gros ? »** J'avais répondu ce matin que la taille du pool ne réduisait pas le coût de façon
+démontrable (pente contenant zéro, §3.118). **C'était avec la mesure ADDITIVE, démasquée depuis
+comme biaisée (§3.119).** Refaite en multiplicatif sur les 237 tickets réels, l'effet est net :
+
+| coffre médian | n | coût multiplicatif |
+|---|---|---|
+| 74 SOL | 59 | **3,51 %** |
+| 93 SOL | 59 | 3,33 % |
+| 470 SOL | 59 | 2,83 % |
+| 677 SOL | 60 | **2,25 %** |
+
+Monotone, sans exception. **1,26 point d'économie** en passant aux gros pools.
+
+**MAIS LE RENDEMENT BRUT BAISSE D'EXACTEMENT AUTANT.** Sur les tickets papier de `RISQUE seul` :
+
+| | n | rendement brut |
+|---|---|---|
+| pools < 100 SOL | 629 | **+4,07 %** |
+| pools ≥ 300 SOL | 466 | **+2,81 %** |
+| écart | | **−1,26 pt** (IC95 [−6,72 ; +3,86]) |
+
+**Le même chiffre au centième près.** Ce n'est pas une coïncidence : un gros pool bouge moins *dans
+les deux sens*. Notre ordre le pousse moins — donc le coût tombe — et le marché le pousse moins —
+donc le gain tombe. **C'est la même propriété physique qui produit les deux effets.** Le net par
+quintile de coffre zigzague (+0,81 / +0,10 / −4,04 / +3,74 / −1,20 %) sans aucune monotonie.
+
+**FORMULATION À RETENIR : le coût d'exécution n'est pas un frais qu'on subit, c'est le prix de la
+volatilité qu'on vient chercher.** Choisir des pools où l'exécution coûte moins, c'est choisir des
+pools où il ne se passe rien. Cela clôt définitivement la piste « viser des pools plus gros », et
+explique pourquoi aucun réglage d'exécution n'a jamais rien donné.
+
+**DÉCOUPER L'ORDRE, RETESTÉ AVEC LA BONNE DONNÉE.** Même question de Mido, reposée. Ma réponse
+d'hier tenait sur 12 pools lus à 10 s ; le collecteur `prix_rapide` donne maintenant 223 pools à
+1 s. Autocorrélation des variations : 1 s **−0,018**, 2 s +0,006, 5 s **−0,029**, 10 s **+0,036**,
+30 s +0,026 — les signes alternent, tout est sous 0,04, c'est du bruit. Simulation directe de la
+vente étalée sur les chemins réels : 2 morceaux à 5 s **+0,036 %** [−0,718 ; +0,746], 4 morceaux
+**−0,355 %** [−1,615 ; +0,844]. Même en prenant le meilleur chiffre au pied de la lettre, il
+faudrait qu'il rapporte 3,17 points pour rembourser le coût — il en rapporte 0,036. Rappel du
+mécanisme : dans un AMM à produit constant, le prix final ne dépend que du volume TOTAL, pas du
+nombre de morceaux (vérifié à la 8ᵉ décimale) ; le seul gain possible viendrait de ce que
+**d'autres** repoussent le prix pendant qu'on attend — et à 4 minutes de vie, il n'y a personne en
+face.
+
+**LE COÛT EN EUROS, sur les 25 premiers tickets réels** : le marché a donné +43,84 EUR, l'exécution
+a pris **−16,12 EUR**, il reste +27,71 EUR. **L'exécution mange 37 % de ce que le marché donne**,
+soit 0,64 EUR par ticket de 20 EUR pour 4 minutes. À 40 tickets/jour, c'est **26 EUR/jour** de coût
+pur ; pour dégager 50 EUR/jour net il faudrait que le marché en donne 76.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
