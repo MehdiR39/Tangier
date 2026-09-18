@@ -6839,3 +6839,45 @@ personne ne bat le hasard.
 **Verdict, identique à §3.130 :** réentraîner ne produit rien de stable. L'ensemble frais copie
 l'ancien ; la forêt fraîche oscille entre meilleure et pire selon la coupe et l'effectif. Le
 classement existe faiblement, le niveau est négatif, et le péage de 6,55 tient tout sous zéro.
+
+
+---
+
+### 3.132 — Marche avant : réentraîner toutes les 6 h et trier à 30 %, sur toute la période — non, 2026-09-18 23h30
+
+Mido : *« si on fait −0,71 % sur une journée compliquée c'est pas mal non ? »* La bonne question
+n'est pas une fenêtre mais toutes : `marche_avant.py`, 11 coupes de 6 h du 16/09 00h au 18/09 18h,
+à chaque coupe forêt (300 arbres) et ensemble (6 boostings) réentraînés sur grande table + carnet
+avant la coupe, jugés sur les 6 h suivantes, 30 % et 50 % gardés, tout additionné. Coût 6,55.
+
+| fenêtre | n | témoin | forêt 30 % | forêt 50 % | ens 30 % |
+|---|---|---|---|---|---|
+| 16/09 00h | 200 | −12,45 % | −5,91 % | −9,16 % | −8,41 % |
+| 16/09 06h | 137 | −1,99 % | −3,35 % | +5,11 % | −3,49 % |
+| 16/09 12h | 155 | −2,03 % | **+0,15 %** | +0,36 % | −2,05 % |
+| 16/09 18h | 95 | −4,28 % | −7,25 % | −5,30 % | −9,79 % |
+| 17/09 00h | 185 | −11,05 % | −8,10 % | −10,05 % | −8,75 % |
+| 17/09 06h | 164 | −8,36 % | −11,12 % | −9,51 % | −7,31 % |
+| 17/09 12h | 164 | +4,71 % | −7,73 % | −5,93 % | −6,62 % |
+| 17/09 18h | 215 | −6,24 % | −3,92 % | −5,21 % | −1,79 % |
+| 18/09 00h | 214 | −8,28 % | −3,25 % | −1,58 % | −1,88 % |
+| 18/09 06h | 168 | −8,84 % | −5,30 % | −4,34 % | −5,53 % |
+| 18/09 12h | 156 | −1,32 % | −2,30 % | −3,66 % | −3,33 % |
+
+**Toute la période, additionnée :**
+
+| | n | net/ticket | € à 20 € | sans 3 meil. | gagnants | catastrophes |
+|---|---|---|---|---|---|---|
+| témoin | 1 853 | −5,90 % | −2 186 € | −6,67 % | 43 % | 22 % |
+| **forêt 30 %** | 552 | **−5,23 %** | **−577 €** | −5,71 % | 34 % | **7 %** |
+| forêt 50 % | 924 | −4,72 % | −872 € | −5,62 % | 42 % | 13 % |
+| ensemble 30 % | 552 | −5,15 % | −569 € | −5,68 % | 35 % | 8 % |
+
+**Une fenêtre positive sur onze** (16/09 12h, +0,15 %). Sur la fenêtre où le témoin gagne
+(17/09 12h, +4,71 %), la forêt triée fait −7,73 % : elle écarte précisément les tickets qui montent.
+Le −0,71 % de la soirée était **une fenêtre, pas une règle**.
+
+**Le fait qui compte, une troisième fois :** trier à 30 % fait passer les catastrophes de 22 % à
+**7 %** — et le net ne bouge que de 0,67 point (−5,90 → −5,23). La perte n'est pas dans la queue,
+elle est dans le corps. Le péage de 6,55 sur les tickets ordinaires reste au-dessus de ce qu'ils
+rapportent, catastrophes ou pas.
