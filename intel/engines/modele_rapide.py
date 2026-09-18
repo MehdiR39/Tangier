@@ -84,6 +84,10 @@ class ModeleRapide:
         self.ctx, self.client = ctx, client
         self._modele = None
         self._vus: set[str] = set()
+        # mint -> (nombre d echecs de vente, instant de la derniere alerte). Une position
+        # qu on n arrive pas a vendre est de l argent BLOQUE : elle doit reveiller
+        # l operateur, seul a pouvoir vendre a la main, au lieu de retenter en silence.
+        self._echecs: dict[str, tuple[int, float]] = {}
 
     def _cfg(self, cle: str, defaut: Any) -> Any:
         return self.ctx.config.get("modele_rapide.%s" % cle, defaut)
@@ -302,9 +306,11 @@ class ModeleRapide:
         for l in self.ctx.db.query(
                 "SELECT mint, ts_entree FROM mr_lignes WHERE mode='live' AND statut='OUVERTE'"
                 " AND tx_achat IS NOT NULL AND ts_entree <= ?", (now - TENUE_S,)):
+            mint = str(l["mint"])
             try:
-                solde = await sol.token_balance(self.client, rpc, proprio, str(l["mint"]))
-            except Exception:  # noqa: BLE001
+                solde = await sol.token_balance(self.client, rpc, proprio, mint)
+            except Exception as exc:  # noqa: BLE001
+                await self._echec_vente(mint, "solde illisible : %s" % str(exc)[:60], now)
                 continue
             if not solde:
                 self.ctx.db.execute("UPDATE mr_lignes SET statut='FERMEE', ts_sortie=?, motif=?"
@@ -323,10 +329,11 @@ class ModeleRapide:
                     "UPDATE mr_lignes SET statut='FERMEE', ts_sortie=?, tx_vente=?, motif=?"
                     " WHERE mint=?", (now, h, "sortie a %d s" % TENUE_S, l["mint"]))
                 log.info("modele_rapide: VENTE %s — %s", str(l["mint"])[:10], h[:16])
+                self._echecs.pop(mint, None)
                 await self._prevenir("🔵 <b>%s…</b> vendu à 240 s%s"
-                                     % (str(l["mint"])[:8], self._cumul()))
+                                     % (mint[:8], self._cumul()))
             except Exception as exc:  # noqa: BLE001
-                log.warning("modele_rapide: vente refusee %s (%s)", str(l["mint"])[:10], str(exc)[:100])
+                await self._echec_vente(mint, str(exc)[:80], now)
 
     # ---------------------------------------------------------------- alertes
 
@@ -385,6 +392,26 @@ class ModeleRapide:
         if o and int(o[0]["n"] or 0):
             bloc.append("%d position(s) ouverte(s), %.0f EUR engages" % (int(o[0]["n"]), float(o[0]["m"])))
         return "\n".join(bloc)
+
+    async def _echec_vente(self, mint: str, raison: str, now: float) -> None:
+        """Une vente qui ne passe pas est de l ARGENT BLOQUE, pas un incident technique.
+
+        On retente a chaque cycle -- c est voulu, un pool illiquide peut redevenir vendable -- mais
+        on PREVIENT, parce que seul l operateur peut alors vendre a la main. Et on ne previent pas
+        toutes les cinq secondes : une alerte au troisieme echec, puis une par demi-heure. Sans ce
+        frein, une seule position invendable noierait le canal sous sept cents messages par heure et
+        les vraies alertes deviendraient invisibles.
+        """
+        n, derniere = self._echecs.get(mint, (0, 0.0))
+        n += 1
+        log.warning("modele_rapide: vente refusee %s (%d echecs) — %s", mint[:10], n, raison)
+        if n == 3 or (n > 3 and now - derniere >= 1800):
+            await self._prevenir(
+                "⚠️ <b>%s…</b> INVENDABLE — %d tentatives\n<i>%s</i>\n"
+                "Argent bloqué : une vente à la main peut être nécessaire." % (mint[:8], n, raison),
+                critique=True)
+            derniere = now
+        self._echecs[mint] = (n, derniere)
 
     async def _compter(self, now: float) -> None:
         """Le P&L se lit sur le SOLDE DU PORTEFEUILLE, jamais sur une cotation.

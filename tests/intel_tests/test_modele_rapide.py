@@ -115,3 +115,20 @@ def test_le_taux_sol_est_lu_sur_le_marche():
     assert "await sol.sol_eur(" in src
     assert "sol_eur=taux" in src
     assert "taux SOL illisible" in src, "si le taux manque, l achat doit etre reporte"
+
+
+def test_une_vente_qui_echoue_alerte_au_lieu_de_boucler_en_silence():
+    """Une position invendable est de l argent BLOQUE : seul l operateur peut vendre a la main."""
+    src = inspect.getsource(mr.ModeleRapide._echec_vente)
+    assert "critique=True" in src, "l alerte doit partir meme si les alertes sont coupees"
+    assert "1800" in src, "il faut un frein : sinon 700 messages par heure"
+    assert "n == 3" in src, "on alerte au 3e echec, pas au premier"
+    # et le compteur doit etre remis a zero quand la vente finit par passer
+    assert "self._echecs.pop(" in inspect.getsource(mr.ModeleRapide._sortir)
+
+
+def test_un_solde_illisible_ne_passe_pas_en_silence():
+    """Le `continue` muet d origine aurait boucle indefiniment sans rien dire."""
+    src = inspect.getsource(mr.ModeleRapide._sortir)
+    i = src.index("token_balance")
+    assert "_echec_vente" in src[i:i + 400], "un solde illisible doit compter comme un echec de vente"
