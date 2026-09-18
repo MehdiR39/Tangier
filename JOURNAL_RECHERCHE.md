@@ -5628,6 +5628,50 @@ a pris **−16,12 EUR**, il reste +27,71 EUR. **L'exécution mange 37 % de ce qu
 soit 0,64 EUR par ticket de 20 EUR pour 4 minutes. À 40 tickets/jour, c'est **26 EUR/jour** de coût
 pur ; pour dégager 50 EUR/jour net il faudrait que le marché en donne 76.
 
+### 3.121 — Le régime EXISTE : je le cherchais sur la mauvaise grandeur, 2026-09-18 17h00
+
+**Mido, après une journée où j'avais déclaré le régime de marché mort (§3.111, §3.117) :**
+*« j'arrive pas à croire qu'on rate pas un truc — là on a un taux de +64 %, peu de positions
+perdantes, et on arrive pas à trouver un switch de régime ou un frein quand le marché va
+changer ».* Il avait raison, et l'erreur était de conception.
+
+**J'AVAIS TESTÉ 45 FORMULATIONS DU RÉGIME, ET AUCUNE N'ÉTAIT UN TAUX.** Toutes portaient sur le
+rendement **moyen** — 5 fenêtres × 3 durées × 6 statistiques, plus trois indicateurs sans délai.
+Or la moyenne de ces tickets est écrasée par quelques valeurs à +200 % : elle est structurellement
+trop bruitée pour révéler quoi que ce soit. **Le taux de gagnants est borné entre 0 et 1, insensible
+aux queues.** C'est là que le signal était.
+
+**LA MESURE**, sur `RISQUE seul` (1 373 tickets), causalité stricte — seuls les tickets déjà
+**clôturés** à l'instant de la décision (t+242 s), jamais ceux encore ouverts :
+
+| quartile du taux récent (20 derniers) | 45 % | 55 % | 65 % | 75 % |
+|---|---|---|---|---|
+| **NET du ticket suivant** | **−3,84 %** | −0,92 % | +1,55 % | **+2,83 %** |
+
+**Monotone sur les quatre quartiles.** Et la fenêtre de 50 tickets, indépendante, donne la même
+forme : −3,30 / −0,99 / +1,18 / +3,09 %. **C'est la première fois dans ce projet qu'une variable de
+marché ordonne le net sans zigzaguer** — toutes les tentatives précédentes alternaient les signes.
+
+**CE QUI N'EST PAS DÉMONTRÉ.** S'abstenir sous 50 % donne +1,47 % par ticket contre −0,09 % pour le
+témoin, mais **p = 0,152** contre un tirage au hasard de même taille, et trois fenêtres ont été
+essayées — il faudrait donc nettement mieux que 0,05. La monotonie sur 4 quartiles × 2 fenêtres est
+un fait d'une autre nature, structurellement bien plus dur à obtenir par hasard qu'un seul p, mais
+elle a été constatée **après** coup.
+
+**`intel/research/frein_taux.py`, gelé à 15h00 UTC.** Règle : ne pas acheter quand le taux de
+gagnants des 20 derniers tickets clôturés est ≤ 50 %. **Le seuil n'est pas ajusté** — 50 % est la
+frontière naturelle (plus de perdants que de gagnants), et un seuil optimisé sur les données serait
+invalide d'avance. Critère figé à 1 500 tickets ou 21 jours : (a) corrélation de rang positive,
+(b) Q1 le pire et Q4 le meilleur, (c) le frein bat « tout prendre » sur les mêmes tickets. Les
+trois, sinon abandon. **Dimensionné sur la monotonie et non sur l'argent** : détecter +1,5 pt en
+euros demanderait ~19 000 tickets, l'ordre des quartiles se lit en 1 700.
+
+**LEÇON DE MÉTHODE, la plus importante de la journée.** Un balayage large sur une grandeur mal
+choisie ne remplace pas le choix de la grandeur. 45 formulations d'une moyenne bruitée disent
+« rien » avec assurance ; une seule formulation d'un taux borné montre le signal. *Avant de balayer,
+demander quelle grandeur a le meilleur rapport signal/bruit pour la question posée* — et se méfier
+des moyennes sur des distributions à queues épaisses, qui sont le pire estimateur possible.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
