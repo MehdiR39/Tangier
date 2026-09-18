@@ -7049,3 +7049,40 @@ définition d'une direction, pas d'un edge, et elle est stable d'un test à l'au
 
 **Ce qui la ferait passer :** pas une huitième variante — des tickets. ±3,1 pt de marge à 370 ; ±1,5
 à 1 500. Une semaine de collecte de transactions à couverture complète.
+
+
+---
+
+### 3.138 — « T'es sûr ? » : le 60 % des transactions était gonflé par le biais d'impureté, la vraie part est 44 %, 2026-09-19 02h40
+
+Mido : *« mec t'es sûr de ce que tu racontes ? »* Non, pas de tout — et le point le moins sûr était
+celui qui portait la « direction ». L'importance d'impureté des forêts **favorise mécaniquement
+les variables continues** (beaucoup de valeurs distinctes) contre les binaires ; les 16 variables
+de transactions sont toutes continues. Refait avec l'importance par **permutation** (AUC perdu
+quand on brouille chaque variable sur la fenêtre jugée, 20 répétitions), dernière coupe, 1 083
+tickets d'entraînement, 326 jugés :
+
+| famille | impureté (biaisée) | permutation |
+|---|---|---|
+| transactions (v1) | 60 % | **44 %** |
+| prix | 11 % | 14 % |
+| image | 8 % | 12 % |
+| coffre `q` | 6 % | 9 % |
+| `risque` | 5 % | 8 % |
+
+Les transactions restent la première famille, **mais à 44 %, pas 60 %** — et l'image remonte à
+12 % (`img_l`, la largeur, est parmi les 8 variables les plus utiles : cohérent avec l'idée de
+Mido sur les gabarits produits en série). Somme des importances par permutation : +0,031 AUC
+seulement — les variables sont très **redondantes** (brouiller l'une ne coûte presque rien tant que
+les autres restent).
+
+Un chiffre nouveau, à ne pas surinterpréter : **AUC gagnant/perdant de 0,787** sur cette fenêtre
+(0,5 = rien), contre 0,55–0,65 pour les modèles de vidage. Une seule fenêtre, et classer n'est pas
+gagner (sur ces mêmes heures la marche avant faisait +2,30 % puis −2,18 %). Vérification lancée :
+le même AUC sur les 9 fenêtres, chacun contre 20 permutations de ses propres résultats.
+
+**Seconde réserve, non levée :** « ça s'améliore quand on nettoie » (§3.134) a aussi changé la
+période (16–17/09 surtout). L'amélioration peut être le marché de ces jours-là.
+
+**Règle 17 :** *une importance de variables se lit par permutation, jamais par impureté, dès que les
+familles mélangent continues et binaires.*
