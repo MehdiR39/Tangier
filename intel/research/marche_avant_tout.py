@@ -54,6 +54,12 @@ def main() -> None:
     df = pd.read_pickle(os.path.join(DOSSIER, "table.pkl"))
     variables = [v for v in df.attrs["VARIABLES"] if v not in EXCLUES]
     df = df[(df["eligible"] == 1) & df["ret_240"].notna()].sort_values("t_dec").reset_index(drop=True)
+    # V1_SEUL=1 : ne garder que les tickets qui ONT des donnees de transactions, pour que la foret
+    # ne voie jamais de trous combles a la mediane sur la famille qu elle prefere (le collecteur v1
+    # s arrete quand son quota Helius est atteint : 18/09 couvert jusqu a 9h seulement)
+    if os.environ.get("V1_SEUL") == "1" and "v1_n_achats" in df.columns:
+        df = df[df["v1_n_achats"].notna()].reset_index(drop=True)
+        print("V1_SEUL : %d tickets avec donnees de transactions" % len(df))
     X_all = df[variables].apply(pd.to_numeric, errors="coerce").astype(float)
     # une variable constante ou vide sur toute la table n apprend rien et fait planter la foret
     garde = [v for v in variables if X_all[v].notna().sum() >= 100 and X_all[v].nunique(dropna=True) >= 2]
