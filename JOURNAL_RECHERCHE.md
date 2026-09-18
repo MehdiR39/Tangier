@@ -6628,3 +6628,58 @@ ne protège de rien** : 0 tirage sur 10, et un seul ticket derrière.
    — *« j'ai jamais rien refusé c'est toi qui décide avec les chiffres »*. **Règle 15 : ne jamais
    attribuer à l'opérateur une décision dont je n'ai pas la trace ; si une piste n'a pas été
    explorée, la raison par défaut est la mienne.**
+
+
+---
+
+### 3.127 — Site, Twitter, Telegram déclarés : le meilleur contraste du projet, et il ne vaut rien, 2026-09-18 21h15
+
+Mido : **« on a testé pour Telegram mais ça n'a pas fonctionné, le fait d'avoir un site web ça ajoute
+plus sérieux ? »**
+
+**La question n'avait jamais été testée.** Ce que le projet appelait « le test Telegram », c'étaient
+des **signaux de chaînes** — quelqu'un poste un jeton, on l'achète. Ici il s'agit de la
+**métadonnée** : le créateur a-t-il déclaré un lien ? `features_lancement.py` annonce `a_site`,
+`a_twitter`, `a_telegram` dans sa documentation **depuis le 09/09** sans qu'aucun ait jamais été
+implémenté. Neuf jours.
+
+Collecte : `liens_collecte.py`, **2 115 jetons lus sur 2 138**. Les métadonnées pump.fun sont des
+fichiers IPFS **immuables** : les relire aujourd'hui rend exactement ce qui existait à la décision.
+C'est l'opposé du piège des comptes fermés (§3.124).
+
+#### Le résultat
+
+| | n | moyenne | médiane | sans 3 meil. |
+|---|---|---|---|---|
+| **avec** site | 1 561 | −0,53 % | +2,79 % | −1,39 % |
+| **sans** site | 554 | −4,49 % | +0,11 % | −6,33 % |
+
+Écart **+3,96 pt**, moitiés **+7,13 / +0,59** (même signe), et **il tient sans les 3 meilleurs**.
+Twitter donne +3,66 pt, Telegram +4,52 pt, tous deux de même signe sur les deux moitiés.
+
+**Trois critères sur cinq passent — c'est le meilleur score de toute la journée.**
+
+#### Pourquoi c'est quand même NON
+
+**(4) Ça ne bat pas le hasard.** Permutation sur l'écart : 7,6 % pour le site, 11,2 % Twitter,
+17,0 % Telegram. Et **28,4 %** pour la loi du maximum sur trois variables essayées.
+
+**(5) Le groupe AVEC perd quand même : −0,53 %.** C'est le critère décisif, et c'est la règle qui a
+coûté 436 € le 15/09 : **l'argent se décide sur le NIVEAU, jamais sur un contraste.** Avoir un site
+rend le jeton moins catastrophique, pas rentable.
+
+Et le filtre serait faible : **73,8 % des jetons déclarent un site**, donc l'écarter ne retire qu'un
+quart du flux — un flux dont on a mesuré qu'il perd.
+
+#### Deux erreurs à moi, dans la même heure
+
+1. **12 fils sur les passerelles IPFS → 1 505 erreurs 403 sur 1 511 échecs.** Je martelais `ipfs.io`
+   parce que l'ordre des passerelles était fixe. Corrigé : 8 passerelles **tirées au hasard** à
+   chaque appel, 4 fils → 2 115 lus. Les 6 seuls vrais 404 montrent que les échecs étaient
+   mécaniques, pas liés au contenu — sans cette vérification, 71 % de données manquantes auraient pu
+   être une sélection.
+2. **Mon test de la loi du maximum comparait un ÉCART ENTRE DEUX GROUPES à des écarts de MOYENNE
+   D'ÉCHANTILLON.** Deux grandeurs d'échelle différente : il annonçait **0,0 %** là où le test
+   correct (permutation des étiquettes) donne **28,4 %**. Un test qui rend 0,0 % doit être suspecté
+   avant d'être cru. **Règle 16 : un test de significativité se valide en vérifiant qu'il compare
+   bien la MÊME grandeur des deux côtés.**
