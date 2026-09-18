@@ -1123,12 +1123,19 @@ pump_courbe:
 # IL FAUT TROIS CHOSES POUR QU IL ACHETE : `enabled: true`, `mode: live`, et une cle presente.
 # Tant que l une manque, il decide, enregistre dans `mr_lignes`, et n envoie RIEN.
 modele_rapide:
-  enabled: true                # ACTIVE EN PAPIER le 18/09 : il decide et enregistre, il ne signe pas
-  mode: paper                  # paper | live                  # paper | live
+  enabled: true
+  # PASSAGE EN REEL le 18/09 sur autorisation explicite de l operateur (« fait le, le .env contient
+  # deja les cles et t as l autorisation »). Objectif ASSUME : mesurer ce que le papier ne donne
+  # pas -- le cout d execution d AUJOURD HUI, si les ordres atterrissent, si l on se fait
+  # sandwicher -- et non gagner au premier coup. Portefeuille au moment du passage : 1,8886 SOL,
+  # soit ~174 EUR. Le plafond de perte de 150 EUR est celui que l operateur a accepte.
+  mode: live                   # paper | live
   pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
   fenetre_minutes: 15
   mise_eur: 20.0
-  sol_eur: 92.0                # sert au dimensionnement de l ordre ; relu a chaque cycle
+  # Le taux SOL/EUR est LU SUR LE MARCHE a chaque achat (sol.sol_eur), jamais fige : le 08/09 un
+  # taux en dur de 180 EUR alors que le SOL valait 96 engageait 2,67 EUR pour un ticket annonce a 5.
+  # Si le taux est illisible, l achat est REPORTE plutot que mal dimensionne.
   slippage_achat_pct: 20.0
   slippage_vente_pct: 25.0
   max_impact_pct: 15.0         # au-dela, l ordre est refuse AVANT envoi et ne coute rien

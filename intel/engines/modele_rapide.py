@@ -258,10 +258,20 @@ class ModeleRapide:
             self.ctx.db.execute("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
                                 ("aucune cle", mint))
             return
+        # LE TAUX SE LIT SUR LE MARCHE, JAMAIS EN DUR. Le 08/09 le carnet supposait 180 EUR/SOL
+        # alors qu il valait 96 : un ticket annonce a 5 EUR en engageait 2,67, et tous les gains
+        # etaient rapportes 88 % trop haut. `sol_eur` lit le marche et met en cache quelques minutes.
+        try:
+            taux = await sol.sol_eur(self.client)
+        except Exception:  # noqa: BLE001
+            log.warning("modele_rapide: taux SOL illisible — achat reporte plutot que mal dimensionne")
+            self.ctx.db.execute("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
+                                ("taux SOL illisible", mint))
+            return
         try:
             tx = await sol.prepare_buy(
                 self.client, mint=mint, size_eur=mise,
-                sol_eur=float(self._cfg("sol_eur", 92.0)),
+                sol_eur=taux,
                 slippage_pct=float(self._cfg("slippage_achat_pct", 20.0)),
                 max_impact_pct=float(self._cfg("max_impact_pct", 15.0)),
                 priorite_lamports=int(self.ctx.config.get("solana.priority_fee_lamports", 0) or 0),
