@@ -241,7 +241,7 @@ class ModeleRapide:
                  now, prix_e, mise, json.dumps(f, default=str)))
             achetes += 1
             if live and not bloque:
-                await self._acheter_reel(mint, mise, f)
+                await self._acheter_reel(mint, mise, f, risque)
         # VENDRE ET COMPTER NE SONT JAMAIS BLOQUES. Un plafond doit arreter les ACHATS, jamais les
         # ventes : sinon atteindre 40 ordres laisserait les positions ouvertes indefiniment, sans
         # personne pour les fermer. Le plafond protege du risque, il ne doit pas en creer un.
@@ -252,7 +252,7 @@ class ModeleRapide:
 
     # ---------------------------------------------------------------- reel
 
-    async def _acheter_reel(self, mint: str, mise: float, f: dict) -> None:
+    async def _acheter_reel(self, mint: str, mise: float, f: dict, risque: float) -> None:
         """Envoie l ordre. Toute erreur ferme la ligne : on ne garde jamais une position fantome."""
         from intel.execution import solana as sol
         cle = self._cfg("cle_fichier", None)
@@ -285,6 +285,10 @@ class ModeleRapide:
             h = await sol.send(self.client, rpc, sol.sign(tx["tx"], cle))
             self.ctx.db.execute("UPDATE mr_lignes SET tx_achat=? WHERE mint=?", (h, mint))
             log.info("modele_rapide: ACHAT %s — %s", mint[:10], h[:16])
+            await self._prevenir(
+                "🟢 <b>%s…</b> acheté · <i>au plus bas + bande</i>\n"
+                "%.2f EUR · risque %.3f · coffre %.0f SOL · revente dans 4 min"
+                % (mint[:8], mise, risque, float(f.get("q", 0.0) or 0.0)))
         except Exception as exc:  # noqa: BLE001
             self.ctx.db.execute("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
                                 (str(exc)[:160], mint))
@@ -319,8 +323,68 @@ class ModeleRapide:
                     "UPDATE mr_lignes SET statut='FERMEE', ts_sortie=?, tx_vente=?, motif=?"
                     " WHERE mint=?", (now, h, "sortie a %d s" % TENUE_S, l["mint"]))
                 log.info("modele_rapide: VENTE %s — %s", str(l["mint"])[:10], h[:16])
+                await self._prevenir("🔵 <b>%s…</b> vendu à 240 s%s"
+                                     % (str(l["mint"])[:8], self._cumul()))
             except Exception as exc:  # noqa: BLE001
                 log.warning("modele_rapide: vente refusee %s (%s)", str(l["mint"])[:10], str(exc)[:100])
+
+    # ---------------------------------------------------------------- alertes
+
+    async def _prevenir(self, texte: str, critique: bool = False) -> None:
+        """Le canal de CE carnet, jamais celui de l ancien.
+
+        Demande de l operateur au moment du passage en reel : « remets a zero les messages Telegram
+        pour qu on ne soit pas pollue par l ancien P&L de l ancien bot ». La separation n est pas un
+        reglage qu on pourrait oublier de mettre a jour : ce module ne LIT que `mr_lignes`, donc un
+        chiffre de l ancien carnet ne peut pas y entrer, meme par erreur.
+        """
+        if not critique and not bool(self._cfg("alertes", True)):
+            return
+        from intel.alerts.telegram import TelegramSender
+        try:
+            await TelegramSender(
+                self.ctx.settings,
+                chat_id=self._cfg("canal", self.ctx.config.get("telegram_rapide.canal", None)),
+                token=self._jeton()).send(texte)
+        except Exception as exc:  # noqa: BLE001
+            log.info("modele_rapide: alerte non envoyee (%s)", str(exc)[:80])
+
+    def _jeton(self) -> str | None:
+        import os
+        var = self._cfg("jeton_variable", self.ctx.config.get("telegram_rapide.jeton_variable", None))
+        if var:
+            v = (os.environ.get(str(var)) or "").strip()
+            if v:
+                return v
+        return None
+
+    def _cumul(self) -> str:
+        """Le cumul de CE carnet seulement, lu sur `mr_lignes`.
+
+        Une ligne dont le resultat n est pas encore lu sur la chaine n entre pas dans le total,
+        plutot que d y entrer a zero.
+        """
+        try:
+            r = self.ctx.db.query(
+                "SELECT COUNT(*) n, COALESCE(SUM(gain_eur),0) g, COALESCE(SUM(mise_eur),0) m,"
+                " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w FROM mr_lignes"
+                " WHERE mode='live' AND gain_eur IS NOT NULL")
+            o = self.ctx.db.query(
+                "SELECT COUNT(*) n, COALESCE(SUM(mise_eur),0) m FROM mr_lignes"
+                " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL")
+        except Exception:  # noqa: BLE001
+            return ""
+        n = int(r[0]["n"] or 0) if r else 0
+        bloc = ["", "━━━━━━━━━━━━━━", "<i>carnet MODELE (depuis le 18/09)</i>"]
+        if n:
+            g, m, w = float(r[0]["g"]), float(r[0]["m"]) or 1.0, int(r[0]["w"] or 0)
+            bloc.append("%+.2f EUR · %d trades, %.0f %% won, %+.3f/eur"
+                        % (g, n, 100.0 * w / n, g / m))
+        else:
+            bloc.append("aucun ticket encore compte sur la chaine")
+        if o and int(o[0]["n"] or 0):
+            bloc.append("%d position(s) ouverte(s), %.0f EUR engages" % (int(o[0]["n"]), float(o[0]["m"])))
+        return "\n".join(bloc)
 
     async def _compter(self, now: float) -> None:
         """Le P&L se lit sur le SOLDE DU PORTEFEUILLE, jamais sur une cotation.
@@ -360,3 +424,5 @@ class ModeleRapide:
                 (gain, "compte sur la chaine : %+.5f SOL" % (da + dv), l["mint"]))
             log.info("modele_rapide: %s compte sur la chaine — %+.5f SOL soit %+.2f EUR",
                      str(l["mint"])[:10], da + dv, gain)
+            await self._prevenir("%s <b>%s…</b> %+.2f EUR <i>(compté sur la chaîne)</i>%s"
+                                 % ("✅" if gain > 0 else "❌", str(l["mint"])[:8], gain, self._cumul()))
