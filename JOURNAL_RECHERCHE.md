@@ -6568,3 +6568,63 @@ systématiquement **de quoi** le hors-échantillon est hors.
 
 **Règle 14 :** *un garde-fou qui « ne fait que s'abstenir » n'est pas sans risque.* Écarter n'est
 gratuit que si l'on écarte au hasard.
+
+
+---
+
+### 3.126 — La COURBE pump.fun rejouée : témoin négatif partout, et deux règles qui tombent sur le contrôle, 2026-09-18 20h30
+
+Mido, après qu'on a montré que les acheteurs du pool perdent : **« tu dis que ceux qui gagnent
+achètent sur la courbe, pourquoi on le fait pas ? »**
+
+La question était juste, et le dossier existait déjà : 1,2 Go de transactions de courbe (13–14/09),
+`courbe_verdict.py`, protocole **figé avant** de regarder la table le 15/09 au soir. Il n'avait
+jamais tourné faute de `lightgbm` dans le conteneur. Installé (+ `libgomp1`, `pandas`,
+`scikit-learn`), en revérifiant après chaque étape que le moteur réel et les quatre collecteurs
+réimportent — c'est un conteneur qui manipule de l'argent réel.
+
+#### Le témoin : aucune case positive
+
+Acheter sur la courbe à un niveau S de SOL levé, garder H secondes :
+
+| | H=60 | H=300 | H=1800 |
+|---|---|---|---|
+| S=5 SOL | −0,091 | −0,167 | −0,259 |
+| S=10 | −0,124 | −0,200 | −0,308 |
+| S=20 | −0,108 | −0,186 | −0,274 |
+| S=40 | −0,047 | −0,030 | −0,088 |
+| S=50 | −0,043 | −0,010 | −0,069 |
+| S=70 | −0,050 | −0,064 | −0,082 |
+
+**Vingt-et-une combinaisons, vingt-et-une négatives.** Et le motif est monotone en H : plus on
+garde, plus on perd — le même fait que dans le pool.
+
+#### Les deux familles, et ce qui les tue
+
+**Famille 1** (règles) : S=50, filtre « flux calme », H=300 s. TRI +0,0377 → **TEST −0,1160**,
+moitiés −0,1835 / −0,0521, et **le hasard fait aussi bien 14 fois sur 20**. NON.
+
+**Famille 2** (LightGBM du rendement net) : S=10, H=300 s, haut 10 %. TRI +0,0791 → **TEST +0,0677
+sur 40 tickets, et 0 tirage au hasard sur 10 ne fait aussi bien**. Sur ces deux chiffres seuls,
+c'est un GO éclatant.
+
+**Il échoue sur les deux contrôles qui ne regardent pas le p :**
+- **sans son meilleur ticket : −0,0075.** Un seul ticket porte +6,77 % de moyenne sur 40.
+- **première moitié −0,0037**, seconde +0,1391.
+
+VERDICT NON, et il est mérité. C'est la démonstration la plus nette de la journée que **le p-value
+ne protège de rien** : 0 tirage sur 10, et un seul ticket derrière.
+
+#### Ce que ça ferme, et ce que ça corrige
+
+1. **La courbe est close comme lieu d'achat.** Le pool perd, la courbe perd, copier ceux qui gagnent
+   perd (−6,25 %), et les trois familles bâties sur leur comportement perdent (−4,3 / −7,7 / −12,0).
+2. **Correction d'une formulation à moi, du même soir** : j'avais dit que la courbe était « le seul
+   endroit où un signal d'argent réel a été mesuré positif ». Le +3,9 % décrit la performance de
+   **325 portefeuilles déjà sélectionnés pour être bons** — pas une règle achetable. Le second ne se
+   déduit pas du premier, et le test dit le contraire.
+3. **Une note de mémoire affirmait que Mido avait « refusé » la collecte de courbe le 15/09.** C'est
+   faux : `courbe_collecte.py` porte en en-tête « accord de l'opérateur : vas-y ». Il l'a dit lui-même
+   — *« j'ai jamais rien refusé c'est toi qui décide avec les chiffres »*. **Règle 15 : ne jamais
+   attribuer à l'opérateur une décision dont je n'ai pas la trace ; si une piste n'a pas été
+   explorée, la raison par défaut est la mienne.**
