@@ -262,6 +262,22 @@ class ModeleRapide:
                      float(p["naissance"] or 0), now, risque, f.get("depuis_min"), f.get("q"),
                      json.dumps(f, default=str)))
                 continue
+            # UN TICKET BLOQUE PAR LE PLAFOND NE DOIT PAS COMPTER COMME UN ORDRE. Sinon la ligne
+            # est enregistree avec un `ts_entree`, le plafond la compte au cycle suivant, et il se
+            # verrouille TOUT SEUL de plus en plus : les fantomes entrent dans la fenetre glissante
+            # plus vite que les vrais ordres n en sortent, donc la reprise du lendemain n arrive
+            # jamais. Constate en production le 18/09 -- 40 ordres reels mais 46 comptes en une
+            # demi-heure. Ces lignes restaient en outre OUVERTE pour toujours, `_sortir` exigeant
+            # un `tx_achat`. On les enregistre donc comme BLOQUEE, sans `ts_entree`, ce qui garde
+            # la trace de la decision sans polluer ni le compteur ni le carnet.
+            if live and bloque:
+                self.ctx.db.execute(
+                    "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
+                    " risque, depuis_min, q, motif, variables) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (mint, str(p["pair_id"]), "live", "BLOQUEE",
+                     float(p["naissance"] or 0), now, risque, f.get("depuis_min"), f.get("q"),
+                     "plafond journalier atteint", json.dumps(f, default=str)))
+                continue
             e = _a_age([x[0] for x in pts], A + EXEC_S, 6)
             prix_e = pts[e][1] if e is not None else pts[-1][1]
             self.ctx.db.execute(
@@ -272,7 +288,7 @@ class ModeleRapide:
                  float(p["naissance"] or 0), now, risque, f.get("depuis_min"), f.get("q"),
                  now, prix_e, mise, json.dumps(f, default=str)))
             achetes += 1
-            if live and not bloque:
+            if live:
                 await self._acheter_reel(mint, mise, f, risque)
         # VENDRE ET COMPTER NE SONT JAMAIS BLOQUES. Un plafond doit arreter les ACHATS, jamais les
         # ventes : sinon atteindre 40 ordres laisserait les positions ouvertes indefiniment, sans

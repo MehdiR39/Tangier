@@ -156,3 +156,26 @@ def test_un_seul_message_porte_un_chiffre():
     assert "_cumul()" not in src, "la vente ne doit pas afficher de cumul, il n est pas encore a jour"
     assert "_cumul()" in inspect.getsource(mr.ModeleRapide._compter), \
         "le cumul s affiche au COMPTAGE, seul instant ou il est juste"
+
+
+def test_un_ticket_bloque_par_le_plafond_ne_compte_pas_comme_un_ordre():
+    """Sinon le plafond se verrouille TOUT SEUL : les lignes fantomes entrent dans la fenetre
+    glissante plus vite que les vrais ordres n en sortent, et la reprise du lendemain n arrive
+    jamais. Constate en production le 18/09 : 40 ordres reels, 46 comptes."""
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    i_bloque = src.index("if live and bloque:")
+    bloc = src[i_bloque:i_bloque + 700]
+    assert "BLOQUEE" in bloc, "un ticket bloque doit avoir son propre statut"
+    assert "ts_entree" not in bloc, "une ligne bloquee ne doit PAS porter de ts_entree"
+    assert "continue" in bloc, "elle ne doit pas poursuivre vers l achat"
+    # et la ligne OUVERTE, elle, ne depend plus du plafond -- on n y arrive que si non bloque
+    assert "if live and not bloque" not in src
+
+
+def test_une_ligne_sans_ordre_ne_reste_jamais_ouverte():
+    """`_sortir` exige un tx_achat : une ligne OUVERTE sans ordre ne serait jamais fermee."""
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    i = src.index('"OUVERTE"')
+    avant = src[:i]
+    # l insertion OUVERTE doit etre precedee du garde-fou du plafond
+    assert "if live and bloque:" in avant
