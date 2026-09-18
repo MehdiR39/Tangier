@@ -6961,3 +6961,29 @@ qui est exactement l'inverse de tout ce qui a été testé ces quatre jours.
 
 Loi du maximum lancée dans la foulée : 12 marches avant complètes avec les résultats permutés
 (variables intactes), forêt de gain seule, pour savoir ce que cette machine « trouve » toute seule.
+
+
+---
+
+### 3.135 — Loi du maximum sur la marche avant : +1,05 % est au 83ᵉ centile du hasard, pas au 95ᵉ, 2026-09-19 00h35
+
+12 marches avant complètes (9 fenêtres, forêt de gain 30 %, `V1_SEUL=1`) avec les **résultats
+permutés entre tickets**, variables intactes :
+
+```
++0,12  -5,44  -9,04  +2,39  -4,13  -2,35  -10,15  -1,96  -9,28  -3,83  -6,94  -6,54   (%/ticket)
+```
+
+2 tirages sur 12 sont positifs ; le meilleur fait **+2,39 %**. Le vrai +1,05 % est au-dessus de
+10 tirages sur 12 — **83ᵉ centile**, en dessous de la barre des 95 %. **Il ne passe pas.**
+
+Une observation secondaire, notée sans en faire plus : sur la statistique robuste (**sans les 3
+meilleurs**), le vrai résultat (−1,30 %) est au-dessus des **12 tirages sur 12** (le meilleur des
+hasards fait −2,97 %) — p ≈ 1/13 ≈ 0,08 à un côté. Cohérent avec « une direction, pas un edge ».
+
+**Verdict :** non tradeable en l'état. Ce qui le distinguerait du bruit est mécanique, pas
+intellectuel : **des tickets**. À 370 tickets l'erreur standard est de ±3,1 pt ; à 1 500 elle
+serait de ±1,5. Le collecteur de transactions ne couvre que ~60 % des heures (quota Helius
+150 000/jour pour ~250 000 nécessaires). Couvrir 100 % des heures pendant une semaine donnerait
+~3 000 tickets avec données de transactions, sans un euro en jeu — c'est la seule dépense qui ait
+encore une valeur d'information dans ce projet, et elle se chiffre en crédits RPC, pas en SOL.
