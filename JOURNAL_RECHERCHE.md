@@ -7124,3 +7124,50 @@ péage de 6,55 est dedans. Les deux tests précédents ne se contredisent pas : 
 l'argent réel ? Courbe lancée : 5, 10, 15, 20, 30, 50 % gardés, calibration par tranche de
 probabilité (gain moyen des gagnants, perte moyenne des perdants), et barre du hasard à 200
 permutations sur le choix de la meilleure coupe.
+
+
+---
+
+### 3.140 — Pourquoi un classement réel ne fait pas d'argent : le modèle trouve des survivants modestes, pas des fusées, 2026-09-19 03h05
+
+Courbe de sélectivité de la forêt de gain, 9 fenêtres additionnées, coût 6,55 :
+
+| gardés | n | net/ticket | € | sans 3 meil. | gagnants | catastrophes | fenêtres > 0 |
+|---|---|---|---|---|---|---|---|
+| **5 %** | 58 | **+4,40 %** | +51 € | **+3,50 %** | **91 %** | 5 % | 5/9 |
+| 10 % | 121 | −0,25 % | −6 € | −1,11 % | 82 % | 7 % | 5/9 |
+| 20 % | 246 | −0,16 % | −8 € | −1,05 % | 79 % | 11 % | 4/9 |
+| 30 % | 370 | +1,05 % | +78 € | −1,30 % | 72 % | 15 % | 3/9 |
+| 50 % | 619 | −1,89 % | −234 € | −3,72 % | 63 % | 20 % | 1/9 |
+| 100 % | 1 242 | −4,72 % | −1 173 € | −5,81 % | 45 % | 20 % | 2/9 |
+
+**La calibration explique tout** (probabilité prédite contre réalité, toutes fenêtres) :
+
+| p prédite | n | gagnants réels | net | gain moyen des gagnants | perte moyenne des perdants |
+|---|---|---|---|---|---|
+| < 0,4 | 528 | 26 % | −9,03 % | **+45,0 %** | −28,1 % |
+| 0,4–0,5 | 362 | 48 % | −3,57 % | +42,9 % | −46,1 % |
+| 0,5–0,6 | 155 | 58 % | −0,73 % | +37,6 % | −53,8 % |
+| 0,6–0,7 | 46 | 72 % | +2,07 % | +13,8 % | −27,6 % |
+| 0,7–0,8 | 107 | **86 %** | +1,45 % | **+9,7 %** | −49,4 % |
+| ≥ 0,8 | 44 | 82 % | +1,41 % | +12,9 % | −50,4 % |
+
+**Le modèle est calibré sur le SENS** — à p ≥ 0,7 il a raison 86 % du temps, hors échantillon. Mais
+ce qu'il reconnaît, ce sont des **survivants modestes** : leurs gains moyens font +10 %, contre +45 %
+pour les tickets qu'il juge risqués. Et les 14 % de ratés à p ≥ 0,7 perdent −49 %. Arithmétique :
+0,86 × 9,7 − 0,14 × 49,4 = **+1,4 %**. Exactement le net observé. **Un classement réel qui
+identifie les jetons qui montent peu.** Les fusées sont dans le tas des « risqués », avec les
+catastrophes — le modèle mesure la vie, pas la taille, une fois de plus.
+
+**La seule cellule positive sans ses 3 meilleurs de tout le projet** : 5 % gardés, +4,40 %, sans-3
++3,50 %, 91 % de gagnants, 5 % de catastrophes. 58 tickets. Barre du hasard (200 permutations des
+résultats dans chaque fenêtre, meilleure des 6 coupes retenue) : 95ᵉ centile **+8,56 %**, max
++17,82 %, **23 tirages sur 200 font aussi bien, p ≈ 0,12**. Non significatif — à 58 tickets la barre
+est très haute. Et la courbe n'est pas monotone (5 % bon, 10–20 % ≈ 0, 30 % +1) : à 58 tickets, ça
+peut être la forme du bruit.
+
+**Ce que ça vaudrait si c'était vrai** (et rien ne le dit encore) : 5 % de ~470 tickets/jour ≈ 24
+tickets × 20 € × 4,4 % ≈ **+21 €/jour** ; à 40 € de mise ≈ +42 €/jour. C'est la première cellule du
+projet où l'arithmétique de l'objectif n'est pas absurde. Ce qui la sépare d'un résultat : environ
+**quatre fois plus de tickets** — la même conclusion que §3.135 et §3.137, avec maintenant une cible
+précise à surveiller (le top 5 % et sa calibration).
