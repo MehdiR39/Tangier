@@ -39,8 +39,11 @@ Tests : sur l'**hôte**, avec l'env conda `qrt` (le conteneur n'a ni pytest ni P
 ### Les collecteurs détachés
 
 Trois processus lancés à la main dans le conteneur, **qui ne survivent pas à un redémarrage** :
-`papier_combo`, `social_collecte`, `prix_rapide`. `intel/research/gardien.py`, lancé par le
-scheduler, les relance seul — validé trois fois en conditions réelles le 18/09.
+`papier_combo`, `social_collecte`, `prix_rapide`, `stock_collecte`. `intel/research/gardien.py`,
+lancé par le scheduler, les relance seul — validé trois fois en conditions réelles le 18/09.
+**Attention :** `intel/` est monté en lecture seule, donc le gardien déjà en marche garde la liste
+qu'il avait à son import. Un collecteur ajouté à `COLLECTEURS` n'est surveillé qu'après le
+**prochain redémarrage du conteneur**.
 
 ---
 
@@ -70,6 +73,8 @@ scheduler, les relance seul — validé trois fois en conditions réelles le 18/
 | `prix_rapide.py` | collecteur de prix à **1 s** sur la fenêtre 35–310 s |
 | `social_collecte.py` | concentration des détenteurs (`sac1`, `n_sacs5`) |
 | `image_collecte.py` | images et empreintes perceptuelles (tourne sur l'**hôte**, PIL absent du conteneur) |
+| `stock_collecte.py` | **trajectoire du stock** : 4 photos des détenteurs à 15/25/35/45 s, coffre du pool exclu |
+| `sac_diagnostic.py` | montre que `sac1` empilait coffre et portefeuille — et pourquoi l'histoire ne peut pas trancher |
 | `gardien.py` | relance les collecteurs morts |
 | `table_std2.py` | **LA table** (dans le scratchpad, copiée dans `/app/data/`) |
 
@@ -139,6 +144,12 @@ Chaque point vient d'une erreur réelle, la plupart commises le 18/09.
    par tout bloquer sans bruit.
 10. **Les objections de Mido ont produit tous les vrais résultats de la journée.** Quand il dit
     « c'est pas possible » ou « pourquoi tu tiens à ça », **remesurer** — ne pas défendre.
+11. **Avant de classer des données PASSÉES avec une lecture faite MAINTENANT, se demander si la
+    lecture aurait pu échouer pour une raison liée au résultat.** 256 comptes-jetons sur 571 sont
+    fermés, donc illisibles, et ce groupe a une médiane de **+13,98 %** contre −2,60 % pour les
+    lisibles. « Le compte est-il encore lisible ? » est une information du futur.
+12. **Un verdict négatif sur une variable CONTAMINÉE ne ferme pas la grandeur qu'elle prétendait
+    mesurer.** `expert_detenteurs` (−169 €) condamne `sac1`, pas la concentration.
 
 ---
 
@@ -153,6 +164,13 @@ Chaque point vient d'une erreur réelle, la plupart commises le 18/09.
 3. **Le frein tient-il ?** Hors échantillon +2,27 % contre +0,54 %, positif sans ses 3 meilleurs.
    Gelé à 1 500 tickets. Défaut de conception connu : la fenêtre est en NOMBRE, donc elle dépend du
    débit — une fenêtre en temps serait plus propre mais fait moins bien (mesuré).
-4. **Ce qui est clos** : stop, prise de gain, durée de détention, découpage d'ordre, taille de pool,
+4. **La trajectoire du stock.** Le seul axe qui ne soit pas une mesure de prix : combien de
+   munitions restent au-dessus du marché, et ont-elles déjà été déversées. `stock_collecte.py`
+   collecte depuis le 18/09 16h25. Critère écrit d'avance : 300 jetons complets, après le coût de
+   2,62 pts, sur des lancements postérieurs, sans les 3 meilleurs, contre un tirage aléatoire de même
+   taille. **Risque connu dès le premier échantillon : le stock n'avait bougé sur aucun des deux
+   premiers jetons entre 15 et 45 s.** Si c'est général, la piste est close — et c'est utile.
+5. **Ce qui est clos** : stop, prise de gain, durée de détention, découpage d'ordre, taille de pool,
    récupération des cautions, régime sur le rendement moyen, gabarits d'image, portefeuille
-   détenteur, portefeuille créateur.
+   créateur. **La concentration des détenteurs n'est PLUS close** (§3.124) : elle n'a jamais été
+   testée, seulement `sac1`, qui empilait deux états opposés.
