@@ -66,6 +66,11 @@ MODELE = os.environ.get("MODELE_VIDAGE", "/app/data/recherche/balayage/modele_vi
 # mise reelle ne sert qu au DIMENSIONNEMENT DE L ORDRE, jamais aux variables.
 MISE_SOL_MODELE, COUT_FIXE_MODELE = 0.31, 0.017
 
+# LE FREIN LIT LE CARNET PAPIER, pas le carnet reel : voir `frein_ouvert`. Le cout retenu pour
+# juger « gagnant ou perdant » est celui mesure sur 244 tickets reels -- le meme que partout.
+COMBO_DB = os.environ.get("COMBO_DB", "/app/db/papier_combo.sqlite")
+COUT_MESURE = 0.0262
+
 
 def _a_age(ages: list[float], cible: float, tol: float):
     """L index de la lecture la plus proche de cet age, si elle est assez proche."""
@@ -216,17 +221,42 @@ class ModeleRapide:
             return True
         fen = int(self._cfg("frein_fenetre", 20))
         seuil = float(self._cfg("frein_seuil", 0.50))
+        # LA SOURCE EST LE CARNET PAPIER, PAS LE CARNET REEL. Deux raisons, toutes deux mesurees.
+        #
+        # 1. BLOCAGE CIRCULAIRE. Lu sur `mr_lignes`, le frein se nourrit de ses propres decisions :
+        #    pour se rouvrir il faut un nouveau ticket gagnant, mais pour avoir un ticket il faut
+        #    qu il s ouvre. Constate en production le 18/09 -- 10 jetons refuses sur 12 en une
+        #    demi-heure, et la fenetre ne pouvait plus jamais bouger. Le carnet papier, lui, decide
+        #    en continu qu on achete ou non.
+        #
+        # 2. UNE SOURCE CLAIRSEMEE TUE LE FREIN. Mesure hors echantillon, en sous-echantillonnant
+        #    le papier a la densite du reel (1 ticket sur 10) :
+        #        source dense,      20 derniers : +1,77 %  (sans 3 best +0,05)
+        #        source clairsemee, 20 derniers : +0,27 %  (sans 3 best -1,06) = AUCUN FREIN
+        #    Faute d historique suffisant il ne se prononce jamais et laisse tout passer.
+        #
+        # C est aussi la source sur laquelle le frein a ete MESURE et GELE, donc la seule qui soit
+        # fidele a ce qu on a valide. Une fenetre en TEMPS a ete testee et fait moins bien
+        # (+1,34 % au mieux, negative sans ses trois meilleurs) : l intuition d elegance etait
+        # fausse, la mesure tranche.
+        # Connexion SEPAREE et en LECTURE SEULE : on ne touche pas au handle du moteur, et le
+        # carnet papier ne doit jamais pouvoir etre ecrit depuis ici.
+        import sqlite3 as _sq
         try:
-            lignes = self.ctx.db.query(
-                "SELECT gain_eur, mise_eur FROM mr_lignes WHERE mode = 'live'"
-                " AND gain_eur IS NOT NULL AND ts_sortie IS NOT NULL AND ts_sortie <= ?"
-                " ORDER BY ts_sortie DESC LIMIT ?", (now, fen))
+            cn = _sq.connect("file:%s?mode=ro" % self._cfg("combo_db", COMBO_DB), uri=True, timeout=5)
+            lignes = cn.execute(
+                "SELECT i.brut_240 FROM decision d JOIN issue i ON i.pair = d.pair"
+                " WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL AND d.risque IS NOT NULL"
+                " AND d.risque <= ? AND d.t_dec + ? <= ?"
+                " ORDER BY d.t_dec DESC LIMIT ?",
+                (float(self._cfg("seuil_risque", 0.2694)), TENUE_S, now, fen)).fetchall()
+            cn.close()
         except Exception as exc:  # noqa: BLE001
             log.warning("modele_rapide: frein illisible (%s) — on laisse passer", str(exc)[:80])
             return True
         if len(lignes) < fen:
             return True                     # pas encore assez d historique : on n invente pas
-        gagnants = sum(1 for r in lignes if float(r["gain_eur"] or 0) > 0)
+        gagnants = sum(1 for r in lignes if float(r[0] or 0) - COUT_MESURE > 0)
         ouvert = (gagnants / fen) > seuil
         if not ouvert:
             log.info("modele_rapide: FREIN ferme — %d gagnants sur les %d derniers (seuil %.0f %%)",

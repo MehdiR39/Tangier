@@ -188,8 +188,22 @@ def test_une_ligne_sans_ordre_ne_reste_jamais_ouverte():
 def test_le_frein_ne_compte_que_les_tickets_clotures():
     """Compter un ticket encore ouvert serait lire l avenir."""
     src = inspect.getsource(mr.ModeleRapide.frein_ouvert)
-    assert "ts_sortie IS NOT NULL" in src and "ts_sortie <= ?" in src
-    assert "gain_eur IS NOT NULL" in src, "un resultat pas encore lu ne doit pas compter"
+    assert "d.t_dec + ? <= ?" in src, "seuls les tickets dont la SORTIE est passee comptent"
+    assert "brut_240 IS NOT NULL" in src, "un resultat pas encore lu ne doit pas compter"
+
+
+def test_le_frein_lit_le_carnet_PAPIER_pas_le_reel():
+    """Lu sur le carnet reel il se bloque en boucle : pour se rouvrir il faut un ticket gagnant,
+    pour avoir un ticket il faut qu il s ouvre. Constate en production le 18/09. Et une source
+    clairsemee le neutralise (+0,27 % contre +1,77 % en source dense, hors echantillon)."""
+    import re
+    src = inspect.getsource(mr.ModeleRapide.frein_ouvert)
+    # on vise le SQL, pas la prose : `mr_lignes` est cite dans le commentaire qui explique
+    # justement pourquoi on ne l utilise pas
+    lues = {m.lower() for m in re.findall(r"FROM\s+(\w+)", src, re.I)}
+    assert "mr_lignes" not in lues, "le frein ne doit PAS lire le carnet reel, or il vise %s" % sorted(lues)
+    assert "decision" in lues, "il lit papier_combo"
+    assert "mode=ro" in src, "et en lecture seule"
 
 
 def test_le_frein_laisse_passer_en_cas_de_doute():
