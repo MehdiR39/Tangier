@@ -6683,3 +6683,60 @@ quart du flux — un flux dont on a mesuré qu'il perd.
    correct (permutation des étiquettes) donne **28,4 %**. Un test qui rend 0,0 % doit être suspecté
    avant d'être cru. **Règle 16 : un test de significativité se valide en vérifiant qu'il compare
    bien la MÊME grandeur des deux côtés.**
+
+
+---
+
+### 3.128 — Le scope large : 19 494 tests croisés, et rien que le hasard ne produise, 2026-09-18 22h30
+
+Mido : *« je te dis tout tout tout tout. Il faut partir d'un scope très large et réduire, affiner. »*
+Et son diagnostic : chaque variable avait été testée **seule**, jamais croisée.
+
+**La table unique** (`tout_table.py`) : 2 208 tickets × **107 variables de 13 familles** — prix à
+45 s, métadonnée, liens relus, image, détenteurs, stock, créateur en série, canal Telegram, source,
+temps, régime causal, transactions des 45 premières secondes (acheteurs, tailles, robots récurrents
+connus **avant** ce jeton, vendeurs sans achat), offre — × 8 cibles (6 horizons de sortie). Tout
+compteur historique ne compte que les jetons nés avant. `tg_poste` exclu : 891 postés, **0 avant
+45 s** — une fuite.
+
+**Le balayage** (`tout_balayage.py`) : 56 variables × 5 coupes × 6 horizons = 1 668 tests seuls,
+puis les paires des 20 meilleures = 17 826 tests. **19 494 au total.** Trois tranches
+chronologiques (RECHERCHE 40 / TRI 30 / TEST 30), coût 6,55 pt, et la **loi du maximum sur le
+balayage entier** : cibles mélangées, tout refait 20 fois.
+
+#### Le témoin, au coût réel, sur TEST
+
+| H | moy | méd | gagnants | catastrophes |
+|---|---|---|---|---|
+| 240 s | **−7,96 %** | −4,07 % | 44,5 % | **21,3 %** |
+
+#### Ce que le hasard produit sur 19 494 tests
+
+Meilleur TEST des 20 balayages sur cibles mélangées : +8,10, +5,76, … **+26,67, +41,67 %**.
+**Barre (95ᵉ centile) : +27,42 %.**
+
+#### Le vrai meilleur
+
+`px_q_croiss bas20 ET tps_heure haut50`, H=287 : TEST **+7,54 %** sur 53 tickets — **sans ses 3
+meilleurs −2,00 %, moitiés +30 / −15**. Les 25 meilleures ont toutes `sans3 < 0` et des moitiés de
+signes opposés.
+
+**VERDICT : +7,54 % contre une barre à +27,42 %. Le balayage n'a rien trouvé que 19 494 essais au
+hasard ne produisent tout seuls.**
+
+#### L'idée de la distribution — la seule ligne qui approche zéro
+
+`v1_sol_ventes bas50 ET v1_sol_sans_achat bas20` (peu de ventes, et peu de SOL sorti par des vendeurs
+qui n'ont pas acheté) : **catastrophes 1,7 % contre 21,3 %**, moyenne **−0,65 %** contre −7,96 %,
+n=121. C'est la seule règle des 19 494 dont la moyenne approche zéro, et elle le fait en supprimant
+les catastrophes — exactement le mécanisme que Mido décrivait. **Mais elle reste négative, elle est
+une parmi 19 494, et elle n'a pas été sélectionnée par la barre du hasard.** Notée, pas retenue.
+
+Le motif `q haut20` (gros coffres) : catastrophes 1,9 % mais moyenne −6 % — un gros pool évite la
+falaise et ne rapporte rien, ce qu'on avait déjà mesuré (§3.113).
+
+#### Ce que ça ferme
+
+Le scope large était la bonne demande, et il est fait : **toutes** les sources, croisées, sur
+**toutes** les cibles, avec le seul contrôle qui compte pour un balayage. Le résultat est le même
+que pour chaque variable prise seule. Ce n'est plus « on n'a pas assez cherché ».
