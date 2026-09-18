@@ -7234,3 +7234,36 @@ recherche.
 **État opérationnel à 04h00 :** carnet réel arrêté (−158,85 €, plafond) · 6 processus sous le
 gardien (papier_combo, social_collecte, prix_rapide, stock_collecte, foret_gel, + v1_enregistreur
 lancé à part) · stock : les 300 dans la matinée · 9 gels en cours. **Plus rien ne se construit.**
+
+
+---
+
+### 3.143 — Deux questions de Mido : quoi d'autre pour le modèle, et d'autres familles (réseaux, XGBoost, CatBoost) ?, 2026-09-19 04h15
+
+**Améliorer le modèle, par rendement mesuré cette nuit :**
+1. **Des tickets.** Marge ±3,1 pt à 370 tickets (écart-type 59 pts) ; aucun réglage n'a déplacé un
+   résultat de plus d'un point. Couvrir 100 % des heures de transactions (quota Helius) pèse plus
+   que tout algorithme.
+2. **Moins de variables.** Seule modification qui ait aidé : sélection à 25 → +1,89 % contre +1,05
+   (§3.136). En ajouter 12 → +0,24. Somme des importances par permutation : +0,031 AUC — forte
+   redondance (§3.138).
+3. **Pondérer le récent** : +1,77 % (§3.136).
+4. **La sortie** : le modèle reconnaît des survivants ; 270 s > 240 s sur tous les tickets (§3.126 :
+   +1,91 contre +0,98). Lisible sur les 5 % retenus dans `ret_287` sans toucher au gel.
+5. **À ne pas faire** : cibler la taille (−9,04 % à « > +20 % », §3.141), régresser le montant
+   (−3,58 %, §3.136), grossir le modèle.
+
+**D'autres familles — pas maintenant, et voici pourquoi c'est mesuré et non une opinion :**
+- XGBoost et CatBoost sont la même famille que LightGBM (arbres boostés). Le boosting a été mesuré
+  **moins bon que la forêt** sur ces données : 6 boostings, 30 % gardés, **−2,69 %** contre
+  **+1,05 %** pour la forêt sur les mêmes tickets (§3.133) ; la moyenne de rang forêt+boosting fait
+  +0,57 (§3.136). Sur ~1 400 lignes bruitées le boosting sur-apprend, la forêt moyenne. CatBoost
+  (boosting ordonné) est un peu plus robuste : une marche avant de contrôle, pas un chantier.
+- Réseaux de neurones : 1 400 lignes tabulaires, 30 % de trous, queues à +300 % — les arbres
+  dominent dans les comparaisons publiées à cette taille (Grinsztajn et al. 2022). Question de
+  taille d'échantillon, pas de goût.
+- Chaque famille essayée est un tirage de plus sous la loi du maximum. À ±3 pt de bruit, deux
+  modèles sont indiscernables, et chercher « le meilleur » fabrique le résultat. Séquence : **4×
+  plus de données d'abord, comparaison des familles ensuite**, quand une différence pourrait se voir.
+
+Le gel (§3.142) reste tel quel.
