@@ -25,6 +25,9 @@ CE QU IL MESURE, choisi pour l hypothese de Mido et rien d autre :
     bimodalite         la part des pixels dans les deux modes dominants -- une image a deux tons
                        (fond + texte) la fait monter pres de 1
     centre_moins_bord  le texte est AU MILIEU : le centre est plus clair que la peripherie
+    empreinte          dHash 64 bits : deux jetons du MEME GABARIT ont des empreintes
+                       voisines meme si leurs fichiers different. C est ce qui permet de
+                       regrouper les jetons par CREATEUR sans connaitre le createur.
 
 REPRENABLE : chaque jeton deja mesure est saute. On peut l arreter et le relancer sans perte.
 """
@@ -82,7 +85,8 @@ def schema(c: sqlite3.Connection) -> None:
     c.execute("CREATE TABLE IF NOT EXISTS image("
               "  mint TEXT PRIMARY KEY, luminance REAL, part_sombre REAL, part_claire REAL,"
               "  n_couleurs INTEGER, bimodalite REAL, centre_moins_bord REAL,"
-              "  largeur INTEGER, hauteur INTEGER, domaine TEXT, erreur TEXT, t REAL)")
+              "  largeur INTEGER, hauteur INTEGER, domaine TEXT, empreinte TEXT,"
+              "  erreur TEXT, t REAL)")
     c.commit()
 
 
@@ -144,6 +148,24 @@ def mesurer(uri: str) -> dict:
     # n_couleurs se compte sur l image RGB reduite : une image generee en a une poignee
     rgb = brut.convert("RGB").resize((32, 32))
     couleurs = len(set(rgb.getdata()))
+    # EMPREINTE PERCEPTUELLE (dHash 64 bits). C est le coeur de l idee de Mido : « les memes cons
+    # refont la meme sorte de crypto ». Deux jetons batis sur le MEME GABARIT -- meme fond, meme
+    # mise en page, seul le nom change -- ont des empreintes voisines, alors que leurs FICHIERS
+    # sont differents (un hash classique ne verrait rien). On regroupe donc les jetons par
+    # CREATEUR sans jamais connaitre le createur.
+    #
+    # dHash compare chaque pixel a son voisin de droite sur une image 9x8 : il encode la STRUCTURE
+    # (ou ça monte, ou ça descend) et non les couleurs, donc il resiste au changement de teinte,
+    # de compression et de taille. La distance entre deux empreintes est le nombre de bits qui
+    # different.
+    g = brut.convert("L").resize((9, 8))
+    gp = list(g.getdata())
+    bits = 0
+    for y in range(8):
+        for x in range(8):
+            bits = (bits << 1) | (1 if gp[y*9 + x] > gp[y*9 + x + 1] else 0)
+    empreinte = "%016x" % bits
+
     # bimodalite : part des pixels dans les deux tranches de 16 niveaux les plus peuplees
     h = Counter(p // 16 for p in px)
     bimod = sum(v for _, v in h.most_common(2)) / n
@@ -158,7 +180,7 @@ def mesurer(uri: str) -> dict:
             "n_couleurs": couleurs,
             "bimodalite": bimod,
             "centre_moins_bord": (sum(centre) / len(centre)) - (sum(bord) / len(bord)),
-            "largeur": largeur, "hauteur": hauteur}
+            "largeur": largeur, "hauteur": hauteur, "empreinte": empreinte}
 
 
 def main() -> None:
@@ -168,7 +190,11 @@ def main() -> None:
     schema(c)
     # on ne saute que ce qui a REUSSI : une erreur peut venir d une passerelle de
     # mauvaise humeur, pas du contenu, et doit etre reessayee
-    deja = {r[0] for r in c.execute("SELECT mint FROM image WHERE erreur IS NULL")}
+    # On ne saute que ce qui est COMPLET. Une erreur peut venir d une passerelle de mauvaise
+    # humeur plutot que du contenu, et une ligne mesuree avant l ajout de l empreinte est
+    # incomplete : les deux doivent etre reprises.
+    deja = {r[0] for r in c.execute(
+        "SELECT mint FROM image WHERE erreur IS NULL AND empreinte IS NOT NULL")}
     todo = [(m, u) for m, u in _depuis_conteneur() if m not in deja]
     print("a mesurer : %d jetons (%d deja faits)" % (len(todo), len(deja)), flush=True)
     if not todo:
@@ -188,10 +214,11 @@ def main() -> None:
         for m, d, err in ex.map(un, todo):
             if d:
                 c.execute("INSERT OR REPLACE INTO image(mint, luminance, part_sombre, part_claire,"
-                          " n_couleurs, bimodalite, centre_moins_bord, largeur, hauteur, erreur, t)"
-                          " VALUES(?,?,?,?,?,?,?,?,?,NULL,?)",
+                          " n_couleurs, bimodalite, centre_moins_bord, largeur, hauteur,"
+                          " empreinte, erreur, t) VALUES(?,?,?,?,?,?,?,?,?,?,NULL,?)",
                           (m, d["luminance"], d["part_sombre"], d["part_claire"], d["n_couleurs"],
-                           d["bimodalite"], d["centre_moins_bord"], d["largeur"], d["hauteur"], time.time()))
+                           d["bimodalite"], d["centre_moins_bord"], d["largeur"], d["hauteur"],
+                           d["empreinte"], time.time()))
             else:
                 c.execute("INSERT OR REPLACE INTO image(mint, erreur, t) VALUES(?,?,?)",
                           (m, err, time.time()))

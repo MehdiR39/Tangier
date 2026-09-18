@@ -76,9 +76,17 @@ def charger(depuis):
             c0 = next((x[3] for x in o["tx"] if x[3]), None)
             if not r or c0 is None:
                 continue
+            # de quoi juger AUSSI les autres regles du journal (A a K), avec la meme serie de prix
+            pav = [p for a, p, cf in pts if a <= 45]
+            pe = pts[i][1]
+            flux = lambda a, b: sum(-s for x in av if a <= x[0] < b for p, dj, s in x[2] if dj > 0)
             out.append({"t": o["naissance"] + 45, "fin": o["naissance"] + 289, "r": r[0], "fixe": r[1],
                         "coffre0": c0 + (o.get("V") or 0),
-                        "gens": len({p for x in av for p, dj, ds in x[2] if dj > 0 and p})})
+                        "gens": len({p for x in av for p, dj, ds in x[2] if dj > 0 and p}),
+                        "n45": len(av), "v1": any(x[1] == 1 for x in av),
+                        "monte": (pe / pav[0] - 1) if pav else None,
+                        "repli": (pe / max(pav) - 1) if pav else None,
+                        "flux": flux(30, 45) >= flux(0, 15)})
     return sorted(out, key=lambda z: z["t"])
 
 
@@ -111,9 +119,22 @@ def pause30(sel):
 
 def afficher(nom, lot, tend):
     G = lambda x: x["gens"] <= FOULE_MAX and x["coffre0"] < COFFRE_MAX
+    D = lambda x: (tend(x["t"]) or 0) > 0 and x["coffre0"] < COFFRE_MAX
+    # Toutes les regles du journal, pour voir si une bonne journee l est pour tout le monde ou
+    # seulement pour les notres. H (gros detenteur) est absente : la colonne `part` n existe pas
+    # dans l archive, on ne peut pas la calculer honnetement.
     regles = [("temoin sans filtre", lambda x: True, False),
-              ("D  tendance + coffre", lambda x: (tend(x["t"]) or 0) > 0 and x["coffre0"] < COFFRE_MAX, False),
+              ("E  prise de gain +25 %", lambda x: True, False),
+              ("F  E + pause 30 min", lambda x: True, True),
+              ("A  version 1 avant 45 s", lambda x: x["v1"], False),
+              ("B  A + tres actif", lambda x: x["v1"] and x["n45"] >= 257, False),
+              ("C  A + tendance", lambda x: x["v1"] and (tend(x["t"]) or 0) > 0, False),
+              ("D  tendance + coffre", D, False),
               ("G  foule + coffre", G, True),
+              ("I  repli apres course", lambda x: (x["monte"] or 0) >= 0.30 and (x["repli"] or 0) <= -0.15, True),
+              ("J  G + flux soutenu", lambda x: G(x) and x["flux"], True),
+              ("K  prix sous l ouverture", lambda x: (x["monte"] or 0) < 0, True),
+              ("D+F  D + pause", D, True),
               ("G+D  melange", lambda x: G(x) and (tend(x["t"]) or 0) > 0, True)]
     if not lot:
         print("%-9s aucun ticket" % nom)
@@ -123,13 +144,16 @@ def afficher(nom, lot, tend):
           % (nom, len(lot), dt.datetime.fromtimestamp(der + PARIS, dt.timezone.utc).strftime("%H:%M")))
     for etiq, f, pause in regles:
         sel = [x for x in lot if f(x)]
+        cle = "fixe" if etiq.startswith("temoin") else "r"      # le temoin sort a l heure, sans objectif
         pris = pause30(sel) if pause else sel
         if not pris:
-            print("   %-22s aucun ticket" % etiq)
+            print("   %-24s aucun ticket" % etiq)
             continue
-        y = [x["r"] for x in pris]
-        print("   %-22s n=%4d · %+7.0f EUR · %+6.2f %% par ticket · gagnants %3.0f %%"
-              % (etiq, len(y), MISE * sum(y), 100 * sum(y) / len(y),
+        y = [x[cle] for x in pris]
+        s = sorted(y, reverse=True)
+        sans = (100 * sum(s[1:]) / (len(s) - 1)) if len(s) > 1 else float("nan")
+        print("   %-24s n=%4d · %+7.0f EUR · %+6.2f %% · sans best %+6.2f %% · gagnants %3.0f %%"
+              % (etiq, len(y), MISE * sum(y), 100 * sum(y) / len(y), sans,
                  100 * sum(1 for x in y if x > 0) / len(y)))
 
 
