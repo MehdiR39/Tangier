@@ -7086,3 +7086,41 @@ période (16–17/09 surtout). L'amélioration peut être le marché de ces jour
 
 **Règle 17 :** *une importance de variables se lit par permutation, jamais par impureté, dès que les
 familles mélangent continues et binaires.*
+
+
+---
+
+### 3.139 — Le classement gagnant/perdant EST réel : AUC 0,65–0,82 sur 9 fenêtres sur 9, chacune au-dessus du max de 20 permutations, 2026-09-19 02h55
+
+Vérification du 0,787 de §3.138 sur toutes les fenêtres. Forêt de gain (P(net_240 > 0), 300 arbres,
+toutes les variables, `V1_SEUL`), entraînée sur tout ce qui précède chaque coupe, jugée sur les 6 h
+suivantes ; à chaque fenêtre, 20 permutations des résultats de la fenêtre donnent l'AUC que le
+hasard produit.
+
+| fenêtre | n | AUC | max de 20 permutations |
+|---|---|---|---|
+| 16/09 06h | 112 | 0,711 | 0,650 |
+| 16/09 12h | 120 | 0,730 | 0,584 |
+| 16/09 18h | 87 | 0,797 | 0,599 |
+| 17/09 00h | 155 | 0,731 | 0,546 |
+| 17/09 06h | 137 | 0,654 | 0,617 |
+| 17/09 12h | 145 | 0,822 | 0,657 |
+| 17/09 18h | 160 | 0,747 | 0,591 |
+| 18/09 00h | 192 | 0,805 | 0,532 |
+| 18/09 06h | 134 | 0,783 | 0,562 |
+
+**AUC moyen 0,753, min 0,654, max 0,822 — 9 fenêtres sur 9 au-dessus du maximum de leurs 20
+permutations.** Ce n'est plus « une direction » : **le modèle sait, hors échantillon et à chaque
+fenêtre, quels tickets finiront au-dessus de zéro après le coût réel.** La probabilité que neuf
+fenêtres indépendantes dépassent chacune le max de 20 tirages par hasard est de l'ordre de
+(1/21)⁹.
+
+**Pourquoi l'argent ne suit pas (encore).** L'AUC mesure le SENS, pas la TAILLE. À 30 % gardés on a
+72 % de gagnants et seulement +1,05 % : les gagnants sont petits, les perdants sont grands, et le
+péage de 6,55 est dedans. Les deux tests précédents ne se contredisent pas : le classement est réel
+(AUC), et l'argent qu'on en tire à 30 % est dans le bruit (écart-type 59 pts par ticket).
+
+**La question devient donc mécanique :** à quelle sélectivité le classement réel devient-il de
+l'argent réel ? Courbe lancée : 5, 10, 15, 20, 30, 50 % gardés, calibration par tranche de
+probabilité (gain moyen des gagnants, perte moyenne des perdants), et barre du hasard à 200
+permutations sur le choix de la meilleure coupe.
