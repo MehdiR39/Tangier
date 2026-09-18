@@ -43,6 +43,7 @@ class _Faux(PrixChaine):
         self.tx, self.comptes = tx, comptes
         self.appels = []
         self.pools, self.introuvables = {}, {}
+        self.virtuelles = {}          # reserve virtuelle par pool (§3.83), comme PrixChaine.__init__
 
     async def _rpc(self, methode, params):
         self.appels.append(methode)

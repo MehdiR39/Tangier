@@ -44,6 +44,22 @@ PAMM = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
 TAILLE_POOL = 301
 OFF_BASE_MINT = 43            # 8 discriminant + 1 bump + 2 index + 32 createur
 OFF_BASE_TA = 43 + 32 * 3     # + base_mint + quote_mint + lp_mint
+# RESERVE VIRTUELLE, trouvee le 15/09 (journal §3.83). Un pool PumpSwap issu d une migration pump.fun
+# porte a cet octet un u64 de 17,5845 SOL, et ECHANGE au prix (SOL du coffre + ce montant) / jetons.
+# Mesure sur nos 239 achats et 239 ventes : reserve implicite 17,94 / 17,27 SOL (l ecart = les frais).
+# Les pools a 0 echangent au prix du coffre (verifie). Sans elle, le prix lu etait trop bas de
+# 17,6 / (q + 17,6) : -18 % sur un pool frais de 80 SOL -- toutes les simulations en etaient faussees.
+OFF_RESERVE_VIRTUELLE = 245
+RESERVE_VIRTUELLE_MAX_SOL = 50.0   # au-dela, l octet 245 ne veut pas dire la meme chose : on l ignore
+
+
+def reserve_virtuelle(data: bytes) -> float:
+    """La reserve virtuelle en SOL lue dans le compte du pool, 0 si absente ou invraisemblable."""
+    import struct
+    if len(data) < OFF_RESERVE_VIRTUELLE + 8:
+        return 0.0
+    v = struct.unpack_from("<Q", data, OFF_RESERVE_VIRTUELLE)[0] / 1e9
+    return v if 0.0 <= v <= RESERVE_VIRTUELLE_MAX_SOL else 0.0
 
 
 class PrixChaine:
@@ -52,6 +68,7 @@ class PrixChaine:
     def __init__(self, ctx, client) -> None:
         self.ctx, self.client = ctx, client
         self.pools: dict[str, tuple[str, str, str]] = {}     # mint -> (pool, base_ta, quote_ta)
+        self.virtuelles: dict[str, float] = {}               # pool -> reserve virtuelle (SOL)
         self.introuvables: dict[str, int] = {}               # mint -> nombre de tentatives
 
     def _cfg(self, cle: str, defaut):
@@ -151,6 +168,10 @@ class PrixChaine:
         taille = v.get("space")
         if taille is not None and int(taille) != TAILLE_POOL:
             return None
+        try:
+            self.virtuelles[pool] = reserve_virtuelle(base64.b64decode(v["data"][0]))
+        except Exception:  # noqa: BLE001
+            self.virtuelles[pool] = 0.0
         return pool, base_ta, quote_ta
 
     async def _resoudre(self, mint: str, signature: str | None = None) -> tuple[str, str, str] | None:
@@ -180,6 +201,7 @@ class PrixChaine:
             return None
         try:
             d = base64.b64decode(res[0]["account"]["data"][0])
+            self.virtuelles[res[0]["pubkey"]] = reserve_virtuelle(d)
             base_ta = base58.b58encode(d[OFF_BASE_TA:OFF_BASE_TA + 32]).decode()
             quote_ta = base58.b58encode(d[OFF_BASE_TA + 32:OFF_BASE_TA + 64]).decode()
         except Exception:  # noqa: BLE001
@@ -198,6 +220,14 @@ class PrixChaine:
                    "  pair_id TEXT NOT NULL, mint TEXT, ts INTEGER NOT NULL, age_s INTEGER,"
                    "  prix_sol REAL, reserve_base REAL, reserve_sol REAL,"
                    "  PRIMARY KEY (pair_id, ts))")
+        try:
+            cols = {r["name"] for r in db.query("PRAGMA table_info(solana_prix_chaine)")}
+            if "reserve_virtuelle" not in cols:
+                # `prix_sol` est le prix ECHANGEABLE depuis le 15/09 ; avant, c etait le rapport des
+                # coffres. `reserve_virtuelle` permet de passer de l un a l autre.
+                db.execute("ALTER TABLE solana_prix_chaine ADD COLUMN reserve_virtuelle REAL")
+        except Exception:  # noqa: BLE001
+            pass
         fenetre = int(self._cfg("fenetre_minutes", 15) or 15)
         now = now_ts()
         lancements = db.query(
@@ -224,7 +254,11 @@ class PrixChaine:
         ecrits = 0
         for i in range(0, len(comptes), 100):
             lot = comptes[i:i + 100]
-            res = await self._rpc("getMultipleAccounts", [lot, {"encoding": "jsonParsed"}])
+            # `processed` : sans commitment le noeud repond en « finalized », 31 slots soit 12,4 s
+            # derriere la chaine (mesure du 15/09), et la lecture etait horodatee comme si elle etait
+            # fraiche. Toutes les decisions se prenaient sur un prix vieux de 12 a 22 s.
+            res = await self._rpc("getMultipleAccounts",
+                                  [lot, {"encoding": "jsonParsed", "commitment": "processed"}])
             vals = (res or {}).get("value") or []
             for j in range(0, len(lot) - 1, 2):
                 k = (i + j) // 2
@@ -255,12 +289,13 @@ class PrixChaine:
                     continue
                 if b <= 0:
                     continue
+                v = float(self.virtuelles.get(pool, 0.0) or 0.0)
                 try:
                     db.execute(
                         "INSERT OR IGNORE INTO solana_prix_chaine"
-                        "(pair_id, mint, ts, age_s, prix_sol, reserve_base, reserve_sol)"
-                        " VALUES(?,?,?,?,?,?,?)",
-                        (pool, mint, now, now - cree, q / b, b, q))
+                        "(pair_id, mint, ts, age_s, prix_sol, reserve_base, reserve_sol, reserve_virtuelle)"
+                        " VALUES(?,?,?,?,?,?,?,?)",
+                        (pool, mint, now, now - cree, (q + v) / b, b, q, v))
                     ecrits += 1
                 except Exception:  # noqa: BLE001
                     pass
