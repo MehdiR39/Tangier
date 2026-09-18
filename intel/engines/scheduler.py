@@ -345,6 +345,20 @@ class Runtime:
             tasks.append(asyncio.create_task(self._loop(
                 "telegram_rapide", self.tg_rapide.cycle,
                 int(self.ctx.config.get("telegram_rapide.pas_secondes", 10)))))
+        # Acheter sur le MODELE : « au plus bas » et bande de risque 0,20-0,35, sortie a 240 s sans
+        # stop ni prise de gain -- ces deux reflexes coutent 6,6 points par ticket (mesure sur la
+        # regle Telegram : +7,24 % en tenue aveugle contre +0,62 % avec les deux seuils). Boucle
+        # separee de celle du Telegram : les deux regles sont independantes et doivent pouvoir etre
+        # arretees separement. Voir intel/engines/modele_rapide.py.
+        if self.ctx.config.get("modele_rapide.enabled", False):
+            from intel.engines.modele_rapide import ModeleRapide
+            import httpx as _hxm
+            self.modele_rapide = ModeleRapide(
+                self.ctx, getattr(getattr(self, "solana", None), "client", None)
+                or _hxm.AsyncClient(headers={"User-Agent": "tangier-intel/mr"}))
+            tasks.append(asyncio.create_task(self._loop(
+                "modele_rapide", self.modele_rapide.cycle,
+                int(self.ctx.config.get("modele_rapide.pas_secondes", 5)))))
         # Collecte BNB Chain, LECTURE SEULE. Aucune cle, aucun ordre, tables separees. Sert a
         # constituer une donnee honnete -- liens sociaux horodates par nous a T+60 -- pour pouvoir
         # un jour tester la regle Telegram ailleurs que sur Solana. Voir bnb_collecte.py.

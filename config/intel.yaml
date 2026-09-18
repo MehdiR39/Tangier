@@ -1095,6 +1095,48 @@ pump_courbe:
   budget_prix_s: 30       # suivi des prix sur la courbe
 
 # ---------------------------------------------------------------------------
+# MODELE RAPIDE : « au plus bas » ET bande de risque 0,20-0,35, sortie a 240 s.
+#
+# POURQUOI IL EXISTE. Le moteur ne savait faire qu une regle -- Telegram a T+60 avec stop a -30 %
+# et prise de gain a +50 % -- alors qu une dizaine de regles tournaient en papier sans pouvoir etre
+# essayees. Rejouee sur la periode ou elle a vraiment tourne, la regle Telegram donne -7,73 % par
+# ticket et le carnet reel a fait -6,44 % : les deux concordent, elle est bien perdante.
+#
+# CE QUI EST BRANCHE ICI :
+#   depuis_min == 0        le prix a 45 s EST son plus bas depuis la naissance (journal §3.116) ;
+#                          gains >= +50 % multiplies par 2,32 (p < 0,0001), catastrophes inchangees
+#                          (x1,20, p = 0,232). Seule variable du projet qui separe la vie du danger.
+#   0,20 <= risque < 0,35  la bande de probabilite de vidage (§3.100).
+#   sortie a 240 s         SANS stop ni prise de gain. Mesure : sur la meme regle, tenir aveuglement
+#                          donne +7,24 % ; le stop seul ramene a +2,11 %, la prise de gain seule a
+#                          +5,10 %, les deux a +0,62 %. Ils coutent 6,6 points par ticket.
+#
+# CE QU ON VIENT MESURER, et c est le POINT : pas gagner au premier coup, mais obtenir les faits que
+# le papier ne donne pas -- le cout d execution d AUJOURD HUI (le 2,62 date du 12-15/09 et n est
+# qu extrapole depuis), si les ordres atterrissent, si l on se fait sandwicher. L operateur a
+# explicitement accepte de perdre jusqu a ~150 EUR pour ces faits.
+#
+# HONNETETE : la regle a ete gelee le 18/09 a 11h30 et n a AUCUN ticket hors echantillon. Ses
+# +5,30 % par ticket sont les chiffres qui l ont fait choisir, pas une validation -- c est
+# exactement ce qu affichait la bande (+3,90 %) avant de mourir. Son verdict tombe a 1 200 tickets.
+#
+# IL FAUT TROIS CHOSES POUR QU IL ACHETE : `enabled: true`, `mode: live`, et une cle presente.
+# Tant que l une manque, il decide, enregistre dans `mr_lignes`, et n envoie RIEN.
+modele_rapide:
+  enabled: true                # ACTIVE EN PAPIER le 18/09 : il decide et enregistre, il ne signe pas
+  mode: paper                  # paper | live                  # paper | live
+  pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
+  fenetre_minutes: 15
+  mise_eur: 20.0
+  sol_eur: 92.0                # sert au dimensionnement de l ordre ; relu a chaque cycle
+  slippage_achat_pct: 20.0
+  slippage_vente_pct: 25.0
+  max_impact_pct: 15.0         # au-dela, l ordre est refuse AVANT envoi et ne coute rien
+  max_ordres_jour: 40          # meme plafond que le carnet Telegram
+  max_perte_jour_eur: 150.0    # le budget que l operateur a accepte de perdre
+  cle_fichier: null
+
+# ---------------------------------------------------------------------------
 # RECUPERATION DES CAUTIONS DE COMPTE-JETON
 # Solana immobilise 0,002039 SOL a l ouverture de chaque compte-jeton.
 #

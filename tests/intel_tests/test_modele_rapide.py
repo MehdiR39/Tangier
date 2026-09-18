@@ -1,0 +1,88 @@
+"""Garde-fous du moteur qui achete sur le modele.
+
+Ce module peut SIGNER. Ce qu on protege, dans l ordre d importance :
+  1. il faut TROIS choses pour qu il envoie un ordre -- enabled, mode live, et une cle ;
+  2. la regle est bien « depuis_min == 0 ET 0,20 <= risque < 0,35 », et un NaN ne passe JAMAIS ;
+  3. il n y a NI stop NI prise de gain -- ils coutent 6,6 pts par ticket, les remettre serait une
+     regression silencieuse ;
+  4. les plafonds (ordres par jour, perte par jour) sont lus AVANT toute decision ;
+  5. il n ecrit que dans sa propre table.
+"""
+from __future__ import annotations
+
+import inspect
+
+from intel.engines import modele_rapide as mr
+
+
+def test_la_regle_exige_les_deux_conditions():
+    m = mr.ModeleRapide.__new__(mr.ModeleRapide)
+    # au plus bas ET dans la bande -> retenu
+    assert m.retenu({"depuis_min": 0.0}, 0.25) is True
+    assert m.retenu({"depuis_min": 1e-12}, 0.20) is True
+    # au plus bas mais hors bande -> refuse
+    assert m.retenu({"depuis_min": 0.0}, 0.19) is False
+    assert m.retenu({"depuis_min": 0.0}, 0.35) is False, "0,35 est exclu, la bande est [0,20 ; 0,35["
+    # dans la bande mais pas au plus bas -> refuse
+    assert m.retenu({"depuis_min": 0.02}, 0.25) is False
+
+
+def test_un_nan_ne_passe_jamais():
+    """Une comparaison avec NaN est toujours fausse : sans garde-fou le ticket passerait en silence."""
+    m = mr.ModeleRapide.__new__(mr.ModeleRapide)
+    assert m.retenu({"depuis_min": float("nan")}, 0.25) is False
+    assert m.retenu({}, 0.25) is False
+    assert m.retenu({"depuis_min": None}, 0.25) is False
+
+
+def test_aucun_stop_ni_prise_de_gain_dans_le_code():
+    """Les deux seuils coutent 6,6 pts par ticket. Leur absence est une DECISION, pas un oubli."""
+    src = inspect.getsource(mr)
+    for interdit in ("take_profit", "stop_loss", "prise_de_gain"):
+        assert interdit not in src, "%s reintroduit : il coute 6,6 pts par ticket" % interdit
+    # la sortie est bien a duree fixe
+    assert mr.TENUE_S == 240
+
+
+def test_la_bande_et_l_age_sont_ceux_de_la_recherche():
+    assert mr.BANDE == (0.20, 0.35)
+    assert mr.A == 45, "la decision se prend a 45 s, comme dans papier_combo"
+    assert mr.EXEC_S == 2, "l entree est a 47 s, comme dans la recherche"
+
+
+def test_trois_actes_necessaires_pour_signer():
+    """enabled, mode live, et une cle. Le code doit exiger les trois."""
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    assert 'self._cfg("mode", "paper")' in src, "le mode doit etre lu, et defaut a paper"
+    assert '"live"' in src
+    achat = inspect.getsource(mr.ModeleRapide._acheter_reel)
+    assert "signer_address" in achat and "aucune cle" in achat, \
+        "sans cle, aucun ordre ne doit partir et la ligne doit etre annulee"
+
+
+def test_les_plafonds_sont_lus_avant_la_decision():
+    """Un plafond verifie apres coup ne protege de rien."""
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    i_plafond = src.index("max_ordres_jour")
+    i_decision = src.index("self.retenu(")
+    assert i_plafond < i_decision, "les plafonds doivent etre evalues avant toute decision"
+    assert "max_perte_jour_eur" in src
+
+
+def test_n_ecrit_que_dans_sa_propre_table():
+    src = inspect.getsource(mr)
+    for interdite in ("tg_lignes", "positions", "tg_cascade"):
+        assert interdite not in src, "il ne doit toucher que mr_lignes, pas %s" % interdite
+    assert "mr_lignes" in src
+
+
+def test_l_ordre_trop_gros_pour_le_pool_est_refuse():
+    """Le garde-fou historique : un ordre de plus de 15 % du pool n est pas executable."""
+    src = inspect.getsource(mr.ModeleRapide._variables)
+    assert "0.15" in src, "la limite d impact a 15 % du pool doit rester"
+
+
+def test_mode_paper_par_defaut():
+    """Le defaut doit etre inoffensif : si la config manque, on ne signe pas."""
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    assert '"mode", "paper"' in src
