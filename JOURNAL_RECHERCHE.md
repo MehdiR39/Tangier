@@ -7201,3 +7201,36 @@ Meilleure des 16 cellules : +5,72 % (> +10 %, 10 % gardés), sans-3 −2,54 %, e
 projet, la cible « > 0 » à 5 % gardés (+4,40 %, 91 % de gagnants, 58 tickets, p ≈ 0,12 seule).
 Changer de cible ne l'améliore pas ; changer de modèle non plus (§3.136). **Seuls des tickets
 peuvent la confirmer ou la tuer.**
+
+
+---
+
+### 3.142 — GEL : forêt de gain, top 5 %, papier, 2026-09-19 04h00
+
+Mido : *« on fait quoi, on gèle et on reste en condition opérationnelle ? »* Oui. Comme chaque gel
+de la semaine : le critère écrit avant, le test en papier, jugé sur les tickets postérieurs,
+puis plus rien ne bouge. `foret_gel.py`, base propre `papier_foret.sqlite`, sous le gardien.
+
+**La règle, causale et exécutable.** Toutes les 6 h : reconstruire la table unique ; **noter les
+tickets nés depuis le passage précédent avec le modèle sauvé à ce passage-là** — donc entraîné
+avant leur naissance, la marche avant faite en avant ; renseigner les résultats ; réentraîner sur
+tout ce qui précède ; sauver les seuils (quantiles 0,95 et 0,90 des scores d'entraînement). Un
+ticket est **retenu** si sa probabilité ≥ seuil des 5 % les plus sûrs. Tickets avec données de
+transactions seulement.
+
+**Le critère, au premier atteint de 250 tickets retenus ou de 21 jours** (9 octobre) :
+(a) net > 0 au coût 6,55 · (b) positif sans ses 3 meilleurs · (c) positif sur les deux moitiés ·
+(d) ≥ 80 % de gagnants · (e) au-dessus de 200 permutations des résultats. **Les cinq, sinon abandon.**
+
+**Ce qui le distingue des cinq gels morts cette semaine :** il repose sur un classement démontré
+(§3.139), pas sur un contraste. **Ce qui ne le distingue pas :** 58 tickets, p ≈ 0,12, et cinq
+règles avant lui qui avaient l'air aussi bonnes à 58 tickets.
+
+**Limite connue :** le collecteur de transactions s'arrête au quota (150 000 crédits/jour pour
+~250 000). À ~60 % de couverture et 5 % retenus, 250 tickets demandent ~15 jours — le critère de
+21 jours tombera probablement d'abord. Couvrir 100 % des heures est une décision de quota, pas de
+recherche.
+
+**État opérationnel à 04h00 :** carnet réel arrêté (−158,85 €, plafond) · 6 processus sous le
+gardien (papier_combo, social_collecte, prix_rapide, stock_collecte, foret_gel, + v1_enregistreur
+lancé à part) · stock : les 300 dans la matinée · 9 gels en cours. **Plus rien ne se construit.**
