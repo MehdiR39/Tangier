@@ -5514,6 +5514,69 @@ partie **le prix d'entrer dans les jetons qui bougent**. « Réduire le coût »
 objectif — c'est une métrique qu'on peut améliorer en s'appauvrissant. *Le seul objectif est le net
 en euros.* Ajouter ce cas à la liste des métriques qu'il ne faut jamais optimiser seules.
 
+### 3.119 — Retour en RÉEL, et deux artefacts arithmétiques démasqués, 2026-09-18
+
+**LA REPRISE.** Mido : « une proposition — le fait d'être sur papier nous fait rater pas mal
+d'informations qu'on peut avoir en prod ; peut-on lancer une strat en prod, quitte à sacrifier un
+peu d'argent pour comprendre ? » Puis, après vérifications : « fais-le, le .env contient déjà les
+clés et t'as l'autorisation ». Objectif **assumé** : mesurer, pas gagner. Budget accepté : ~150 EUR.
+Trading relancé le 18/09 à 11h30 Paris, portefeuille 1,8886 SOL (~174 EUR), mise 20 EUR, plafonds
+40 ordres/jour et −150 EUR sur 24 h.
+
+**LE MOTEUR NE SAVAIT JOUER QU'UNE RÈGLE.** `telegram_rapide` achète les jetons à Telegram à T+60
+avec stop −30 % et prise de gain +50 %. Rejouée sur la période où elle a vraiment tourné : **−7,73 %
+par ticket**, contre **−6,44 %** pour le carnet réel — les deux concordent. Mido : « le bot contient
+deux règles et on a une dizaine de strats qui tournent en papier, pourquoi tu veux y aller avec la
+règle Telegram ? » D'où `intel/engines/modele_rapide.py`, qui joue une règle de la recherche.
+**Vérifié contre `papier_combo` sur 2 297 pools : 0 différence d'éligibilité, 2 297/2 297 variables
+identiques, écart maximal sur la probabilité du modèle 0,00e+00, mêmes 311 jetons retenus.** Deux
+pièges corrigés : `cout` est une VARIABLE DU MODÈLE et doit utiliser la mise d'entraînement
+(0,31 SOL) — sinon 19 % des pools basculaient d'éligibilité ; et il manquait l'exigence d'une
+lecture près de 47 s.
+
+**QUATRE DÉFAUTS TROUVÉS EN RELISANT LE CODE APRÈS L'AVOIR ÉCRIT**, dont trois avant le premier
+ordre : (a) le plafond bloquait la VENTE, donc atteindre 40 ordres aurait laissé les positions
+ouvertes indéfiniment — *un plafond arrête les achats, jamais les ventes* ; (b) `gain_eur` n'était
+jamais calculé, donc le plafond de perte ne se serait jamais déclenché et on n'aurait **rien
+mesuré** ; (c) le taux SOL/EUR était figé à 92 dans la config au lieu d'être lu sur le marché ;
+(d) une vente qui échoue retentait toutes les 5 s en silence — une position invendable est de
+l'argent bloqué et doit réveiller l'opérateur.
+
+**L'ERREUR DE RÈGLE.** J'ai branché `AU PLUS BAS + BANDE` sur la foi de +5,30 % par ticket, mesurés
+sur TOUTE la période — alors que la BANDE qu'elle contient était morte hors échantillon depuis son
+gel du 17/09. Coupé à cette date : **−7,10 %** par ticket, **−16,91 %** sans ses trois meilleurs,
+soit pire que le témoin (−3,57 %). Trois tickets réels perdus avant que la question de Mido ne le
+révèle. Bascule sur `risque` (−0,11 % hors échantillon sur 408 tickets), et la règle est désormais
+**configurable**, une valeur inconnue n'achetant rien.
+
+**PREMIERS FAITS RÉELS.** La machinerie fonctionne de bout en bout : décision 45 s, achat confirmé,
+vente à 240 s, P&L lu sur le portefeuille. **Le coût d'exécution n'a pas dérivé** : médiane ~2,8 pts
+contre 2,41 de référence. À 11 tickets : −17,75 EUR, **5 gagnants (45 %)**, conforme aux 46 %
+attendus.
+
+**DEUX ARTEFACTS ARITHMÉTIQUES, tous deux spectaculaires et tous deux faux.**
+
+*(1) Un tri qui classait par le résultat.* En cherchant un régime de marché, `pa.sort()` sur des
+couples `(état du marché, résultat)` a donné un Q3 à **+30,64 %**, robuste au retrait de ses trois
+meilleurs, p = 0,000. Python trie par le second élément sur les ex æquo — et **36 % des tickets
+avaient un état de marché exactement égal à 0,00 %**. Pour un tiers des données, le tri se faisait
+donc sur le résultat lui-même. Ex æquo remélangés : le +30 % disparaît, tout tient entre −5 % et
+−1 %. *Trier par une clé qui ne nomme que le prédicteur, et chercher les points de masse avant de
+faire confiance à des quantiles.*
+
+*(2) Une soustraction qui comprime.* Le coût d'exécution, calculé `simulé − réel`, montait
+monotonement avec le rendement du pool (1,36 → 2,29 → 2,72 → 3,04 pts, ρ = +0,333). J'en ai conclu
+devant Mido que le coût mange la queue droite — celle qui porte tout le résultat — et j'ai proposé
+de refaire toutes les estimations du projet. Artefact : sur un jeton qui tombe à −72 %, les deux
+termes sont écrasés contre −100 % et leur différence est mécaniquement petite, alors que rien ne la
+borne sur un jeton qui monte. Recalculé en **multiplicatif**, `1 − (1+réel)/(1+simulé)`, la
+corrélation **s'inverse à −0,246** : le coût est pire sur les jetons qui s'effondrent (4,57 % contre
+2,42 %), ce qui est exactement ce que vendre dans un pool qui se vide doit produire. **Le coût plat
+de 2,62 pts reste valide et aucune reprise n'était nécessaire.**
+
+**RÈGLE À GARDER : tout motif monotone découvert sur une grandeur DÉRIVÉE doit être refait avec une
+autre formulation de la même grandeur avant d'être annoncé.**
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
