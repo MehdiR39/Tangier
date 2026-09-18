@@ -345,6 +345,22 @@ class Runtime:
             tasks.append(asyncio.create_task(self._loop(
                 "telegram_rapide", self.tg_rapide.cycle,
                 int(self.ctx.config.get("telegram_rapide.pas_secondes", 10)))))
+        # LE GARDIEN DES COLLECTEURS DE RECHERCHE. Ceux-ci tournent en processus DETACHES, lances a
+        # la main ; le conteneur revient tout seul apres un plantage (`restart: unless-stopped`)
+        # mais sa commande ne lance que cet ordonnanceur, donc les collecteurs resteraient morts et
+        # les sept tests GELES cesseraient de collecter en silence. On accroche donc le gardien ici,
+        # au seul endroit dont le redemarrage est garanti. Il ne fait que DEMARRER des processus
+        # manquants : il ne tue rien, ne touche a aucune base, ne decide rien.
+        if self.ctx.config.get("recherche.gardien_enabled", True):
+            try:
+                import subprocess as _sp
+                import sys as _sy
+                _log = open("/app/logs/gardien.log", "a")
+                _sp.Popen([_sy.executable, "-u", "-m", "intel.research.gardien"], cwd="/app",
+                          stdout=_log, stderr=_sp.STDOUT, start_new_session=True)
+                log.info("gardien des collecteurs de recherche lance")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("gardien non lance (%s)", str(exc)[:120])
         # Acheter sur le MODELE : « au plus bas » et bande de risque 0,20-0,35, sortie a 240 s sans
         # stop ni prise de gain -- ces deux reflexes coutent 6,6 points par ticket (mesure sur la
         # regle Telegram : +7,24 % en tenue aveugle contre +0,62 % avec les deux seuils). Boucle
