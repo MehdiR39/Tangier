@@ -148,16 +148,44 @@ class ModeleRapide:
         f["lancements_10min"] = bisect_right(lancements, t_dec) - bisect_right(lancements, t_dec - 600)
         return f
 
-    def retenu(self, f: dict, risque: float) -> bool:
-        """Les DEUX conditions de la regle gelee. NaN ecarte AVANT toute comparaison.
+    def retenu(self, f: dict, risque: float, regle: str | None = None) -> bool:
+        """La regle en service. NaN ecarte AVANT toute comparaison.
 
         Une comparaison avec NaN est toujours fausse : sans ce garde-fou un ticket dont
         `depuis_min` manque basculerait silencieusement du mauvais cote.
+
+        POURQUOI LA REGLE EST CONFIGURABLE, et pourquoi le defaut est `risque`.
+        `bas_bande` a d abord ete branchee sur la foi de +5,30 % par ticket -- mais ce chiffre
+        portait sur TOUTE la periode, alors que la BANDE qu elle contient etait deja morte hors
+        echantillon depuis son gel du 17/09 18h30. Coupe a cette date, la conjonction donne
+        **-7,10 %** par ticket et **-16,91 %** sans ses trois meilleurs : pire que le temoin
+        (-3,57 %). Mido : « pourquoi t as choisi de mettre en prod BAS + BANDE sachant que t as
+        decide hier que bande c est de la merde ». Il avait raison.
+
+        Sur cette meme periode hors echantillon, la moins mauvaise regle est `risque` :
+        **-0,11 %** par ticket sur 408 tickets, contre -3,57 % pour le temoin. Aucune n est
+        positive -- on ne choisit pas une gagnante, on choisit celle qui coute le moins cher
+        pendant qu on mesure l EXECUTION.
+
+        Toute regle ajoutee ici doit etre justifiee sur des tickets POSTERIEURS a son propre gel,
+        jamais sur la periode qui l a fait choisir.
         """
-        x = f.get("depuis_min")
-        if x is None or x != x:
-            return False
-        return float(x) <= 1e-9 and BANDE[0] <= risque < BANDE[1]
+        r = (regle or self._cfg("regle", "risque")).lower()
+        if r == "risque":
+            seuil = float(self._cfg("seuil_risque", 0.2694))
+            return risque <= seuil
+        if r == "bas_bande":
+            x = f.get("depuis_min")
+            if x is None or x != x:
+                return False
+            return float(x) <= 1e-9 and BANDE[0] <= risque < BANDE[1]
+        if r == "bas":
+            x = f.get("depuis_min")
+            if x is None or x != x:
+                return False
+            return float(x) <= 1e-9
+        log.warning("modele_rapide: regle inconnue '%s' — aucun achat", r)
+        return False
 
     # ---------------------------------------------------------------- schema
 

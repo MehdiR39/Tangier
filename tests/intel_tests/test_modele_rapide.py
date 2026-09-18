@@ -15,21 +15,37 @@ import inspect
 from intel.engines import modele_rapide as mr
 
 
-def test_la_regle_exige_les_deux_conditions():
+def _moteur(regle="risque", seuil=0.2694):
     m = mr.ModeleRapide.__new__(mr.ModeleRapide)
-    # au plus bas ET dans la bande -> retenu
+    m._cfg = lambda cle, defaut: {"regle": regle, "seuil_risque": seuil}.get(cle, defaut)
+    return m
+
+
+def test_regle_risque_seul():
+    """La regle en service : le seuil p80 du modele, rien d autre."""
+    m = _moteur("risque")
+    assert m.retenu({}, 0.2694) is True, "le seuil est inclusif"
+    assert m.retenu({}, 0.2695) is False
+    assert m.retenu({"depuis_min": 0.9}, 0.10) is True, "depuis_min ne joue PAS dans cette regle"
+
+
+def test_regle_bas_bande_exige_les_deux_conditions():
+    m = _moteur("bas_bande")
     assert m.retenu({"depuis_min": 0.0}, 0.25) is True
     assert m.retenu({"depuis_min": 1e-12}, 0.20) is True
-    # au plus bas mais hors bande -> refuse
     assert m.retenu({"depuis_min": 0.0}, 0.19) is False
     assert m.retenu({"depuis_min": 0.0}, 0.35) is False, "0,35 est exclu, la bande est [0,20 ; 0,35["
-    # dans la bande mais pas au plus bas -> refuse
     assert m.retenu({"depuis_min": 0.02}, 0.25) is False
+
+
+def test_une_regle_inconnue_n_achete_RIEN():
+    """Une faute de frappe dans la config ne doit jamais faire acheter au hasard."""
+    assert _moteur("nimportequoi").retenu({"depuis_min": 0.0}, 0.25) is False
 
 
 def test_un_nan_ne_passe_jamais():
     """Une comparaison avec NaN est toujours fausse : sans garde-fou le ticket passerait en silence."""
-    m = mr.ModeleRapide.__new__(mr.ModeleRapide)
+    m = _moteur("bas_bande")
     assert m.retenu({"depuis_min": float("nan")}, 0.25) is False
     assert m.retenu({}, 0.25) is False
     assert m.retenu({"depuis_min": None}, 0.25) is False

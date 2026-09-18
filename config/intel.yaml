@@ -1130,6 +1130,19 @@ modele_rapide:
   # sandwicher -- et non gagner au premier coup. Portefeuille au moment du passage : 1,8886 SOL,
   # soit ~174 EUR. Le plafond de perte de 150 EUR est celui que l operateur a accepte.
   mode: live                   # paper | live
+  # LA REGLE EN SERVICE. `bas_bande` a d abord ete branchee sur la foi de +5,30 % par ticket, mais
+  # ce chiffre portait sur TOUTE la periode alors que la BANDE qu elle contient etait deja morte
+  # hors echantillon depuis son gel du 17/09 18h30. Coupe a cette date : -7,10 % par ticket et
+  # -16,91 % sans ses trois meilleurs, soit PIRE que le temoin (-3,57 %). Trois tickets reels
+  # perdus (-27,20 EUR) avant que l operateur ne pose la question qui l a revele.
+  #
+  # Sur cette meme periode hors echantillon, la moins mauvaise est `risque` : -0,11 % par ticket
+  # sur 408 tickets. Aucune n est positive -- on ne choisit pas une gagnante, on choisit celle qui
+  # coute le moins cher pendant qu on mesure l EXECUTION, qui est le seul but de cette reprise.
+  #
+  # Valeurs : risque | bas_bande | bas
+  regle: risque
+  seuil_risque: 0.2694         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
   pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
   fenetre_minutes: 15
   mise_eur: 20.0
