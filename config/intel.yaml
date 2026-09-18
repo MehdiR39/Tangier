@@ -1096,13 +1096,21 @@ pump_courbe:
 
 # ---------------------------------------------------------------------------
 # RECUPERATION DES CAUTIONS DE COMPTE-JETON
-# Solana immobilise 0,002039 SOL a l ouverture de chaque compte-jeton. Le moteur en cree un a
-# chaque achat et n en a jamais ferme un seul : cette caution n est pas perdue, elle est BLOQUEE.
-# Sur un ticket de 30 EUR (0,31 SOL) elle vaut 0,66 point ; le cout d execution total mesure sur
-# 236 tickets reels etant de 2,62 pts, la recuperer le ramene a ~1,96 -- assez pour faire passer
-# `RISQUE seul` (brut +2,15 %) de perdante a gagnante. C est le SEUL poste de frais reductible
-# sans contrepartie : baisser la priorite fait echouer des ordres (§3.40, quatre sur six), et
-# reduire l impact demande de changer la strategie. Journal §3.109.
+# Solana immobilise 0,002039 SOL a l ouverture de chaque compte-jeton.
+#
+# CE BLOC A AFFIRME LE CONTRAIRE DE LA REALITE, corrige le 18/09 apres lecture de la chaine.
+# Il disait que le moteur n a jamais ferme un compte, que 0,66 point y dormait par ticket, et que
+# les recuperer ramenait le cout de 2,62 a ~1,96 pts. Verification en lecture seule sur le
+# portefeuille apres 236 tickets reels : **0 compte-jeton vide, 1 compte au total**. Un compte
+# abandonne persiste indefiniment ; 236 d entre eux seraient encore la. La route d echange ferme
+# donc l ATA elle-meme, et le remboursement rentre dans le `sol_delta` de la vente -- or c est
+# exactement ce que `telegram_rapide._compter_sur_la_chaine` additionne pour produire `gain_eur`.
+# La caution est donc DEJA neutralisee a l interieur des 2,62 pts mesures.
+#
+# CONSEQUENCE : ce module ne recupererait RIEN, et il n existe aucun poste de frais reductible sans
+# contrepartie. Baisser la priorite fait echouer des ordres (§3.40, quatre sur six) et reduire
+# l impact demande de changer la strategie. Le 2,62 est un plancher, pas un point de depart.
+# Journal §3.109 et §3.111.
 #
 # Le module ne peut qu une chose : fermer un compte dont le solde est EXACTEMENT zero. Il ne peut
 # ni acheter, ni vendre, ni transferer, ni bruler. Il epargne les jetons d une position ouverte, et

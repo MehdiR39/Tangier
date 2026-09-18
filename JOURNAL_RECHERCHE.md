@@ -5066,6 +5066,313 @@ modifié : bande + pause (23h30), ensemble de 12 et forêt aléatoire (01h30), e
 **Sur les jetons vivants, la concentration est extrême** : le plus gros détenteur tient **58 %** en
 médiane, les cinq premiers **92 %**.
 
+### 3.111 — Pourquoi le régime ne nous sauve pas, et pourquoi la pause non plus, 2026-09-18 matin
+
+La nuit du 18/09 a été franchement mauvaise : rendement **brut**, avant tout coût, **−3,50 %** par
+ticket sur 269 tickets, contre +4,33 % le 15/09, +0,41 % le 16 et +0,13 % le 17. Heure par heure :
+02h +11,4 %, puis 05h **−9,2 %**, 06h **−10,9 %**, 07h **−8,1 %**. Question posée : s'il y a un
+régime aussi net, pourquoi ni le régime ni la pause ne nous en sortent ?
+
+**LE RÉGIME EST RÉEL APRÈS COUP, ILLISIBLE AVANT.** Piège de mesure central : un ticket décidé à *t*
+ne rend son résultat qu'à *t*+242 s. L'état du marché connu **à l'instant de la décision** est donc
+la moyenne des seuls tickets **déjà clôturés** dans les 30 min précédentes — pas de ceux encore
+ouverts, qui seraient de la lecture d'avenir. Sur les 1 436 tickets où cet état est lisible :
+
+| état des 30 min (connu AVANT) | n | état moyen | ticket suivant |
+|---|---|---|---|
+| Q1 | 287 | −22,18 % | **+0,89 %** |
+| Q2 | 287 | −10,31 % | −7,26 % |
+| Q3 | 287 | −0,63 % | −2,37 % |
+| Q4 | 287 | +7,44 % | −8,94 % |
+| Q5 | 288 | +24,41 % | **−0,97 %** |
+
+Non monotone, et dans le mauvais sens aux extrêmes. Corrélation de rang état → ticket suivant :
+**+0,014**, quand deux écarts-types du hasard valent ±0,053. **Il n'y a pas de persistance du
+marché à 30 minutes.** Chaque jeton est sa propre loterie. Ceci confirme indépendamment l'échec déjà
+enregistré de *régime + risque* : ce n'était pas la formulation du régime qui était mauvaise, c'est
+qu'il n'y a rien à lire.
+
+**LA PAUSE, VERSION « TOUT LE MARCHÉ » : UN INTERRUPTEUR, PAS UN FILTRE.** Si les déclencheurs
+viennent de l'ensemble des tickets, la nuit a passé **100 % du temps en pause** (454 min sur 454).
+Arithmétique simple : 70 clôtures sous −30 % en 452 min, soit **une chute toutes les 6 min**, pour
+une pause qui dure 30 min. Elle ne se relève jamais. Le code applique la pause au flux de la
+stratégie, pas au marché, ce qui l'évite — mais la marge est mince : la BANDE produit une chute
+toutes les 9 min, RISQUE seul une toutes les 15 min.
+
+**LA PAUSE, VERSION DU CODE : SPECTACULAIRE, ET INDISTINGUABLE DU HASARD.** Depuis le gel de la
+bande, au coût mesuré de 2,62 pts et à 25 EUR :
+
+| | sans pause | avec pause |
+|---|---|---|
+| RISQUE seul | n=320 · −1,07 % · −86 EUR | n=**42** · +8,24 % · **+87 EUR** |
+| BANDE | n=215 · −8,31 % · −447 EUR | n=**14** · +17,83 % · **+62 EUR** |
+
+Tentant, et faux. La pause ne garde que 13 % (resp. 7 %) des tickets, donc sa variance est énorme.
+Deux contrôles la démolissent :
+
+- **D'où vient l'argent.** Les trois meilleurs tickets gardés font +229 %, +154 %, +36 %. **Sans
+  eux, RISQUE + pause vaut −18 EUR sur 39 tickets.** Le ticket à +229 % porte à lui seul les *deux*
+  lignes du tableau : c'est le même.
+- **Le hasard fait pareil.** 10 000 sélections aléatoires de la *même taille* dans le *même* vivier :
+  médiane −13 EUR, intervalle 5 %–95 % de −117 à +95 EUR. **662 tirages sur 10 000 font aussi bien
+  ou mieux → p = 0,066.** Pour la bande, p = 0,070.
+
+**CE QU'ON EN RETIENT.** p = 0,066 n'est pas zéro : ce n'est pas réfuté, c'est *non démontré*. Et
+c'est précisément la situation pour laquelle la pause a été **gelée le 17/09 à 23h30** avec son
+critère écrit d'avance. On attend les 300 tickets ; on ne la promeut pas sur un ticket à +229 %.
+
+**LA BANDE EST MORTE.** 214 tickets sur 300, **−8,38 % par ticket**. Pour atteindre son critère gelé
+de +2 % il lui faudrait faire +27,8 % par ticket sur les 86 restants. Premier verdict
+pré-enregistré du projet, et c'est un **échec** — à écrire comme tel.
+
+**MÉTHODE À GARDER.** Toute règle qui *réduit fortement le nombre de tickets* doit être comparée à
+une sélection aléatoire de la même taille avant qu'on y croie. Une moyenne sur 14 ou 42 tickets à
+traîne épaisse ne veut rien dire toute seule.
+
+### 3.112 — Les trois leviers structurels sont fermés : caution, taille de pool, durée, 2026-09-18
+
+Trois questions posées dans la foulée, toutes les trois tranchées **contre** l'espoir. À garder
+ensemble parce qu'elles épuisent la dimension « exécution » du problème.
+
+**1. LA CAUTION N'EXISTE PAS.** J'avais annoncé 0,66 pt récupérable en fermant les comptes-jetons,
+ramenant le coût de 2,62 à 1,96 — soit exactement le seuil qui rendait `RISQUE seul` (brut +2,15 %)
+gagnante. Lecture de la chaîne avant d'activer le module : **0 compte vide, 1 compte au total,
+après 244 tickets réels**. Un compte abandonné persiste indéfiniment ; 244 seraient encore là. La
+route d'échange ferme l'ATA elle-même et le remboursement entre dans le `sol_delta` de la vente —
+or c'est précisément ce que `telegram_rapide._compter_sur_la_chaine` additionne pour produire
+`gain_eur`, la base des 2,62. **La caution est donc déjà comptée, à zéro, dans la mesure.**
+`intel/engines/recuperation.py` ne récupérerait rien ; le commentaire de `config/intel.yaml` qui
+affirmait le contraire a été corrigé.
+
+**2. LA TAILLE DU POOL NE RÉDUIT PAS LE COÛT DE FAÇON DÉMONTRABLE.** Le découpage des 237 tickets
+réels par coffre semblait pourtant clair — Q1 (74 SOL) **2,91 pts**, Q2 (93 SOL) **2,98**, Q3 (470)
+2,57, Q4 (677) **2,04** — et c'est de là que venait le « 2,9 » que Mido avait en tête. Ajustement
+`coût = a + b·mise/(coffre+17,58)` sur ces mêmes tickets :
+
+| | valeur | IC95 |
+|---|---|---|
+| part fixe `a` | **1,72 pts** | 0,73 .. 2,68 |
+| pente `b` (impact) | 0,0398 | **−0,0029 .. +0,0906** |
+
+**La pente contient zéro.** Le dégradé tient dans le bruit de 59 tickets par case. Et sur les
+tickets papier, filtrer sur la taille du pool ne produit aucun net significatif (IC de `RISQUE
+seul` : petits pools +1,04 % [−6,24..+8,43], gros pools −0,94 % [−2,94..+0,97]). La part fixe de
+1,72 pt est **proportionnelle à la mise** (frais de pool + spread), donc grossir la mise ne la
+dilue pas — contrairement aux frais de priorité (~0,33 pt à 30 €), qui eux ne peuvent pas baisser
+sans faire échouer des ordres (§3.40, quatre sur six).
+
+**3. LA DURÉE DE DÉTENTION : AUCUN HORIZON N'EST POSITIF.** Le péage est identique quelle que soit
+la durée — un seul aller-retour — donc si le brut montait avec le temps, le net monterait. Testé en
+apparié (mêmes 1 836 tickets, même entrée à 47 s, seule la sortie change ; séries tronquées comptées
+au dernier prix connu, 2 à 10 selon l'horizon, jamais jetées) :
+
+| sortie | brut (RISQUE seul) | net après 2,62 | écart au 240 s (IC95) |
+|---|---|---|---|
+| 30 s | −0,31 % | −2,93 % | −2,15 [−4,72..+0,37] |
+| 90 s | −0,73 % | −3,35 % | −2,56 [−4,73..−0,33] |
+| 180 s | **+2,02 %** | **−0,60 %** | +0,19 [−1,26..+1,72] |
+| **240 s (actuel)** | +1,84 % | −0,78 % | — |
+| 360 s | −6,99 % | −9,61 % | **−8,79** [−11,47..−6,00] |
+| 600 s | −23,32 % | −25,94 % | −25,12 [−28,62..−21,65] |
+| 840 s | −29,81 % | −32,43 % | −31,61 [−35,67..−27,47] |
+
+Tenir plus longtemps est **catastrophique et monotone** : ~9 points perdus par tranche de deux
+minutes, confirmé sur les deux moitiés chronologiques. Tenir moins longtemps ne rapporte rien :
+180 s est nominalement le meilleur mais son avantage sur 240 s est indistinguable de zéro. **Les
+242 s en service sont déjà à l'optimum, et l'optimum est négatif.**
+
+**CE QUE CES TROIS RÉSULTATS DISENT ENSEMBLE.** Le coût d'exécution de 2,62 pts n'est pas une
+inefficacité qu'on peut corriger : c'est un péage, majoritairement proportionnel, payé au pool. Il
+n'existe aucun réglage d'exécution — caution, choix du pool, mise, durée — qui le réduise de façon
+démontrée. **La seule variable qui reste est le rendement brut**, qui doit dépasser 2,62 % par
+ticket hors échantillon. Aucune règle n'y parvient à ce jour ; la seule qui y parvenait en
+échantillon (la bande, +4,73 % brut) vient d'échouer en conditions réelles (§3.111).
+
+### 3.113 — La perte tient dans 10 tickets, et ils ne sont pas arrêtables, 2026-09-18
+
+Mido, de mémoire de sa mise en production : « on gagne souvent de petites sommes, on perd rarement
+de grosses ». **C'est exact, et c'est la structure du problème.** Sur ses 244 tickets réels
+(−544 EUR au total) :
+
+| | n | moyenne | total |
+|---|---|---|---|
+| gagnants | **153 (63 %)** | **+8,02 EUR** | +1 228 EUR |
+| perdants | 91 (37 %) | **−19,47 EUR** | −1 772 EUR |
+
+Ticket médian **+2,4 %** : le ticket typique gagne. Le gain moyen vaut 0,41 fois la perte moyenne.
+Et la perte est ultra-concentrée : **les 10 pires tickets font −561 EUR, soit 103 % de la perte
+totale.** Sans eux, le livre était positif. (Symétriquement les 10 meilleurs font +531 EUR : la
+distribution est à queues épaisses des deux côtés, mais la queue gauche gagne.)
+
+**UN STOP NE PEUT PAS LES COUPER — deux raisons indépendantes, mesurées.**
+
+*(a) Le prix saute.* Les lectures tombent toutes les **10 s** (p90 : 11 s). Parmi les 213 tickets
+papier qui finissent sous −70 %, le niveau **déjà atteint à la première lecture sous −30 %** est de
+**−69 % en médiane** ; **49 % étaient déjà sous −70 %** et 20 % sous −80 %. Le stop n'a rien à
+vendre : entre deux lectures le prix a traversé toute la zone.
+
+*(b) Les creux remontent.* Sur 668 jetons qui touchent −30 %, **13 % finissent au-dessus de −10 %**.
+Couper à −30 % sacrifie ces reprises — cohérent avec le résultat central du projet : *le modèle
+mesure la VIE, pas le danger*, et un jeton capable de chuter est un jeton capable de monter.
+
+Résultat, simulé avec réalisme d'exécution (vente à la lecture **suivant** le franchissement, jamais
+au prix du seuil — erreur du 16/09) sur 1 295 tickets `RISQUE seul` :
+
+| règle | net | écart au sans-stop (IC95) |
+|---|---|---|
+| sans stop | −0,63 % | — |
+| stop −15 % | −1,60 % | −0,98 [−2,36..+0,41] |
+| stop −30 % | −1,00 % | −0,38 [−1,21..+0,45] |
+| stop −50 % | −0,54 % | +0,08 [−0,34..+0,52] |
+
+**Aucun stop n'améliore quoi que ce soit**, et les plus serrés dégradent nettement — confirmé sur
+les deux moitiés chronologiques (stop −20 % : −0,04 % puis **−3,05 %**).
+
+**CE QUE ÇA IMPLIQUE.** La perte n'arrive pas progressivement : elle arrive **en un saut**, entre
+deux lectures espacées de 10 s. C'est donc d'abord un problème d'**ENTRÉE** : il faut ne pas être
+dans ces jetons-là. C'est précisément ce que vise l'expert détenteurs gelé le 18/09 (§3.110) — qui
+regarde *qui détient le jeton* et non son prix. Son verdict tombe à 1 000 tickets.
+
+**RÉSERVE MAJEURE, soulevée par Mido et vérifiée — cette conclusion N'EST PAS établie à la
+résolution du moteur.** J'ai écrit « le prix saute entre deux lectures de 10 s » en décrivant le
+collecteur d'ARCHIVE (`solana_prix_chaine` : médiane 10,0 s, p90 11 s, **tous les jours depuis le
+09/09**, dans les deux bases). Mais le moteur ne regarde pas à 10 s : `veille_rapide` lit les
+comptes de réserve du pool **toutes les 1 s** depuis le 17/09 (2 s avant), par notre propre RPC,
+justement pour réveiller le carnet quand un seuil est franchi.
+
+**Et ces lectures à 1 s ne sont enregistrées nulle part** — `veille_rapide` ne fait qu'un
+`UPDATE positions SET peak_price`. Il n'existe donc AUCUN historique de prix sous 10 s : ni
+`solana_suivi` (DexScreener), ni `trades`/`swap_events` (EVM, arrêtés le 17/09 à 14 h), ni
+`pump_prix`. Le test du stop ci-dessus est donc nécessairement fait à 10 s.
+
+Or §3.95 a déjà montré que la cadence vaut très cher du côté de la PRISE DE GAIN : passer de 20 s à
+2 s vaut **+1,14 pt par ticket [+0,27 ; +2,04]**, et le tableau des cadences y était monotone. Rien
+ne permet de supposer que le côté STOP y serait insensible. **Je retire donc la force de la
+conclusion « aucun stop ne peut marcher » : elle est démontrée à 10 s, pas à 1 s.**
+
+**CE QU'IL FAUT POUR TRANCHER.** Enregistrer un flux de prix à 1 s sur la fenêtre 47–287 s. Coût
+mesuré : **3 pools simultanés en médiane dans cette fenêtre, 13 au pire** — donc ~3 lectures RPC par
+seconde, quand le collecteur actuel en fait déjà ~1/s. C'est un processus séparé avec sa propre
+base, sur le modèle de `social_collecte`, qui ne touche aucun collecteur en marche.
+
+### 3.114 — Le moteur voit à 1 s, je mesurais à 10 s : le collecteur rapide, 2026-09-18
+
+**Mido : « ce marché est un marché de vitesse, je te l'ai dit 343 fois, et tu dis toujours 10 s ».**
+Il a raison, et le problème est plus grave qu'une erreur de chiffre.
+
+**LE MOTEUR EST RAPIDE. C'ÉTAIT LA MESURE QUI ÉTAIT LENTE.** En production, `veille_rapide` lit les
+réserves du pool **toutes les 1 s** (2 s avant le 17/09) pour déclencher `take_profit_multiple: 1.5`
+et `stop_loss_multiple: 0.7`. Mais **il ne garde rien** : un `UPDATE positions SET peak_price`, et
+la lecture est perdue. Le seul historique de prix qui existe est `solana_prix_chaine`, à **10,0 s de
+médiane, p90 11 s, tous les jours depuis le 09/09**, dans les deux bases — vérifié. Aucune autre
+source ne descend en dessous (`solana_suivi` = DexScreener ; `trades`/`swap_events` = EVM, arrêtés
+le 17/09 à 14 h ; `pump_prix` = la courbe, pas le pool).
+
+**CONSÉQUENCE SUR TOUT CE QUI A ÉTÉ MESURÉ ICI.** `papier_combo`, la bande, `RISQUE seul`,
+l'ensemble, la forêt, l'expert détenteurs, le test de durée et le test de stop de §3.113 décrivent
+**un bot à sortie fixe (287 s) observant à 10 s**. Le moteur réel sort sur **seuils**, à 1 s. Ce ne
+sont pas les mêmes machines, et §3.95 avait déjà chiffré l'écart sur la prise de gain : même règle,
+mêmes 3 245 pools, seule la cadence d'observation change — transactions +5,23 %, 2 s +5,48 %,
+5 s +4,12 %, **10 s +1,69 %**. Un facteur 3.
+
+**`intel/research/prix_rapide.py`, écrit et lancé le 18/09.** Processus séparé, base
+`/app/db/prix_rapide.sqlite`, lit `intel.sqlite` en lecture seule, n'écrit que chez lui. Fenêtre
+35–310 s (la position tenue), cadence 1 s tenue en dur (on dort le reste du tour, jamais `PAS` de
+plus, sinon la cadence dérive avec le RPC). Les réserves se lisent en **un seul lot**
+(`getMultipleAccounts`, ≤ 100 comptes, `commitment: processed`) : **un appel par seconde quel que
+soit le nombre de pools**. Coût mesuré avant écriture : 3 pools simultanés en médiane, 13 au pire.
+Mesuré après : **0,10 s par tour, cadence réelle 1,00 s médiane / 1,02 p90**. 8 tests
+(`tests/intel_tests/test_prix_rapide.py`).
+
+**VALIDATION DU DÉCODAGE.** Comparé au collecteur d'archive sur les mêmes pools : la réserve
+virtuelle est **identique** (17,585 = 17,585 ; 0 = 0) et un pool dormant donne exactement le même
+coffre (0,364 = 0,364). L'écart de +2,2 % sur les pools actifs n'est donc pas un bug de décodage —
+c'est le prix qui a bougé entre les deux horodatages. *Ne jamais conclure à une découverte sur un
+écart avant d'avoir comparé les données BRUTES, pas la grandeur dérivée.*
+
+**PREMIER RÉSULTAT ANNONCÉ, PUIS CORRIGÉ DANS L'HEURE — à garder comme exemple.** J'ai d'abord
+annoncé à Mido **2,25 %/s de variation médiane** sur 245 intervalles issus de **2 pools**, dont un
+très frais et très agité. Vingt minutes plus tard, sur 987 intervalles et 6 pools, la médiane est
+de **0,146 %/s** — quatorze fois moins. *Une médiane sur deux pools n'est pas une médiane ; c'est
+un pool.* Le chiffre publié était un artefact de petit échantillon, exactement ce que Mido
+redoutait (« c'est pas un truc que tu vas me dire dans deux jours que c'était trop beau ? »).
+
+**LA VRAIE STRUCTURE : DES MARCHES D'ESCALIER, PAS UNE DIFFUSION.** Sur 987 intervalles d'une
+seconde :
+
+| | valeur |
+|---|---|
+| médiane | **0,146 %** |
+| moyenne | 2,566 % |
+| p90 / p99 / max | 6,97 % / 21,26 % / **160,9 %** |
+
+**35 % des secondes le prix ne bouge pas du tout.** Et le mouvement est massivement concentré :
+**1 % des secondes portent 25 % du mouvement, 5 % en portent 47 %, 25 % en portent 90 %.** Contrôle
+de cohérence avec le collecteur à 10 s sur les mêmes pools et la même période : observé 1,14 %
+contre 0,51 % attendu d'une marche aléatoire (rapport 2,24) — le mouvement est bien réel et bien
+concentré. Contrôle complémentaire : sur 355 mouvements de prix > 0,5 %, **zéro** avec un coffre
+figé — aucun mouvement fantôme, tout changement vient d'un vrai échange.
+
+**CE QUE ÇA IMPLIQUE, ET ÇA COUPE DANS LES DEUX SENS.** *Pour* : 5 % des secondes portent la moitié
+du mouvement, et un échantillonnage à 10 s les rate ou les date mal — voir un sommet 9 s plus tôt
+vaut quelque chose, c'est ce que §3.95 avait mesuré sur la prise de gain (+1,14 pt de 20 s à 2 s).
+*Contre* : le mouvement est un SAUT. On ne peut jamais vendre PENDANT un saut, seulement après.
+Un stop ne sortira donc pas à −30 % si un seul échange fait passer le prix de −30 % à −70 % — ce
+qui est exactement le mécanisme décrit en §3.113 à 10 s. **L'attente raisonnable est donc que la
+vitesse aide sur la PRISE DE GAIN plus que sur le STOP, et qu'elle ne referme pas à elle seule
+l'écart de 2,62 pts.** À vérifier sur données, pas à supposer.
+
+**CE QU'ON POURRA TRANCHER DANS QUELQUES JOURS**, et pas avant : le stop à −30 % et la prise de gain
+à +50 % que le moteur applique déjà, rejoués à la cadence à laquelle il les voit vraiment.
+
+### 3.115 — T+75 gelé, et le rappel que je ne mesurais pas la production, 2026-09-18 09h05
+
+**Mido, après une journée de conclusions négatives : « je pense que t'es vraiment biaisé à sortir
+que des trucs négatifs ».** Le reproche est fondé : sept résultats négatifs dans la journée, et
+quand un résultat positif est apparu (l'heure d'entrée), je l'ai présenté comme un « problème » au
+lieu d'un levier. Ce qui suit vient de sa question, pas de la mienne.
+
+**MA RECHERCHE N'ENTRE PAS OÙ LA PRODUCTION ENTRE.** `papier_combo` décide à **T+45** ; la
+production Telegram entre à **T+60**, choisi le 12/09 sur 183 jetons parce que c'était le point où
+les deux moitiés s'accordaient. J'avais d'abord traité l'écart comme un défaut de la production
+(« 14 s de retard ») — faux : mesurés contre leur propre cible, les achats réels tombent à **61 s de
+médiane**, soit à la seconde près. Le bot fait exactement ce qu'on lui demande. *Avant de qualifier
+un écart de retard, lire la cible que le code vise réellement.*
+
+**LA MESURE, SUR LA POPULATION QUE LA PRODUCTION TRADE** (jetons portant un Telegram), appariée,
+même détention de 240 s, seul l'âge d'entrée change :
+
+| entrée | T+30 | T+45 | T+47 | **T+60** | **T+75** | T+90 |
+|---|---|---|---|---|---|---|
+| brut | +1,73 % | +5,62 % | +3,53 % | **+6,01 %** | **+10,97 %** | +9,81 % |
+| écart à T+60 | −4,27 | −0,39 | −2,48 | ref | **+4,97** | +3,80 |
+| IC95 | [−8,4;−0,1] | [−3,4;+2,4] | [−5,6;+0,4] | — | **[+1,3;+9,2]** | [−1,0;+8,7] |
+
+Deux enseignements. **(1) Ne PAS passer à T+45** : sur cette population il est indiscernable de
+T+60 (−0,39, intervalle à cheval sur zéro). Le −0,87 pt que j'avais annoncé venait de ma population
+de recherche et ne se transfère pas — troisième fois dans la journée qu'un chiffre est cité hors de
+la population où il a été mesuré. **(2) T+75 est le premier résultat positif ET significatif de la
+journée**, deux moitiés positives (+15,94 / +6,01).
+
+**TROIS RAISONS DE NE PAS Y CROIRE, écrites avant de voir la suite.** C'est le **meilleur de six**
+âges testés (un « significatif » par hasard sur cinq comparaisons : ~1 fois sur 4). L'effet **fond
+déjà** quand l'échantillon s'élargit : +4,97 pt sur les 364 jetons disponibles aux six âges, **+3,08
+pt** sur les 430 disponibles aux deux âges utiles — signature d'une surestimation par sélection. Et
+c'est le profil exact de la bande : +3,90 % en échantillon, morte dehors.
+
+**`intel/research/entree_75.py`, gelé à 07h05 UTC.** Puissance calculée AVANT de figer : écart-type
+apparié 36,37 pts par ticket, donc 1 000 tickets détectent un effet de 3,2 pts à 80 % — on
+dimensionne sur un effet **plus petit** que l'observé, jamais sur l'observé. Flux mesuré : 57 jetons
+Telegram par jour, soit ~18 jours. **Critère, figé** : au premier atteint de 1 000 tickets ou 21
+jours, (a) T+75 bat T+60 en apparié, (b) l'écart tient sur les deux moitiés, (c) T+75 est positif
+après les 2,62 pts. Les trois, sinon abandon. La production reste à T+60 ; le fichier ne lance rien
+et lit tout en lecture seule.
+
+**#2 ET #3 SONT CLOS.** Retard d'entrée : n'existe pas (cible T+60, réalisé 61 s). Latence
+d'exécution : appel RPC 41 ms contre un slot Solana de ~270 ms — le plancher est la chaîne, pas le
+réseau, il n'y a rien à y gagner. Reste ouvert le **#1**, la cadence d'observation (20 s en
+production contre 1 s dans le code d'aujourd'hui), que `prix_rapide` permettra de trancher.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
