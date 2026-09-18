@@ -261,9 +261,12 @@ class ModeleRapide:
             " WHERE mode='live' AND ts_entree >= ?", (now - 86400,))
         n_jour = int(jour[0]["n"] or 0) if jour else 0
         perte_jour = float(jour[0]["g"] or 0.0) if jour else 0.0
-        max_jour = int(self._cfg("max_ordres_jour", 40))
+        # `max_ordres_jour: 0` DESACTIVE le plafond en nombre d ordres. J en avais impose un a 40
+        # sans que l operateur l ait demande, et il a arrete le carnet en pleine journee alors
+        # qu il venait de dire de laisser tourner. Ce qu il a accepte, c est un BUDGET.
+        max_jour = int(self._cfg("max_ordres_jour", 0))
         perte_max = float(self._cfg("max_perte_jour_eur", 150.0))
-        bloque = live and (n_jour >= max_jour or perte_jour <= -perte_max)
+        bloque = live and ((max_jour > 0 and n_jour >= max_jour) or perte_jour <= -perte_max)
         if bloque:
             log.info("modele_rapide: plafond atteint (%d ordres, %+.0f EUR) — plus d achat aujourd'hui",
                      n_jour, perte_jour)

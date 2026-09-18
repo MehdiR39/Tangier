@@ -206,3 +206,15 @@ def test_le_frein_ne_choisit_pas_les_jetons():
     src = inspect.getsource(mr.ModeleRapide.cycle)
     assert "self.frein_ouvert(now)" in src
     assert "'FREIN'" in src or '"FREIN"' in src, "un ticket freine garde sa trace"
+
+
+def test_le_plafond_d_ordres_peut_etre_desactive():
+    """`max_ordres_jour: 0` doit DESACTIVER le plafond, pas le mettre a zero -- sinon il bloquerait
+    tout. Le plafond en nombre d ordres n a jamais ete demande par l operateur ; seul le BUDGET
+    de perte l a ete."""
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    assert "max_jour > 0 and n_jour >= max_jour" in src, \
+        "un max_jour de 0 doit desactiver le plafond, pas tout bloquer"
+    assert '"max_ordres_jour", 0' in src, "le defaut doit etre : pas de plafond d ordres"
+    # la protection en EUROS, elle, reste inconditionnelle
+    assert "perte_jour <= -perte_max" in src

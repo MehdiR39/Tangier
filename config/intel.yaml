@@ -1171,7 +1171,15 @@ modele_rapide:
   slippage_achat_pct: 20.0
   slippage_vente_pct: 25.0
   max_impact_pct: 15.0         # au-dela, l ordre est refuse AVANT envoi et ne coute rien
-  max_ordres_jour: 40          # meme plafond que le carnet Telegram
+  # PAS DE PLAFOND EN NOMBRE D ORDRES. J en avais mis un a 40 par analogie avec le carnet
+  # Telegram, sans que l operateur l ait demande -- et il a bloque le carnet des 13h09 le 18/09,
+  # alors qu il venait de dire « laisse tourner, n arrete rien sans que je te dise ». Ce qu il a
+  # accepte, c est un BUDGET de 150 EUR, pas un compte d ordres. Une contrainte qu on ajoute soi-
+  # meme et qui arrete ce que l operateur veut voir tourner est une contrainte de trop.
+  #
+  # `max_ordres_jour: 0` desactive ce plafond. La seule protection reste la perte sur 24 h
+  # glissantes -- celle-la, il l a explicitement approuvee.
+  max_ordres_jour: 0
   max_perte_jour_eur: 150.0    # le budget que l operateur a accepte de perdre
   cle_fichier: null
 
