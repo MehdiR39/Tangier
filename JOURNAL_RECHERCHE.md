@@ -7287,3 +7287,34 @@ Je n'ai pas relu l'horloge après 22h14 et j'ai daté quinze sections de tête �
 La date du gel de la forêt, écrite « 04h30 » et donc **dans le futur**, est ramenée à l'heure
 réelle du lancement. **Règle 18 : une heure ne s'écrit qu'après avoir été lue — `date`, ou l'heure
 du commit — jamais estimée.**
+
+
+---
+
+### 3.145 — Décider à 75 s avec toute la première minute : pas mieux qu'à 45 s — donc les deux gels tournent, 2026-09-18 23h50
+
+Mido : *« dans ma tête c'était 45 […] fais le truc qui me donne le plus de chances de gagner de
+l'argent »*. Le collecteur lit les transactions à 70 s ; à 45 s en production elles n'existent pas
+encore, à 75 s elles existent telles quelles. `decision_75.py` : même forêt (25 variables choisies
+sur le passé), mêmes fenêtres, coût 6,55.
+
+| décision | sortie | gardés | n | net/ticket | sans 3 meil. | gagnants |
+|---|---|---|---|---|---|---|
+| 45 s | 240 s | 5 % | 58 | +1,90 % | +0,89 % | 86 % |
+| 45 s | 287 s | 5 % | 58 | +3,75 % | +2,51 % | 83 % |
+| **75 s** | 240 s | 5 % | 58 | +1,74 % | −0,51 % | 88 % |
+| 75 s | 287 s | 5 % | 58 | −0,35 % | −2,44 % | 81 % |
+
+Témoins : 47→240 s −5,16 %, 77→240 s −5,42 %, 77→287 s −7,25 %. Barre du hasard (200
+permutations, meilleure des 8 cellules 75 s) : **36 sur 200 font aussi bien, p ≈ 0,18**.
+
+**Lecture :** 45 ou 75, 240 ou 287, 5 à 30 % — tout bouge dans une bande de ±2 pt, la taille du
+bruit à 58 tickets (le top 5 % à 45 s vaut +1,90 % ce soir avec 25 variables et valait +4,40 % avec
+72 : même modèle, même cellule). **Aucun réglage n'est justifié par les chiffres.** Le 75 s a un
+avantage hors chiffres : il est branchable tel quel sur le pipeline actuel, sans flux en direct.
+
+**Décision : les deux gels tournent, même règle, même critère, chacun sa base** — `foret_gel`
+(45 s, `papier_foret.sqlite`) et `foret_gel75` (75 s, `papier_foret75.sqlite`), sous le gardien,
+dans la table (`FORET 45s` / `FORET 75s`, top 5 % gelé, top 10 % en lecture). Seuils au premier
+entraînement : 45 s → 0,838 ; 75 s → 0,866. Ce sont les tickets qui trancheront, et si les deux
+valent pareil, c'est le 75 s qui pourra passer en réel sans rien construire.
