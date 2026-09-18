@@ -5672,6 +5672,55 @@ choisie ne remplace pas le choix de la grandeur. 45 formulations d'une moyenne b
 demander quelle grandeur a le meilleur rapport signal/bruit pour la question posée* — et se méfier
 des moyennes sur des distributions à queues épaisses, qui sont le pire estimateur possible.
 
+### 3.122 — Anatomie des perdants à la seconde : la chute est une FALAISE, 2026-09-18 soir
+
+**Mido : « analyse ces tickets perdants — le profil, le nom, les détenteurs, la vitesse de crash,
+analyse tout ça, on trouvera probablement un filtre ».** Fait en deux temps, et le second clôt une
+question que j'avais dû laisser ouverte le matin même.
+
+**AVANT L'ACHAT : RIEN.** Balayage de toutes les variables disponibles contre le NET, y compris
+celles jamais testées — longueur du nom, longueur du symbole, taille de la description,
+concentration des détenteurs. Coupe chronologique, et **barre de bruit tirée d'une variable
+aléatoire** : celle-ci obtient **9,15 %** d'écart entre ses quintiles. Aucune vraie variable ne fait
+significativement mieux, et aucune ne garde le même quintile gagnant avec un écart au-dessus du
+bruit. Ce que Mido avait vu sur ses 31 tickets réels — description à 1 caractère chez les perdants
+contre 28,5 chez les gagnants — donne 6,28 puis 8,07 % sur 1 399 tickets, **sous la barre du
+hasard**. C'était 10 tickets contre 6.
+
+**PIÈGE REFAIT LE JOUR MÊME OÙ JE L'AI DOCUMENTÉ.** Le premier balayage donnait des écarts de
+**126 %** sur `A`, `V`, `twitter`, `site`, monotones et stables sur les deux moitiés. Tous faux :
+`A` vaut toujours 45 (**100 % d'ex æquo**), les autres sont binaires (69 à 74 %), et mon `s.sort()`
+sur des couples `(valeur, résultat)` triait les ex æquo **par le résultat**. C'est exactement le
+§3.119, point 1, écrit six heures plus tôt. *Documenter un piège ne suffit pas : il faut que le code
+le rende impossible.* Correction retenue : trier par une clé qui ne nomme que le prédicteur, avec
+les ex æquo mélangés au hasard, et **afficher la part d'ex æquo** à côté de chaque variable.
+
+**APRÈS L'ACHAT : LA CHUTE EST UNE FALAISE.** 49 perdants (≤ −30 % à 240 s) suivis à **1 seconde**
+par `prix_rapide` — mesure impossible avant ce matin :
+
+| | médiane | p25 | p75 |
+|---|---|---|---|
+| moitié de la chute atteinte | **56 s** | 18 s | 130 s |
+| 90 % de la chute | **86 s** | 22 s | 144 s |
+| **pire variation en UNE seconde** | **−55,2 %** | −74,6 % | −35,0 % |
+
+**92 % des perdants ont au moins une seconde à −20 % ou pire**, et 51 % ont perdu la moitié dans
+les 60 premières secondes après l'achat.
+
+**LE STOP EST DÉFINITIVEMENT CLOS, et pour deux raisons contradictoires.** *(1) Trop rapide pour
+être coupé* : quand la chute est visible, elle est faite — médiane −55 % en une seconde, et notre
+ordre de vente arrive un slot Solana plus tard dans un pool déjà vidé. *(2) Couper serait souvent
+une erreur* : **43 % des perdants passent PLUS BAS que leur prix de sortie** et remontent de
++8,7 points en médiane. Le stop vendrait au pire moment. Le 18/09 au matin j'avais retiré la force
+de cette conclusion faute de données sous 10 s (§3.114) ; les données à 1 s la rétablissent, et plus
+fermement qu'avant.
+
+**CE QUE TOUT CECI CONFIRME.** Les perdants meurent tous de la même façon — d'un coup, tôt, sans
+prévenir — mais mourir de la même façon ne donne aucun filtre : il faudrait que les survivants
+meurent *différemment*, or ils ne meurent pas. **La seule information exploitable existe avant
+l'achat, et elle n'y est pas.** C'est pourquoi le seul signal trouvé aujourd'hui porte sur le
+MARCHÉ (§3.121, le taux de gagnants récent) et non sur le jeton.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
