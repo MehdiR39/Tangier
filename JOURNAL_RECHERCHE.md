@@ -6809,3 +6809,33 @@ Coupe de midi (156 tickets, jugés midi→18h) : le frais fait +0,20 % contre �
 (AUC 0,614 contre 0,563), puis **s'inverse à 30 % gardés** (−6,21 contre −3,04), et son sans-3 est
 négatif partout. Deux coupes, deux réponses contraires : **réentraîner ne produit rien de stable.**
 L'information ne dérive pas ; elle est faible, et le péage la mange, frais ou vieux.
+
+
+---
+
+### 3.131 — Réentraîner l'ensemble de 12 et la forêt jusqu'à 18h : rien de stable non plus, 2026-09-18 23h05
+
+Mido : *« entraîne 12 modèles »*. Même test que §3.130, même recette que les fichiers en service,
+sur **grande table (26 566 lignes, 09→15/09) + carnet papier jusqu'à la coupe** — strictement plus
+de données et plus récentes, pour que « frais » ne veuille pas dire « dix fois moins ».
+`reentrainer_ensemble.py`.
+
+**Coupe 18h → après 18h (126 tickets, témoin −14,7 %, hasard −15 %)**
+
+| gardés | ENS service | ENS frais | FORÊT service | FORÊT fraîche |
+|---|---|---|---|---|
+| k=81 | −12,91 % | −8,00 % | −8,72 % | −12,61 % |
+| 50 % | −8,29 % | −8,32 % | −10,13 % | **−4,21 %** |
+| 30 % | −5,27 % | −4,89 % | −5,02 % | **−0,71 %** (sans3 −8,13) |
+
+Tous battent le hasard (−15 %) : le classement contient de l'information sur cette fenêtre. Aucun
+niveau n'est positif ; le meilleur, −0,71 % sur 38 tickets, fait −8,13 % sans ses 3 meilleurs.
+L'ensemble frais est **identique** à l'ensemble en service (−8,32 contre −8,29 ; −4,89 contre −5,27).
+
+**Coupe midi → 12h–18h (156 tickets, témoin −1,32 %)** : forêt fraîche +2,14 % à k=104 (bat le
+hasard 88 %) puis **−5,08 % à 50 % gardés** (19 %) ; à 30 % tout le monde est à −2,7/−3,3 % et
+personne ne bat le hasard.
+
+**Verdict, identique à §3.130 :** réentraîner ne produit rien de stable. L'ensemble frais copie
+l'ancien ; la forêt fraîche oscille entre meilleure et pire selon la coupe et l'effectif. Le
+classement existe faiblement, le niveau est négatif, et le péage de 6,55 tient tout sous zéro.
