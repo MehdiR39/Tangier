@@ -7171,3 +7171,33 @@ tickets × 20 € × 4,4 % ≈ **+21 €/jour** ; à 40 € de mise ≈ +42 €/
 projet où l'arithmétique de l'objectif n'est pas absurde. Ce qui la sépare d'un résultat : environ
 **quatre fois plus de tickets** — la même conclusion que §3.135 et §3.137, avec maintenant une cible
 précise à surveiller (le top 5 % et sa calibration).
+
+
+---
+
+### 3.141 — Changer la cible (> +5, +10, +20 %) : le modèle reconnaît la survie, pas la taille, 2026-09-19 03h30
+
+Suite directe de §3.140. Si le modèle « > 0 » choisit des survivants modestes, l'entraîner à
+reconnaître « > +10 % » devrait choisir des gagnants plus gros. `selectivite.py`, 9 fenêtres.
+
+| cible | gardés | n | net/ticket | sans 3 meil. | gagnants | catastrophes |
+|---|---|---|---|---|---|---|
+| > 0 | 5 % | 58 | **+4,40 %** | **+3,50 %** | 91 % | 5 % |
+| > +5 % | 5 % | 58 | +2,79 % | +1,81 % | 88 % | 9 % |
+| > +10 % | 5 % | 58 | −0,67 % | −4,25 % | 67 % | 17 % |
+| > +10 % | 10 % | 121 | +5,72 % | −2,54 % | 66 % | 19 % |
+| > +20 % | 5 % | 58 | **−9,04 %** | −15,81 % | 47 % | **31 %** |
+| > +20 % | 30 % | 370 | −3,26 % | −6,34 % | 47 % | 27 % |
+
+**Plus on demande au modèle de reconnaître de gros gains, plus il choisit des catastrophes** : à
+« > +20 % », 31 % de catastrophes et 47 % de gagnants — pire que le témoin. Les fusées et les
+falaises sont les mêmes jetons vus à 45 s ; aucune variable ne les sépare. C'est la démonstration
+la plus directe du fait central du projet : **le modèle mesure la vie, pas la taille.**
+
+Meilleure des 16 cellules : +5,72 % (> +10 %, 10 % gardés), sans-3 −2,54 %, et **64 tirages sur
+200 font aussi bien (p ≈ 0,32)**. Rien ne passe.
+
+**Ce qui reste, et c'est net :** une seule cellule positive sans ses 3 meilleurs dans tout le
+projet, la cible « > 0 » à 5 % gardés (+4,40 %, 91 % de gagnants, 58 tickets, p ≈ 0,12 seule).
+Changer de cible ne l'améliore pas ; changer de modèle non plus (§3.136). **Seuls des tickets
+peuvent la confirmer ou la tuer.**
