@@ -5479,6 +5479,41 @@ sur les deux moitiés, **et** positif sans ses trois meilleurs. Écart-type du n
 1 200 tickets ne tranchent PAS le net seul — d'où les deux conditions de robustesse, qui elles se
 lisent à cet effectif.
 
+### 3.118 — Réduire le coût d'exécution nous appauvrirait, 2026-09-18
+
+**Mido : « il y a des astuces discutées sur internet pour réduire le coût ? le 2,62 me casse la
+tête. »** Les conseils courants (glissement serré à 3 %, RPC privé anti-sandwich, limiter les
+transactions brûlées) ont été confrontés à nos 237 tickets réels. Deux sont sans objet, et le
+troisième **coûte de l'argent**.
+
+**SANDWICH : marginal.** Notre configuration est large (20 % achat, 25 % vente, 40 % en cascade),
+donc théoriquement une invitation. Mais l'écart d'exécution est resserré — médiane 2,4 pts,
+quartiles 1,3 / 3,1 — alors qu'un sandwich systématique collerait l'écart à nos limites. Tickets
+au-delà de 15 pts : **4 %**. On n'est pas sandwiché de façon systématique.
+
+**TRANSACTIONS BRÛLÉES : négligeable.** Sur 188 échecs, **15** seulement ont été envoyées puis
+rejetées (≈0,75 EUR au total). Les 173 autres — impact supérieur au plafond, construction refusée,
+cotation trop au-dessus du pool — sont écartées **avant** l'envoi et ne coûtent rien.
+
+**GLISSEMENT SERRÉ : LE PIÈGE.** Refuser les mauvaises exécutions fait mécaniquement baisser le coût
+affiché, et fait baisser le résultat encore plus :
+
+| seuil de refus | refusés | coût moyen | **total réel** |
+|---|---|---|---|
+| aucun (situation actuelle) | 0 | **2,62 pts** | **−586 EUR** |
+| écart ≥ 20 pts | 7 | 1,76 | −614 |
+| écart ≥ 10 pts | 16 | 1,27 | −763 |
+| écart ≥ 5 pts | 38 | **0,62** | **−847 EUR** |
+
+**Le coût tombe de 2,62 à 0,62 pt et on perd 261 EUR de plus.** Parce que les tickets mal exécutés
+sont les BONS : un grand écart d'exécution se produit quand le prix bouge vite, et un prix qui bouge
+vite est un jeton qui monte. Les pires exécutions sont sur les meilleurs jetons.
+
+**CE QU'IL FAUT EN RETENIR.** Les 2,62 pts ne sont pas des frais payés bêtement : c'est en grande
+partie **le prix d'entrer dans les jetons qui bougent**. « Réduire le coût » n'est donc pas un
+objectif — c'est une métrique qu'on peut améliorer en s'appauvrissant. *Le seul objectif est le net
+en euros.* Ajouter ce cas à la liste des métriques qu'il ne faut jamais optimiser seules.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
