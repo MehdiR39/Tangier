@@ -242,8 +242,12 @@ class ModeleRapide:
             achetes += 1
             if live and not bloque:
                 await self._acheter_reel(mint, mise, f)
-        if live and not bloque:
+        # VENDRE ET COMPTER NE SONT JAMAIS BLOQUES. Un plafond doit arreter les ACHATS, jamais les
+        # ventes : sinon atteindre 40 ordres laisserait les positions ouvertes indefiniment, sans
+        # personne pour les fermer. Le plafond protege du risque, il ne doit pas en creer un.
+        if live:
             await self._sortir(now)
+            await self._compter(now)
         return {"status": "ok", "decides": decides, "retenus": achetes, "mode": "live" if live else "paper"}
 
     # ---------------------------------------------------------------- reel
@@ -317,3 +321,42 @@ class ModeleRapide:
                 log.info("modele_rapide: VENTE %s — %s", str(l["mint"])[:10], h[:16])
             except Exception as exc:  # noqa: BLE001
                 log.warning("modele_rapide: vente refusee %s (%s)", str(l["mint"])[:10], str(exc)[:100])
+
+    async def _compter(self, now: float) -> None:
+        """Le P&L se lit sur le SOLDE DU PORTEFEUILLE, jamais sur une cotation.
+
+        Sans ce comptage, `gain_eur` resterait NULL : le plafond de perte ne se declencherait
+        JAMAIS, et surtout on ne mesurerait pas le cout d execution -- c est-a-dire la seule raison
+        pour laquelle ce carnet tourne en reel. On additionne la variation de solde de l ACHAT
+        (negative, frais compris) et celle de la VENTE (positive), et c est tout.
+
+        Separe de la vente : une transaction fraichement diffusee n est pas encore confirmee et
+        `sol_delta` rend None pendant quelques secondes. On rejoue a chaque cycle tant que le compte
+        manque, au lieu de bloquer la vente dessus.
+        """
+        from intel.execution import solana as sol
+        a_compter = self.ctx.db.query(
+            "SELECT mint, tx_achat, tx_vente FROM mr_lignes WHERE mode='live' AND statut='FERMEE'"
+            " AND gain_eur IS NULL AND tx_achat IS NOT NULL AND tx_vente IS NOT NULL"
+            " AND ts_sortie >= ?", (now - 6 * 3600,))
+        if not a_compter:
+            return
+        rpc = sol.rpc_url()
+        proprio = sol.signer_address(self._cfg("cle_fichier", None))
+        if not rpc or not proprio:
+            return
+        for l in a_compter:
+            try:
+                da = await sol.sol_delta(self.client, rpc, str(l["tx_achat"]), proprio)
+                dv = await sol.sol_delta(self.client, rpc, str(l["tx_vente"]), proprio)
+                if da is None or dv is None:
+                    continue                 # pas encore confirmee : on rejouera
+                taux = await sol.sol_eur(self.client)
+            except Exception:  # noqa: BLE001
+                continue
+            gain = (da + dv) * taux
+            self.ctx.db.execute(
+                "UPDATE mr_lignes SET gain_eur=?, motif=? WHERE mint=?",
+                (gain, "compte sur la chaine : %+.5f SOL" % (da + dv), l["mint"]))
+            log.info("modele_rapide: %s compte sur la chaine — %+.5f SOL soit %+.2f EUR",
+                     str(l["mint"])[:10], da + dv, gain)

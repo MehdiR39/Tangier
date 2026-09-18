@@ -70,10 +70,14 @@ def test_les_plafonds_sont_lus_avant_la_decision():
 
 
 def test_n_ecrit_que_dans_sa_propre_table():
+    """On cherche les tables VISEES par du SQL, pas le mot dans une phrase."""
+    import re
     src = inspect.getsource(mr)
-    for interdite in ("tg_lignes", "positions", "tg_cascade"):
-        assert interdite not in src, "il ne doit toucher que mr_lignes, pas %s" % interdite
-    assert "mr_lignes" in src
+    cibles = set()
+    for motif in (r"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)", r"UPDATE\s+(\w+)\s+SET",
+                  r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", r"DELETE\s+FROM\s+(\w+)"):
+        cibles |= {m.lower() for m in re.findall(motif, src, re.I)}
+    assert cibles == {"mr_lignes"}, "il n ecrit que dans mr_lignes, or il vise %s" % sorted(cibles)
 
 
 def test_l_ordre_trop_gros_pour_le_pool_est_refuse():
@@ -86,3 +90,28 @@ def test_mode_paper_par_defaut():
     """Le defaut doit etre inoffensif : si la config manque, on ne signe pas."""
     src = inspect.getsource(mr.ModeleRapide.cycle)
     assert '"mode", "paper"' in src
+
+
+def test_vendre_et_compter_ne_sont_jamais_bloques_par_un_plafond():
+    """Un plafond doit arreter les ACHATS, jamais les ventes -- sinon il cree le risque qu il evite."""
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    i_bloque = src.index("bloque = live and")
+    i_sortir = src.index("await self._sortir(now)")
+    ligne = src[src.rindex("\n", 0, i_sortir):i_sortir]
+    assert "not bloque" not in ligne, "la vente ne doit pas dependre du plafond"
+    assert "await self._compter(now)" in src, "sans comptage, le plafond de perte ne se declenche jamais"
+
+
+def test_le_pnl_se_lit_sur_le_solde_du_portefeuille():
+    """Jamais sur une cotation : le 08/09 le carnet annonçait +5,05 EUR pour +2,54 reels."""
+    src = inspect.getsource(mr.ModeleRapide._compter)
+    assert "sol_delta" in src and "tx_achat" in src and "tx_vente" in src
+    assert "prix_sortie" not in src, "le gain ne se calcule pas a partir d un prix"
+
+
+def test_le_taux_sol_est_lu_sur_le_marche():
+    """Un taux en dur est une erreur comptable silencieuse (08/09 : 180 EUR contre 96 reels)."""
+    src = inspect.getsource(mr.ModeleRapide._acheter_reel)
+    assert "await sol.sol_eur(" in src
+    assert "sol_eur=taux" in src
+    assert "taux SOL illisible" in src, "si le taux manque, l achat doit etre reporte"
