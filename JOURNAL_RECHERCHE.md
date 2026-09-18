@@ -6881,3 +6881,52 @@ Le −0,71 % de la soirée était **une fenêtre, pas une règle**.
 **7 %** — et le net ne bouge que de 0,67 point (−5,90 → −5,23). La perte n'est pas dans la queue,
 elle est dans le corps. Le péage de 6,55 sur les tickets ordinaires reste au-dessus de ce qu'ils
 rapportent, catastrophes ou pas.
+
+
+---
+
+### 3.133 — Une forêt sur TOUT (107 variables) : premier total positif d'une marche avant, +0,41 % — et pourquoi ça ne suffit pas, 2026-09-18 23h55
+
+Mido : *« on a construit une forêt en croisant toutes nos variables, réseau, prix, image ? »*
+**Non** — les modèles en service n'utilisent que 19 variables de prix. Fait ce soir :
+`marche_avant_tout.py`, 11 coupes de 6 h, forêt (300 arbres) sur les 107 variables de la table
+unique, deux cibles : **vidage** (celle des modèles actuels) et **gain** (P(net > 0)), 30 % et 50 %
+gardés, coût 6,55.
+
+| toute la période | n | net/ticket | € | sans 3 meil. | gagnants | catastrophes |
+|---|---|---|---|---|---|---|
+| témoin | 1 853 | −5,04 % | −1 868 € | −6,39 % | 44 % | 20 % |
+| vidage, forêt 30 % | 552 | −3,19 % | −352 € | −3,83 % | 38 % | 6 % |
+| vidage, forêt 50 % | 924 | −1,10 % | −203 € | −3,54 % | 46 % | 10 % |
+| **gain, forêt 30 %** | 552 | **+0,41 %** | **+45 €** | **−3,65 %** | **66 %** | 16 % |
+| gain, forêt 50 % | 924 | −1,41 % | −260 € | −3,93 % | 60 % | 19 % |
+| gain, boosting 30 % | 552 | −2,69 % | −297 € | −4,45 % | 64 % | 16 % |
+
+**Ce qui est nouveau.** C'est la première fois qu'une marche avant du projet rend un total **au-dessus
+de zéro** : +0,41 % par ticket, +45 € sur 552 tickets, **66 % de gagnants** contre 44 % au témoin.
+Et la cible **gain** fait ce que la cible vidage ne faisait pas — elle ne coupe pas seulement la
+queue (16 % de catastrophes, pas 6 %), elle choisit des tickets qui montent.
+
+**Ce qui l'empêche d'être une règle.**
+- **Sans ses 3 meilleurs tickets : −3,65 %.** Trois tickets sur 552 portent tout le positif.
+- L'écart-type du net par ticket est de **59 points** (mesuré) ; l'erreur standard sur 552 tickets
+  est de **±2,5 pt**. +0,41 % est à 0,16 écart-type de zéro : **indistinguable de zéro**. (Une
+  première version de ce paragraphe disait « ~35 points » de tête — corrigé sur la mesure.)
+- 5 fenêtres positives sur 11 ; la version 50 % est à −1,41 %.
+
+**Où est l'information — le résultat qui compte.** Importance des variables dans la forêt de gain :
+
+| famille | poids |
+|---|---|
+| **v1 — transactions des 45 premières secondes** (gini des achats, SOL acheté, plus gros achat, vendeurs, ventes, vendeurs sans achat…) | **43 %** |
+| prix à 45 s | 17 % |
+| taille du coffre `q` | 10 % |
+| `risque` (le modèle en service) | 8 % |
+| image | 8 % |
+| temps, liens, régime, métadonnée, nom, détenteurs, créateur | ≤ 3 % chacune |
+
+**Le flux d'ordres des 45 premières secondes porte plus d'information que le prix** — deux fois
+et demie plus. C'est la seule famille du projet qui n'ait jamais été mise dans un modèle avant ce
+soir, et c'est celle que la forêt choisit. Ce n'est pas un edge : c'est une direction, la première
+qui ne soit pas une mesure de prix, avec des données à 1 409 tickets sur 2 208 seulement (le
+collecteur v1 s'est arrêté le 18/09 09h13, quota Helius).
