@@ -6353,3 +6353,101 @@ bout en bout, du seuil jusqu a la signature.*
 - **Avant d'attribuer une cause, la chercher dans le code.** « `pool_quote` a cessé d'être remplie
   après l'échange de base » : faux, aucun moteur ne l'a jamais remplie (§3.81). Une recherche d'une
   seconde l'aurait montré.
+
+
+---
+
+### 3.123 — La trajectoire du STOCK : le collecteur, et les deux pièges trouvés en le construisant, 2026-09-18 16h30
+
+**L'hypothèse est de Mido, et elle ne ressemble à rien de ce qu'on a testé.** « Une partie des
+effondrements vient de groupes entrés très tôt, disposant encore d'un stock énorme par rapport aux
+acheteurs présents. Le signal d'achat serait une transition : les premiers détenteurs ont largement
+distribué, des acheteurs extérieurs continuent d'arriver, et leurs achats absorbent les ventes
+restantes. »
+
+Ce qui la distingue : **toutes** nos variables sont des mesures de PRIX, et elles disent toutes la
+même chose — ce qui prédit la chute prédit la montée (§3.107, « le modèle mesure la VIE »). Ici on
+ne mesure pas le prix, on mesure un ÉTAT : combien de munitions restent au-dessus du marché.
+
+Et elle explique un échec qu'on n'avait pas su expliquer. `expert_detenteurs` (§3.110) regarde
+`sac1` à UN seul instant, 45 s, et fait −169 € sur 269 tickets. L'objection le démolit exactement :
+deux jetons peuvent avoir la même concentration alors que dans l'un le groupe initial a déjà vendu
+et dans l'autre il tient encore de quoi vider le pool. **Une photo ne distingue pas les deux.**
+
+#### Le collecteur : `intel/research/stock_collecte.py`
+
+Quatre photos de `getTokenLargestAccounts` aux âges 15, 25, 35, 45 s, dans sa propre base
+`papier_stock.sqlite`. Il stocke des FAITS BRUTS — parts cumulées, portefeuilles, offre, coffre — et
+aucune variable dérivée : « a-t-il vendu ? » se calcule à l'analyse, ce qui permet de la reformuler
+quand elle montrera un motif monotone (règle 3 de la discipline).
+
+Coût mesuré : **270 ms en médiane, 2,8 s au pire**, trois appels RPC par photo. Un tour est borné à
+la fois en nombre (12) et **en temps (6 s)**, et les photos sont classées par fenêtre la plus proche
+de se fermer : sans ça une photo lente en faisait rater trois autres.
+
+#### Piège n°1 — le plus gros détenteur est TANTÔT le coffre du pool, TANTÔT un portefeuille
+
+Le premier essai donnait `s1 = 79,3 %` sur deux jetons et `s5 = s20 = 100 %`. Vérification sur six
+pools, en comparant le plus gros compte au compte de réserve du pool :
+
+| jeton | s1 | est-ce le coffre ? |
+|---|---|---|
+| `RCLi3Q5gRpqf` | 79,3 % | non — un vrai portefeuille |
+| `qDPBddfjjcZk` | 79,4 % | non — un vrai portefeuille |
+| `6TcJ4MJsxyo1` | 54,8 % | **oui, le coffre** |
+| `GmJAEGGte1y6` | 50,1 % | **oui, le coffre** |
+
+**Ce sont les deux situations les plus opposées qui soient** : dans l'une l'offre est enfermée dans
+le pool et personne ne peut la déverser, dans l'autre un seul acteur tient de quoi vider le pool
+plusieurs fois. Non corrigé, `s1` leur donnait exactement le même chiffre. C'est le piège qui avait
+déjà rendu `sac_wallet` inutilisable (654 jetons, 654 portefeuilles distincts : c'était le coffre,
+unique par construction).
+
+La correction ne coûte rien : **`pair_id` EST l'adresse du pool**, donc le coffre est le compte dont
+le propriétaire est le pool. Aucun `getProgramAccounts` — l'appel à 15 s de timeout — n'est
+nécessaire. Vérifié : le coffre est reconnu sur 5 pools sur 6.
+
+#### Piège n°2 — `getTokenLargestAccounts` rend des comptes-jetons, pas des portefeuilles
+
+Un portefeuille a un compte-jeton **différent par jeton**. Garder l'adresse technique interdisait de
+reconnaître un même acteur d'un lancement au suivant — c'est-à-dire précisément la suite de
+l'hypothèse (financement commun, achats synchronisés, transferts entre eux). `getMultipleAccounts`
+donne le propriétaire (octets 32-64 d'un compte SPL) pour les vingt comptes **en un seul appel**.
+
+#### Premier échantillon, et le risque qu'il montre déjà
+
+Deux jetons complets, quatre photos chacun. Ils illustrent parfaitement les deux états :
+
+| jeton | plus gros **portefeuille** | top-20 hors pool |
+|---|---|---|
+| `2ZQmqyyrtP2T` | 3,8 % — le stock est dans le pool | 53,0 % |
+| `DeBEtV2ycUcZ` | **44,0 %** — un seul acteur | 82,7 % |
+
+**Mais aucun des deux n'a bougé d'un point entre 15 et 45 s.** Si c'est général, le « film »
+n'apporte rien sur la « photo », et la photo est déjà mesurée perdante (−169 €). **C'est la première
+chose à mesurer, avant toute variable de décision** : quelle est la dispersion de `s1_hp` entre 15 et
+45 s ? Si elle est nulle, la piste est close, et c'est un résultat utile — Mido l'avait prévu :
+« on pourrait aussi découvrir que cette transition n'arrive presque jamais ».
+
+#### Ce que ça ne donnera pas, et il faut le savoir AVANT de mesurer
+
+Le lien entre portefeuilles. Si le gros détenteur transfère à trois complices au lieu de vendre, la
+concentration baisse et on croira à une distribution alors que le stock est intact. **Ce biais va
+dans le mauvais sens : il fait paraître bons des cas qui ne le sont pas.** Le reconstruire
+demanderait les transactions du pool — `getSignaturesForAddress` bloque plusieurs minutes sur un
+jeton actif, et 98 % des sorties passent par un routeur (§3.42) — donc hors de portée en 45 s.
+
+#### Le critère du verdict, écrit AVANT les données
+
+Reformulation du test décisif de Mido : *à âge, mouvement récent et liquidité comparables, cet état
+du stock prédit-il un meilleur rendement réellement exécutable ?* Donc :
+
+1. **Au moins 300 jetons complets** (4 photos, sans erreur), sinon rien n'est conclu.
+2. Le verdict se juge **après le coût mesuré de 2,62 pts**, sur des lancements **postérieurs** à ce
+   gel, et **sans les 3 meilleurs tickets**.
+3. Comparaison à âge/liquidité comparables, et à un **tirage aléatoire de même taille** — une règle
+   qui garde peu de tickets doit battre le hasard, pas la moyenne générale.
+4. La part d'ex æquo est affichée à côté de chaque variable (règle 2).
+
+Surveillé par le gardien. 14 tests le protègent (`tests/intel_tests/test_stock_collecte.py`), dont
+un qui interdit au collecteur de contenir le moindre mot de décision.
