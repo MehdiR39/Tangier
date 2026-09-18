@@ -14,14 +14,17 @@ est reel. En argent, une seule cellule est positive sans ses 3 meilleurs tickets
 surs, +4,40 % par ticket, 91 % de gagnants, 58 tickets, p ~ 0,12 (§3.140). Changer de modele
 (§3.136) ou de cible (§3.141) ne l ameliore pas. Seuls des tickets peuvent la confirmer ou la tuer.
 
-LA REGLE, EXECUTABLE ET CAUSALE.
+LA REGLE, EXECUTABLE ET CAUSALE -- UN MODELE FIGE, comme tous les gels de ce projet.
+  Mido, 23h20 : « c est pas comme ca qu on fait ». Juste : `ensemble_vidage.json` et
+  `foret_vidage.json` sont des poids FIGES, notes sur les tickets suivants, jamais reentraines. Une
+  regle qui se reentraine n est pas gelee. Donc :
+    0. UNE SEULE FOIS, au gel : entrainer sur tout ce qui precede (1 409 tickets), choisir les 25
+       variables, calculer les seuils (quantiles 0,95 et 0,90 des scores d entrainement), sauver.
+       Ensuite plus jamais : tant que modele.pkl existe, entrainer() ne fait rien.
   Toutes les PAS_H heures :
-    1. rebatir la table unique (tout_table) ;
-    2. NOTER les tickets nes depuis le dernier passage avec le modele sauve AU PASSAGE PRECEDENT --
-       donc entraine avant leur naissance : c est la marche avant, faite en avant ;
-    3. renseigner le resultat (ret_240) des tickets notes qui l ont maintenant ;
-    4. reentrainer sur tout ce qui precede, calculer les seuils (quantiles 0,95 et 0,90 des scores
-       d ENTRAINEMENT), sauver pour le passage suivant.
+    1. rebatir la table unique (tout_table) -- il faut les 107 variables des nouveaux tickets ;
+    2. NOTER les tickets nes depuis le gel avec le modele fige ;
+    3. renseigner le resultat (ret_240) des tickets notes qui l ont maintenant.
   Un ticket est RETENU si sa probabilite >= seuil des 5 % les plus surs. Le seuil a 10 % est note
   a cote pour lecture, pas pour decision.
   Seuls les tickets AVEC donnees de transactions sont notes (le collecteur v1 s arrete au quota).
@@ -56,9 +59,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 GEL = 1789765800.0                    # 18/09/2026 21h10 UTC = 23h10 Paris (heure REELLE du lancement amende)
 N_VARIABLES = 25                      # les 25 plus utiles sur le passe, a chaque reentrainement
-DOSSIER = "/app/data/recherche/foret_gel"
+# DEUX GELS, MEME REGLE, MEME CRITERE, DEUX INSTANTS DE DECISION (§3.145, 18/09 23h45) :
+#   45 : transactions <= 45 s, entree <= 47 s   (ce qui a ete mesure en premier)
+#   75 : transactions <= 60 s (toute la premiere minute), entree <= 77 s -- branchable TEL QUEL sur
+#        le pipeline actuel, qui lit les transactions a 70 s. En argent les deux sont indiscernables
+#        (+1,90 contre +1,74 au top 5 %, dans le bruit) : ce sont les tickets qui trancheront.
+AGE_DECISION = int(os.environ.get("AGE_DECISION", "45"))
+_SUF = "" if AGE_DECISION == 45 else str(AGE_DECISION)
+DOSSIER = "/app/data/recherche/foret_gel" + _SUF
 TABLE = "/app/data/recherche/tout/table.pkl"
-BASE = "/app/db/papier_foret.sqlite"
+BASE = "/app/db/papier_foret%s.sqlite" % _SUF
 COUT = 0.0655
 PAS_H = 6
 N_CRITERE, JOURS_CRITERE = 250, 21
@@ -81,6 +91,14 @@ def table() -> tuple[pd.DataFrame, list[str]]:
     df = pd.read_pickle(TABLE)
     variables = [v for v in df.attrs["VARIABLES"] if v not in EXCLUES]
     df = df[(df["eligible"] == 1) & df["v1_n_achats"].notna()].sort_values("t_dec").reset_index(drop=True)
+    if AGE_DECISION == 75:
+        # toute la premiere minute de transactions, et l entree au dernier prix <= 77 s
+        import decision_75
+        tout_table.AGE_V1 = 60
+        df = tout_table.transactions(df.drop(columns=[c for c in df.columns if c.startswith("v1_")]))
+        df = decision_75.prix(df, 77, sorties=(240,))
+        df["ret_240"] = df["r77_240"]
+        df = df[df["v1_n_achats"].notna()].reset_index(drop=True)
     X = df[variables].apply(pd.to_numeric, errors="coerce").astype(float)
     garde = [v for v in variables if X[v].notna().sum() >= 100 and X[v].nunique(dropna=True) >= 2]
     df[garde] = X[garde]
@@ -88,6 +106,8 @@ def table() -> tuple[pd.DataFrame, list[str]]:
 
 
 def entrainer(df: pd.DataFrame, garde: list[str], now: float) -> None:
+    if os.path.exists(os.path.join(DOSSIER, "modele.pkl")):
+        return                                     # FIGE : on n entraine qu une fois, au gel
     A = df[(df["t_dec"] < now) & df["ret_240"].notna()]
     if len(A) < 300:
         print("foret_gel: %d tickets, trop peu pour entrainer" % len(A), flush=True)
@@ -122,7 +142,7 @@ def noter(c: sqlite3.Connection, df: pd.DataFrame) -> int:
     s = json.load(open(os.path.join(DOSSIER, "seuils.json")))
     garde = s["garde"]
     deja = {p for (p,) in c.execute("SELECT pair FROM decision")}
-    N = df[(df["t_dec"] >= s["modele_t"]) & ~df["pair"].isin(deja)]
+    N = df[(df["t_dec"] >= GEL) & ~df["pair"].isin(deja)]
     if N.empty:
         return 0
     XN = N[garde].fillna(m["med"]).fillna(0.0)
@@ -177,9 +197,9 @@ def main() -> None:
         t0 = time.time()
         try:
             df, garde = table()
+            entrainer(df, garde, GEL)              # ne fait quelque chose qu une fois : au gel
             n = noter(c, df)
             resultats(c, df)
-            entrainer(df, garde, t0)
             print("foret_gel: %d ticket(s) note(s) ce passage" % n, flush=True)
             rapport(c)
         except Exception as exc:  # noqa: BLE001
