@@ -330,8 +330,11 @@ class ModeleRapide:
                     " WHERE mint=?", (now, h, "sortie a %d s" % TENUE_S, l["mint"]))
                 log.info("modele_rapide: VENTE %s — %s", str(l["mint"])[:10], h[:16])
                 self._echecs.pop(mint, None)
-                await self._prevenir("🔵 <b>%s…</b> vendu à 240 s%s"
-                                     % (mint[:8], self._cumul()))
+                # PAS D ALERTE ICI. La vente vient de partir, son resultat n est pas encore lu sur
+                # la chaine : un message a cet instant repeterait le cumul PRECEDENT et donnerait
+                # l illusion que le ticket est compte deux fois -- c est exactement ce que
+                # l operateur a vu sur son telephone. Un seul message porte un chiffre, celui du
+                # comptage, et il arrive quelques secondes plus tard.
             except Exception as exc:  # noqa: BLE001
                 await self._echec_vente(mint, str(exc)[:80], now)
 

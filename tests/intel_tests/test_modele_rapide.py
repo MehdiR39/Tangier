@@ -132,3 +132,11 @@ def test_un_solde_illisible_ne_passe_pas_en_silence():
     src = inspect.getsource(mr.ModeleRapide._sortir)
     i = src.index("token_balance")
     assert "_echec_vente" in src[i:i + 400], "un solde illisible doit compter comme un echec de vente"
+
+
+def test_un_seul_message_porte_un_chiffre():
+    """Le message de vente repeterait le cumul PRECEDENT : le ticket semblerait compte deux fois."""
+    src = inspect.getsource(mr.ModeleRapide._sortir)
+    assert "_cumul()" not in src, "la vente ne doit pas afficher de cumul, il n est pas encore a jour"
+    assert "_cumul()" in inspect.getsource(mr.ModeleRapide._compter), \
+        "le cumul s affiche au COMPTAGE, seul instant ou il est juste"
