@@ -6451,3 +6451,64 @@ du stock prédit-il un meilleur rendement réellement exécutable ?* Donc :
 
 Surveillé par le gardien. 14 tests le protègent (`tests/intel_tests/test_stock_collecte.py`), dont
 un qui interdit au collecteur de contenir le moindre mot de décision.
+
+
+---
+
+### 3.124 — `sac1` empilait deux états opposés : `expert_detenteurs` ne ferme pas la concentration, 2026-09-18 17h00
+
+En corrigeant le collecteur de stock, une question s'est imposée : **`social_collecte` exclut-il le
+coffre du pool ?** Non. Donc `sac1` — la variable sur laquelle `expert_detenteurs` a fait −169 € et
+sur laquelle j'ai fermé la piste de la concentration — mesurait tantôt le coffre, tantôt un
+portefeuille.
+
+Diagnostic sur 571 jetons ayant à la fois une mesure de détenteurs et un résultat, en résolvant le
+propriétaire de chaque compte-jeton (octets 32-64) et en le comparant à l'adresse du pool :
+
+| le plus gros détenteur était | n | `sac1` médian |
+|---|---|---|
+| le **coffre du pool** | 209 | 20,3 % |
+| un **vrai portefeuille** | 106 | 78,6 % |
+| compte fermé, non classable | 256 | — |
+
+**20,3 % contre 78,6 % : ce ne sont pas des mesures bruitées autour d'une même grandeur, ce sont
+deux variables empilées**, et elles décrivent les situations les plus opposées qui soient.
+
+#### Mais l'écart de rendement ne peut PAS être cru, et la raison est instructive
+
+| groupe | n | moyenne | médiane |
+|---|---|---|---|
+| coffre | 209 | −9,94 % | −16,96 % |
+| vrai portefeuille | 106 | −2,77 % | −1,49 % |
+| **compte fermé, écarté** | **256** | **−2,49 %** | **+13,98 %** |
+
+Sept points d'écart entre les deux premiers, même signe sur les deux moitiés, 86,4 % contre le
+hasard. Tentant. **Et faux.**
+
+Pour classer un jeton d'hier il faut résoudre le propriétaire de son compte **aujourd'hui**. Un
+compte fermé ne se relit plus — vérifié un par un avec `getAccountInfo`, ce ne sont pas des échecs
+d'appel groupé. Donc **« le compte est-il encore lisible ? » est une information du FUTUR par rapport
+à la décision à 45 s**, et elle est massive : +13,98 % de médiane pour les non-classables contre
+−2,60 % pour les classables, seize points.
+
+Classer là-dessus, c'est trier avec le résultat — **la même famille d'erreur que le `sort()` sur
+`(prédicteur, résultat)`** qui avait produit un faux Q3 à +30,64 % (règle 2). Je l'ai évitée
+uniquement parce que j'avais écrit « mesurer le groupe écarté » dans le critère avant de regarder.
+
+#### Ce que ça change vraiment
+
+1. **Le verdict −169 € d'`expert_detenteurs` ne ferme pas la question de la concentration.** Il
+   condamne `sac1` tel qu'il était mesuré. La grandeur qu'il prétendait mesurer n'a jamais été testée.
+2. **L'histoire ne peut pas répondre.** Toute reconstruction rétrospective de « qui détenait quoi »
+   passe par des comptes dont la survie dépend du résultat. Seule une collecte **en avant** le peut.
+3. **C'est précisément ce que fait `stock_collecte.py`** (§3.123), qui résout le propriétaire à
+   15–45 s, quand le compte existe forcément. Construire le collecteur était donc le bon choix, pour
+   une raison que je n'avais pas vue en le construisant.
+4. Le sous-découpage lourd/léger parmi les portefeuilles **échoue** : signe opposé entre les deux
+   moitiés, 76,9 % contre le hasard (il en faut 95). Rien là, et de toute façon il hérite du biais.
+
+**Nouvelle règle de discipline, la 11 :** *avant de classer des données passées avec une lecture
+faite maintenant, se demander si la lecture aurait pu échouer pour une raison liée au résultat.* Un
+compte fermé, un jeton disparu, une page supprimée : l'absence est rarement au hasard.
+
+Script : `intel/research/sac_diagnostic.py`.
