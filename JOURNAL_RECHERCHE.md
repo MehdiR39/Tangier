@@ -7316,5 +7316,6 @@ avantage hors chiffres : il est branchable tel quel sur le pipeline actuel, sans
 **Décision : les deux gels tournent, même règle, même critère, chacun sa base** — `foret_gel`
 (45 s, `papier_foret.sqlite`) et `foret_gel75` (75 s, `papier_foret75.sqlite`), sous le gardien,
 dans la table (`FORET 45s` / `FORET 75s`, top 5 % gelé, top 10 % en lecture). Seuils au premier
-entraînement : 45 s → 0,838 ; 75 s → 0,866. Ce sont les tickets qui trancheront, et si les deux
+entraînement (25 variables) : 45 s → 0,857 ; 75 s → 0,866. (Le 45 s a dû être relancé une
+troisième fois à 23h55 : mon contrôle « déjà en marche » se reconnaissait lui-même — noté en mémoire.) Ce sont les tickets qui trancheront, et si les deux
 valent pareil, c'est le 75 s qui pourra passer en réel sans rien construire.
