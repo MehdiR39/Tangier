@@ -5373,6 +5373,61 @@ d'exécution : appel RPC 41 ms contre un slot Solana de ~270 ms — le plancher 
 réseau, il n'y a rien à y gagner. Reste ouvert le **#1**, la cadence d'observation (20 s en
 production contre 1 s dans le code d'aujourd'hui), que `prix_rapide` permettra de trancher.
 
+### 3.116 — On ne peut pas éviter les grosses pertes, mais on peut DOUBLER les gros gains, 2026-09-18 10h00
+
+**Question de Mido : « le problème vient des grosses pertes, peut-on les éviter, les prévoir ? »**
+La réponse mesurée retourne la question.
+
+**PRÉVOIR LA CATASTROPHE : NON.** Cible `brut_240 <= -70 %` (219 tickets sur 1 872, 11,7 %), toutes
+les variables disponibles à 45 s testées, coupe chronologique, barre de bruit tirée d'une variable
+aléatoire **continue** (|AUC−0,5| = 0,005). La meilleure, `risque`, tient hors échantillon
+(AUC 0,642 puis **0,674**) — mais son AUC sur les **gros gains** vaut **0,730**, *du même côté*.
+Idem pour `vol` (0,643 / 0,686) et `q` (0,371 / 0,271). **Écarter le danger écarte le gain**, pour
+la énième fois.
+
+**UNE SEULE EXCEPTION, ET ELLE N'EST PAS UN SEUIL TAILLÉ DANS LES DONNÉES.** `depuis_min` =
+prix à 45 s rapporté à son minimum depuis la naissance. AUC catastrophe 0,563 contre AUC gros-gain
+0,481 : les deux partent de **côtés opposés**, seule variable dans ce cas. Et son premier quintile
+est la valeur **exactement zéro** — c'est-à-dire *le prix à 45 s EST son plus bas depuis la
+naissance*. Le jeton n'a fait que descendre, il n'a pas rebondi. Pas de seuil à optimiser : la
+frontière est naturelle.
+
+**CE QUE ÇA DÉPLACE** (418 tickets contre 1 454 ; tests de PERMUTATION, 5 000 mélanges) :
+
+| | au plus bas | le reste | rapport | p |
+|---|---|---|---|---|
+| gros gains ≥ +50 % | **19,6 %** | 8,5 % | **×2,32** | **< 0,0001** |
+| très gros ≥ +100 % | **8,6 %** | 3,0 % | **×2,87** | **< 0,0001** |
+| catastrophes ≤ −70 % | 13,4 % | 11,2 % | ×1,20 | **0,232 — non significatif** |
+| chutes ≤ −50 % | 25,8 % | 19,0 % | ×1,36 | 0,0018 |
+| gagnants | 46,4 % | 64,9 % | ×0,72 | < 0,0001 |
+
+**On ne supprime pas la queue gauche : on épaissit la queue droite.** On gagne nettement moins
+souvent et beaucoup plus gros. C'est la première fois dans ce projet qu'une variable sépare la vie
+du danger.
+
+**CE QU'IL NE FAUT PAS SE RACONTER.** Le NET n'est pas démontré : +1,07 % contre −2,45 % pour le
+témoin, mais **p = 0,098** contre un tirage au hasard de même taille, deuxième moitié chronologique
+négative (−0,69 %), et **négatif en retirant ses trois meilleurs tickets** (−1,07 %). Par jour :
++274 / −77 / +201 / **−287 EUR**. Ce qui est solide, c'est le déplacement des TAUX ; l'argent ne
+l'est pas.
+
+**`intel/research/au_plus_bas.py`, gelé à 08h00 UTC.** Choix de conception à retenir : **le critère
+porte d'abord sur le taux, pas sur l'argent**, parce que l'écart-type du net est de **74 points par
+ticket** — détecter +3,5 pt demanderait **3 503 tickets**, là où un rapport de gros gains de 1,8 se
+tranche en **352**. On juge d'abord ce qui est mesurable, et on exige quand même que l'argent suive.
+Critère figé, à 800 tickets ou 21 jours (flux : 151/jour) : (a) gros gains ≥ 1,5× les autres,
+(b) catastrophes ≤ 1,5× les autres, (c) net positif après 2,62 pts **sur les deux moitiés**.
+
+**LE COÛT N'A PAS ÉTÉ TOUCHÉ, et voici pourquoi.** Mido a demandé si 2,62 avait bougé depuis hier.
+Il ne peut pas être remesuré sans trading — c'est une mesure sur des exécutions réelles. Ses
+ingrédients, eux, sont observables : coffre médian à 40–60 s **74 SOL pendant les tickets réels,
+74 SOL aujourd'hui** (identique ; seule la queue bouge, p25 de 0 à 33), frais de priorité inchangés,
+SOL à 92,11 EUR contre ~100 supposés en config. Le modèle d'impact donnerait −0,22 pt, mais c'est un
+MODÈLE — celui-là même qui s'était déjà trompé de 0,14 pt face à la calibration — et l'écart vient
+entièrement de la queue des petits coffres. **On reste à 2,62.** À la reprise du trading, relancer
+`calibration_corrigee.py` sur les premiers tickets avant de publier le moindre chiffre.
+
 ## 4. Pistes ouvertes, non testées
 
 1. **Le carnet à blanc doit jouer les variantes, pas seulement les pools WETH.** Aujourd'hui il ne
