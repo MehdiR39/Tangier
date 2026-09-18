@@ -6687,7 +6687,7 @@ quart du flux — un flux dont on a mesuré qu'il perd.
 
 ---
 
-### 3.128 — Le scope large : 19 494 tests croisés, et rien que le hasard ne produise, 2026-09-18 22h30
+### 3.128 — Le scope large : 19 494 tests croisés, et rien que le hasard ne produise, 2026-09-18 21h33
 
 Mido : *« je te dis tout tout tout tout. Il faut partir d'un scope très large et réduire, affiner. »*
 Et son diagnostic : chaque variable avait été testée **seule**, jamais croisée.
@@ -6744,7 +6744,7 @@ que pour chaque variable prise seule. Ce n'est plus « on n'a pas assez cherché
 
 ---
 
-### 3.129 — Trois idées à moi, testées le soir même : être le pool, les survivants, un autre marché. Trois morts, 2026-09-18 23h30
+### 3.129 — Trois idées à moi, testées le soir même : être le pool, les survivants, un autre marché. Trois morts, 2026-09-18 22h05
 
 Mido : *« si je dois fournir l'idée autant la tester moi-même, à quoi sers-tu ? »* Juste. Toutes les
 pistes du jour venaient de lui. Voilà les miennes, et ce que la machine en a fait.
@@ -6787,7 +6787,7 @@ qui ait encore une valeur d'information.
 
 ---
 
-### 3.130 — Réentraîner `risque` jusqu'à 18h : pire après 18h, 2026-09-18 22h40
+### 3.130 — Réentraîner `risque` jusqu'à 18h : pire après 18h, 2026-09-18 22h19
 
 Mido : *« si tu réentraînes risque seul jusqu'à aujourd'hui 18h, améliore-t-il les données après 18h ? »*
 
@@ -6813,7 +6813,7 @@ L'information ne dérive pas ; elle est faible, et le péage la mange, frais ou 
 
 ---
 
-### 3.131 — Réentraîner l'ensemble de 12 et la forêt jusqu'à 18h : rien de stable non plus, 2026-09-18 23h05
+### 3.131 — Réentraîner l'ensemble de 12 et la forêt jusqu'à 18h : rien de stable non plus, 2026-09-18 22h23
 
 Mido : *« entraîne 12 modèles »*. Même test que §3.130, même recette que les fichiers en service,
 sur **grande table (26 566 lignes, 09→15/09) + carnet papier jusqu'à la coupe** — strictement plus
@@ -6843,7 +6843,7 @@ classement existe faiblement, le niveau est négatif, et le péage de 6,55 tient
 
 ---
 
-### 3.132 — Marche avant : réentraîner toutes les 6 h et trier à 30 %, sur toute la période — non, 2026-09-18 23h30
+### 3.132 — Marche avant : réentraîner toutes les 6 h et trier à 30 %, sur toute la période — non, 2026-09-18 22h26
 
 Mido : *« si on fait −0,71 % sur une journée compliquée c'est pas mal non ? »* La bonne question
 n'est pas une fenêtre mais toutes : `marche_avant.py`, 11 coupes de 6 h du 16/09 00h au 18/09 18h,
@@ -6885,7 +6885,7 @@ rapportent, catastrophes ou pas.
 
 ---
 
-### 3.133 — Une forêt sur TOUT (107 variables) : premier total positif d'une marche avant, +0,41 % — et pourquoi ça ne suffit pas, 2026-09-18 23h55
+### 3.133 — Une forêt sur TOUT (107 variables) : premier total positif d'une marche avant, +0,41 % — et pourquoi ça ne suffit pas, 2026-09-18 22h30
 
 Mido : *« on a construit une forêt en croisant toutes nos variables, réseau, prix, image ? »*
 **Non** — les modèles en service n'utilisent que 19 variables de prix. Fait ce soir :
@@ -6934,7 +6934,7 @@ collecteur v1 s'est arrêté le 18/09 09h13, quota Helius).
 
 ---
 
-### 3.134 — La même forêt, restreinte aux tickets qui ont des données de transactions : +1,05 %, 72 % de gagnants, v1 à 60 %, 2026-09-19 00h20
+### 3.134 — La même forêt, restreinte aux tickets qui ont des données de transactions : +1,05 %, 72 % de gagnants, v1 à 60 %, 2026-09-18 22h35
 
 Vérification de §3.133 : la forêt ne voit plus jamais de trou comblé à la médiane sur la famille
 qu'elle préfère. Couverture réelle du collecteur v1 : **16/09 et 17/09 à toutes les heures**
@@ -6965,7 +6965,7 @@ Loi du maximum lancée dans la foulée : 12 marches avant complètes avec les r�
 
 ---
 
-### 3.135 — Loi du maximum sur la marche avant : +1,05 % est au 83ᵉ centile du hasard, pas au 95ᵉ, 2026-09-19 00h35
+### 3.135 — Loi du maximum sur la marche avant : +1,05 % est au 83ᵉ centile du hasard, pas au 95ᵉ, 2026-09-18 22h37
 
 12 marches avant complètes (9 fenêtres, forêt de gain 30 %, `V1_SEUL=1`) avec les **résultats
 permutés entre tickets**, variables intactes :
@@ -6991,7 +6991,7 @@ encore une valeur d'information dans ce projet, et elle se chiffre en crédits R
 
 ---
 
-### 3.136 — Pousser la modélisation à l'intérieur de la marche avant : sept variantes, 2026-09-19 01h05
+### 3.136 — Pousser la modélisation à l'intérieur de la marche avant : sept variantes, 2026-09-18 22h44
 
 Mido : *« avant de geler, peut-on pousser la modélisation ? feature selection avec RF, toute autre
 idée »*. Fait, avec la seule discipline qui tienne : **chaque choix se fait sur les données
@@ -7025,7 +7025,7 @@ retenue à chaque fois (`NULLS=8`, ~80 min).
 
 ---
 
-### 3.137 — Barre du hasard sur le choix de la meilleure des sept variantes : un tirage sur huit fait mieux, 2026-09-19 02h20
+### 3.137 — Barre du hasard sur le choix de la meilleure des sept variantes : un tirage sur huit fait mieux, 2026-09-18 22h53
 
 8 marches avant complètes, résultats permutés, **meilleure des sept variantes retenue à chaque
 fois** — le maximum sous permutation de la procédure entière :
@@ -7053,7 +7053,7 @@ définition d'une direction, pas d'un edge, et elle est stable d'un test à l'au
 
 ---
 
-### 3.138 — « T'es sûr ? » : le 60 % des transactions était gonflé par le biais d'impureté, la vraie part est 44 %, 2026-09-19 02h40
+### 3.138 — « T'es sûr ? » : le 60 % des transactions était gonflé par le biais d'impureté, la vraie part est 44 %, 2026-09-18 22h57
 
 Mido : *« mec t'es sûr de ce que tu racontes ? »* Non, pas de tout — et le point le moins sûr était
 celui qui portait la « direction ». L'importance d'impureté des forêts **favorise mécaniquement
@@ -7090,7 +7090,7 @@ familles mélangent continues et binaires.*
 
 ---
 
-### 3.139 — Le classement gagnant/perdant EST réel : AUC 0,65–0,82 sur 9 fenêtres sur 9, chacune au-dessus du max de 20 permutations, 2026-09-19 02h55
+### 3.139 — Le classement gagnant/perdant EST réel : AUC 0,65–0,82 sur 9 fenêtres sur 9, chacune au-dessus du max de 20 permutations, 2026-09-18 22h58
 
 Vérification du 0,787 de §3.138 sur toutes les fenêtres. Forêt de gain (P(net_240 > 0), 300 arbres,
 toutes les variables, `V1_SEUL`), entraînée sur tout ce qui précède chaque coupe, jugée sur les 6 h
@@ -7128,7 +7128,7 @@ permutations sur le choix de la meilleure coupe.
 
 ---
 
-### 3.140 — Pourquoi un classement réel ne fait pas d'argent : le modèle trouve des survivants modestes, pas des fusées, 2026-09-19 03h05
+### 3.140 — Pourquoi un classement réel ne fait pas d'argent : le modèle trouve des survivants modestes, pas des fusées, 2026-09-18 22h59
 
 Courbe de sélectivité de la forêt de gain, 9 fenêtres additionnées, coût 6,55 :
 
@@ -7175,7 +7175,7 @@ précise à surveiller (le top 5 % et sa calibration).
 
 ---
 
-### 3.141 — Changer la cible (> +5, +10, +20 %) : le modèle reconnaît la survie, pas la taille, 2026-09-19 03h30
+### 3.141 — Changer la cible (> +5, +10, +20 %) : le modèle reconnaît la survie, pas la taille, 2026-09-18 23h04
 
 Suite directe de §3.140. Si le modèle « > 0 » choisit des survivants modestes, l'entraîner à
 reconnaître « > +10 % » devrait choisir des gagnants plus gros. `selectivite.py`, 9 fenêtres.
@@ -7205,7 +7205,7 @@ peuvent la confirmer ou la tuer.**
 
 ---
 
-### 3.142 — GEL : forêt de gain, top 5 %, papier, 2026-09-19 04h00
+### 3.142 — GEL : forêt de gain, top 5 %, papier, 2026-09-18 23h08
 
 Mido : *« on fait quoi, on gèle et on reste en condition opérationnelle ? »* Oui. Comme chaque gel
 de la semaine : le critère écrit avant, le test en papier, jugé sur les tickets postérieurs,
@@ -7231,14 +7231,14 @@ règles avant lui qui avaient l'air aussi bonnes à 58 tickets.
 21 jours tombera probablement d'abord. Couvrir 100 % des heures est une décision de quota, pas de
 recherche.
 
-**État opérationnel à 04h00 :** carnet réel arrêté (−158,85 €, plafond) · 6 processus sous le
+**État opérationnel à 23h08 :** carnet réel arrêté (−158,85 €, plafond) · 6 processus sous le
 gardien (papier_combo, social_collecte, prix_rapide, stock_collecte, foret_gel, + v1_enregistreur
 lancé à part) · stock : les 300 dans la matinée · 9 gels en cours. **Plus rien ne se construit.**
 
 
 ---
 
-### 3.143 — Deux questions de Mido : quoi d'autre pour le modèle, et d'autres familles (réseaux, XGBoost, CatBoost) ?, 2026-09-19 04h15
+### 3.143 — Deux questions de Mido : quoi d'autre pour le modèle, et d'autres familles (réseaux, XGBoost, CatBoost) ?, 2026-09-18 23h10
 
 **Améliorer le modèle, par rendement mesuré cette nuit :**
 1. **Des tickets.** Marge ±3,1 pt à 370 tickets (écart-type 59 pts) ; aucun réglage n'a déplacé un
@@ -7269,9 +7269,21 @@ lancé à part) · stock : les 300 dans la matinée · 9 gels en cours. **Plus r
 Le gel (§3.142) reste tel quel.
 
 
-**Amendement de §3.142, 04h30 — avant le premier ticket noté.** Mido : *« go 1 »* (moins de
+**Amendement de §3.142, 23h13 — avant le premier ticket noté.** Mido : *« go 1 »* (moins de
 variables). Le gel de 04h00 n'avait encore noté aucun ticket (son premier passage ne fait
 qu'entraîner). Règle amendée : à chaque réentraînement, **une première forêt classe les variables
 par utilité sur le passé, on garde les 25 premières, on réentraîne dessus** — la variante mesurée à
-+1,89 % (sans-3 −0,54) en §3.136. Gel re-daté à 04h30, base et modèle repartis de zéro. Aucune
++1,89 % (sans-3 −0,54) en §3.136. Gel re-daté à 23h13, base et modèle repartis de zéro. Aucune
 donnée postérieure au gel n'a été regardée. Le critère ne change pas.
+
+
+---
+
+### 3.144 — Heures inventées, encore : les en-têtes de §3.128 à §3.143 sont corrigés d'après git, 2026-09-18 23h15
+
+Je n'ai pas relu l'horloge après 22h14 et j'ai daté quinze sections de tête — jusqu'à « 04h30 du
+19/09 » alors qu'il était **23h13 le 18/09**. La même faute que ce matin (§3.125, « 20h15 » pour
+19h03). Les heures ci-dessus sont maintenant celles des commits (`git log --date`), à la minute.
+La date du gel de la forêt, écrite « 04h30 » et donc **dans le futur**, est ramenée à l'heure
+réelle du lancement. **Règle 18 : une heure ne s'écrit qu'après avoir été lue — `date`, ou l'heure
+du commit — jamais estimée.**

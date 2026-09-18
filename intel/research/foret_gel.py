@@ -1,6 +1,6 @@
-"""FORET DE GAIN, 25 VARIABLES, TOP 5 % -- GELEE le 19/09/2026 a 04h30 Paris. Papier, zero euro.
+"""FORET DE GAIN, 25 VARIABLES, TOP 5 % -- GELEE le 18/09/2026 a 23h10 Paris. Papier, zero euro.
 
-AMENDEMENT AVANT LE PREMIER TICKET. Gelee a 04h00 sur les 72 variables ; a 04h30, AUCUN ticket
+AMENDEMENT AVANT LE PREMIER TICKET. Gelee a 23h08 sur les 72 variables ; a 23h13, AUCUN ticket
 n avait encore ete note (le premier passage ne fait qu entrainer). Mido : « go 1 » -- moins de
 variables. La seule modification de modelisation qui ait aide en marche avant (§3.136 : selection
 des 25 plus utiles a chaque coupe, +1,89 % contre +1,05 %, sans-3 -0,54 contre -1,30). Regle
@@ -54,7 +54,7 @@ from sklearn.ensemble import RandomForestClassifier
 warnings.filterwarnings("ignore")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-GEL = 1789785000.0                    # 19/09/2026 02h30 UTC = 04h30 Paris (amende, voir en-tete)
+GEL = 1789765800.0                    # 18/09/2026 21h10 UTC = 23h10 Paris (heure REELLE du lancement amende)
 N_VARIABLES = 25                      # les 25 plus utiles sur le passe, a chaque reentrainement
 DOSSIER = "/app/data/recherche/foret_gel"
 TABLE = "/app/data/recherche/tout/table.pkl"
