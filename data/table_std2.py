@@ -42,7 +42,13 @@ DERNIER = auj.strftime("%d/%m")
 res, debuts = defaultdict(lambda: defaultdict(list)), {}
 
 
+SERIE = {}                 # nom -> [(instant, rendement net)] : pour comparer chacun au TEMOIN
+                           # sur SA propre periode. « tout le monde gagne » n est pas un resultat :
+                           # le seul critere est de faire mieux que prendre tout sans filtre.
+
+
 def ranger(nom, t, r):
+    SERIE.setdefault(nom, []).append((t, r))
     # la journee en cours compte DEUX fois : dans son total a jour, et dans la tranche
     # « depuis le dernier point » qui montre ce qui vient de s ajouter.
     if j(t) != DERNIER:
@@ -374,7 +380,7 @@ ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + 
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
 print("COUT : %.2f pt PARTOUT (cases et total). Mesure sur les 92 tickets reels du 18/09, transactions relues sur la"
       " chaine : 4,25 pt · moins la caution recuperee (1,06) · moins la priorite d achat divisee par 5 (0,21)."
-      % (100 * COUT_MESURE))
+      % (100 * (COUT_MESURE if CAUTION else COUT_MESURE - DEPOT / (SOL_EUR * MISE))))
 print("  ce qui reste, structurel : swap 1,90 (0,94 %/jambe) · impact 0,20 · priorite vente 0,26 · dispersion 0,6.")
 print("")
 print("* ENTREE T+75 : AUTRE population -- les jetons Telegram (ceux de la production), pas le flux papier_combo.")
@@ -422,6 +428,29 @@ for nom in ORDRE:
             nom, dt.datetime.fromtimestamp(debuts[nom] + 7200, dt.timezone.utc).strftime("%d/%m %Hh%M"),
             " ".join(cel), tot, n_tot))
 
+
+# ---------------------------------------------------------------- BATTRE LE MARCHE
+# Chaque strategie contre le TEMOIN sur SA propre fenetre : meme marche, meme periode, seule la
+# selection change. C est la seule comparaison qui dise si une regle apporte quelque chose.
+tem = sorted(SERIE.get("temoin sans filtre", []))
+if tem:
+    print()
+    print("CONTRE LE TEMOIN, sur la periode de CHAQUE strategie (meme marche, meme heures)")
+    print("   %-26s %6s %10s %10s %10s %9s" % ("", "n", "EUR/ticket", "temoin", "ecart", "sur 1000"))
+    lignes = []
+    for nom in ORDRE:
+        v = SERIE.get(nom) or []
+        if nom == "temoin sans filtre" or len(v) < 20:
+            continue
+        t0 = min(x[0] for x in v)
+        ref = [r for t, r in tem if t >= t0]
+        if len(ref) < 30:
+            continue
+        a_ = MISE * sum(r for _, r in v) / len(v)
+        b_ = MISE * sum(ref) / len(ref)
+        lignes.append((a_ - b_, nom, len(v), a_, b_))
+    for d, nom, n, a_, b_ in sorted(lignes, reverse=True):
+        print("   %-26s %6d %+9.3f %+9.3f %+9.3f %+8.0f E" % (nom[:26], n, a_, b_, d, 1000 * d))
 
 # on retient l heure de CE tableau pour que le prochain coupe ici
 try:
