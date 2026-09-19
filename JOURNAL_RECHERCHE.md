@@ -7341,3 +7341,26 @@ Conséquence sur §3.135–3.145 : la couverture de 60 % du 18/09 ne bornait pas
 stock_collecte, foret_gel, foret_gel75, v1_enregistreur). Carnet réel arrêté par le plafond de 24 h
 glissantes ; **le plus vieux ticket compté date du 18/09 09h32 → les achats réels reprennent seuls
 vers 09h32 le 19/09**, portefeuille 35,56 €, mise 20 €. Décision de Mido.
+
+
+---
+
+### 3.147 — Rien de bloqué dans le carnet, mais 92 comptes-jetons vides sur la chaîne : 14,47 € de caution immobilisée, 2026-09-19 09h10
+
+Mido : *« tu vérifies dans le portefeuille s'il reste des positions bloquées non fermées »*.
+
+- **Carnet réel et carnet Telegram : 0 ligne non fermée.**
+- **Chaîne** (adresse publique, lecture seule) : 0,3422 SOL libres (35,55 €), aucun jeton détenu
+  hors des poussières d'un jeton absent des carnets.
+- **Mais 93 comptes-jetons, dont 92 VIDES, et 0,1392 SOL = 14,47 € de caution immobilisée dedans —
+  41 % du solde libre.**
+
+Le 18/09 (§3.111, mémoire item 13) j'avais affirmé « 0 compte vide, 1 compte au total, la caution
+est déjà récupérée par le routeur » et déclaré `recuperation.py` inutile. **C'était faux** — mauvaise
+lecture (une seule requête, mal formée). `getTokenAccountsByOwner` sur les deux programmes de jetons,
+en `jsonParsed`, montre les 92. Retracté en mémoire.
+
+Ce que ça change : la caution (~0,002 SOL par compte, ~0,2 € par ticket) **n'est pas récupérée**
+automatiquement — elle s'accumule à chaque jeton acheté puis vendu. Sur 92 tickets c'est 14 €. La
+récupérer demande une transaction signée (`closeAccount`, `recuperation.py`, désactivé en config) :
+décision de Mido, pas la mienne.
