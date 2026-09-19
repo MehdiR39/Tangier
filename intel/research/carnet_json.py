@@ -49,12 +49,79 @@ def ecrire(nom, obj):
     os.replace(tmp, os.path.join(DATA, nom))
 
 
+def cout_mesure():
+    """LE COUT, calcule depuis le carnet REEL a chaque passage. Jamais cite de memoire.
+
+    Le 19/09 j ai donne cinq chiffres differents a Mido dans la journee -- 4,25 / 4,69 / 2,98 /
+    5,37 / 4,1 -- parce que je le ressortais de tete au lieu de le lire, chaque fois sur un
+    perimetre un peu different. Sa reponse : « tu le dis cinq fois aujourd hui ».
+
+    DEFINITION, UNE SEULE : sur les tickets presents des DEUX cotes, ce que le prix du jeton a fait
+    (papier brut) moins ce que le portefeuille a encaisse, divise par les euros deployes. C est
+    exactement l ecart qui empeche le papier et le reel de coincider, donc le seul cout qui compte.
+    Pondere en euros et non moyenne de ratios : un cout qu on multipliera par des euros se mesure
+    en euros (regle 20).
+
+    Renvoie aussi la mesure DEPUIS LA BASCULE du 19/09 10h53 (caution recuperee + priorite d achat
+    divisee par cinq) : c est elle qui dira si les economies tiennent, quand elle aura assez de
+    tickets. Tant qu elle en a moins de MIN_TICKETS, on ne s en sert pas -- on se contente de dire
+    combien il en manque.
+    """
+    MIN_TICKETS = 60
+    BASCULE = dt.datetime(2026, 9, 19, 10, 53, tzinfo=TZ).timestamp()
+    ci = sqlite3.connect("file:%s?mode=ro" % INTEL, uri=True, timeout=30)
+    cp = sqlite3.connect("file:/app/db/papier_combo.sqlite?mode=ro", uri=True, timeout=30)
+    try:
+        pap = {p: float(b) for p, b in cp.execute(
+            "SELECT pair, brut_240 FROM issue WHERE brut_240 IS NOT NULL")}
+        lignes = []
+        for p, t, g, m in ci.execute(
+                "SELECT pair, ts_entree, gain_eur, mise_eur FROM mr_lignes"
+                " WHERE mode='live' AND gain_eur IS NOT NULL AND ts_entree IS NOT NULL"):
+            if p in pap:
+                lignes.append((float(t), float(g), float(m or 20.0), pap[p]))
+    finally:
+        ci.close()
+        cp.close()
+
+    def pt(s):
+        if not s:
+            return None
+        dep = sum(x[2] for x in s)
+        brut = sum(x[2] * x[3] for x in s)
+        reel = sum(x[1] for x in s)
+        return round(100 * (brut - reel) / dep, 2) if dep else None
+
+    apres = [x for x in lignes if x[0] >= BASCULE]
+    return {
+        "tout": pt(lignes), "n_tout": len(lignes),
+        "avant": pt([x for x in lignes if x[0] < BASCULE]),
+        "apres": pt(apres), "n_apres": len(apres),
+        "min_tickets": MIN_TICKETS, "manque": max(0, MIN_TICKETS - len(apres)),
+        "retenu": pt(apres) if len(apres) >= MIN_TICKETS else pt(lignes),
+        "sur_quoi": ("les %d tickets depuis la bascule" % len(apres)) if len(apres) >= MIN_TICKETS
+                    else ("les %d tickets du carnet reel (il en manque %d apres la bascule"
+                          " pour mesurer l effet des economies)" % (len(lignes), max(0, MIN_TICKETS - len(apres)))),
+    }
+
+
 def table():
     """Relance `table_std2.py` avec sa sortie JSON, et recopie le texte pour l onglet brut."""
     # Nom distinct du « .tmp » d `ecrire`, sinon les deux se marchent dessus : le script ecrit son
     # JSON, `ecrire` ecrase le meme fichier puis le renomme, et le nettoyage ne trouve plus rien.
+    # Le registre des couts d abord : il ajoute les tickets nouvellement clotures, decomposes au
+    # centime, et regenere `cout_serie.json`. Append-only, donc relancer ne refait jamais l histoire.
+    try:
+        subprocess.run([sys.executable, "-m", "intel.research.cout_registre"], cwd="/app",
+                       capture_output=True, text=True, timeout=600)
+    except Exception as e:  # noqa: BLE001
+        print("carnet_json: registre des couts en echec : %s" % str(e)[:200], flush=True)
+
     brut = os.path.join(DATA, "carnet.brut.json")
+    c = cout_mesure()
     env = dict(os.environ, MISE=MISE_TABLE, JSON=brut)
+    if c.get("retenu"):
+        env["COUT_MESURE"] = "%.6f" % (c["retenu"] / 100.0)     # la table tourne sur le cout LU
     r = subprocess.run([sys.executable, "data/table_std2.py"], cwd="/app", env=env,
                        capture_output=True, text=True, timeout=300)
     if r.returncode != 0:
@@ -62,6 +129,7 @@ def table():
     with open(brut, encoding="utf-8") as f:
         d = json.load(f)
     d["texte"] = r.stdout
+    d["cout_detail"] = c
     ecrire("carnet.json", d)
     os.remove(brut)
     return len(d.get("lignes") or [])

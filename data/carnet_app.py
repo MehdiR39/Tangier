@@ -242,12 +242,103 @@ def table_complete():
         st.code(D.get("texte") or "(texte non enregistré)", language=None)
 
 
+# =============================================================== LES COUTS (registre continu)
+F_COUT = os.path.join(RACINE, "cout_serie.json")
+POSTES = [("pool", "commission du pool", "#6b9ec9"), ("impact", "impact de notre ordre", "#b98ac7"),
+          ("frais_reseau", "frais de réseau", "#5cab7a"), ("caution", "caution du compte-jeton", "#d4a03c"),
+          ("inexplique", "inexpliqué", "#c9564b")]
+
+
+@st.fragment(run_every=60)
+def couts():
+    S = lire(F_COUT)
+    if not S:
+        st.info("Le registre des coûts n'est pas encore écrit.")
+        return
+    t = S["tout"]
+    st.caption("Registre écrit ticket par ticket, jamais recalculé — %d tickets, %s. "
+               "Le coût est l'écart entre ce que le **prix** du jeton a fait et ce que ton "
+               "**portefeuille** a encaissé, divisé par les euros déployés."
+               % (S["n"], age(S["genere"])))
+    c = st.columns(4)
+    c[0].metric("Coût mesuré", "%.2f pt" % t["total"], "%d tickets" % t["n"], delta_color="off")
+    c[1].metric("Déployé", eur(t["deploye"]) + " €", "au total", delta_color="off")
+    c[2].metric("Ce que ça a coûté", eur(-t["euros"]["total"], 2) + " €", "en euros", delta_color="off")
+    av, ap = S.get("avant_bascule"), S.get("apres_bascule")
+    if av and ap:
+        c[3].metric("Depuis les économies", "%.2f pt" % ap["total"],
+                    "contre %.2f avant · %d tickets" % (av["total"], ap["n"]), delta_color="off")
+
+    st.subheader("Où part l'argent")
+    fig = go.Figure()
+    for cle, lib, col in POSTES:
+        fig.add_trace(go.Bar(name=lib, y=["tout (%d)" % t["n"]], x=[t[cle]], orientation="h",
+                             marker_color=col,
+                             hovertemplate="%s : %%{x:.3f} pt<extra></extra>" % lib))
+        if av:
+            fig.add_trace(go.Bar(name=lib, y=["avant (%d)" % av["n"]], x=[av[cle]], orientation="h",
+                                 marker_color=col, showlegend=False,
+                                 hovertemplate="%s : %%{x:.3f} pt<extra></extra>" % lib))
+        if ap:
+            fig.add_trace(go.Bar(name=lib, y=["depuis (%d)" % ap["n"]], x=[ap[cle]], orientation="h",
+                                 marker_color=col, showlegend=False,
+                                 hovertemplate="%s : %%{x:.3f} pt<extra></extra>" % lib))
+    fig.update_layout(barmode="stack", height=230, margin=dict(l=0, r=0, t=6, b=0),
+                      xaxis_title="points de coût (1 pt = 1 % de la mise)",
+                      legend=dict(orientation="h", y=-.3),
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True)
+
+    d = pd.DataFrame([{"poste": lib,
+                       "tout (pt)": t[cle], "avant (pt)": (av or {}).get(cle),
+                       "depuis (pt)": (ap or {}).get(cle),
+                       "euros au total": t["euros"][cle]} for cle, lib, _ in POSTES]
+                     + [{"poste": "TOTAL", "tout (pt)": t["total"],
+                         "avant (pt)": (av or {}).get("total"), "depuis (pt)": (ap or {}).get("total"),
+                         "euros au total": t["euros"]["total"]}])
+    st.dataframe(d, use_container_width=True, hide_index=True)
+    st.caption("La bascule du 19/09 10h53 : récupération de la caution activée, priorité d'achat "
+               "divisée par 5. La colonne « depuis » dit si ça a marché — elle a besoin d'une "
+               "soixantaine de tickets pour être crédible.")
+
+    if S.get("glissant"):
+        st.subheader("Le coût dans le temps")
+        st.caption("Moyenne glissante sur les 30 derniers tickets. Un point apparaît dès le 5ᵉ.")
+        g = pd.DataFrame(S["glissant"])
+        g["quand"] = pd.to_datetime(g["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
+        fig = go.Figure(go.Scatter(x=g["quand"], y=g["total"], mode="lines",
+                                   line=dict(color=ACCENT, width=2)))
+        fig.add_hline(y=0, line=dict(color=DOUX, width=1, dash="dot"))
+        fig.update_layout(height=260, margin=dict(l=0, r=0, t=6, b=0),
+                          yaxis_title="points de coût", showlegend=False,
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+
+    if S.get("par_jour"):
+        st.subheader("Par jour")
+        j = pd.DataFrame([{"jour": k, "tickets": v["n"], "déployé €": v["deploye"],
+                           "coût pt": v["total"], "coût €": v["euros"]["total"],
+                           **{lib: v[cle] for cle, lib, _ in POSTES}}
+                          for k, v in S["par_jour"].items()])
+        st.dataframe(j, use_container_width=True, hide_index=True)
+
+    with st.expander("Les derniers tickets, un par un"):
+        r = pd.DataFrame(S["derniers"])
+        r["quand"] = pd.to_datetime(r["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M")
+        cols = ["quand", "mise", "q", "brut_pct", "gain", "frais_reseau", "caution", "impact",
+                "pool", "inexplique", "total", "total_pct"]
+        st.dataframe(r[[c for c in cols if c in r]].iloc[::-1],
+                     use_container_width=True, hide_index=True, height=420)
+
+
 st.title("Carnet Tangier")
 st.caption("Tout ce qui a réellement tourné, au coût d'exécution mesuré sur la chaîne. "
            "Les chiffres viennent de `data/table_std2.py` — cette page ne recalcule rien.")
 
-onglets = st.tabs(["Carnet réel", "Stratégies"])
+onglets = st.tabs(["Carnet réel", "Coûts", "Stratégies"])
 with onglets[0]:
     bandeau_reel()
 with onglets[1]:
+    couts()
+with onglets[2]:
     table_complete()
