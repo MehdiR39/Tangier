@@ -1,4 +1,4 @@
-"""LA METHODE REENTRAINEE, en iso-prod : une RECETTE gelee, des poids qui se remettent a jour.
+"""FORET REENTRAINEE 6h : une RECETTE gelee, des poids qui se remettent a jour.
 
 MIDO, 19/09 22h20 : « on crée en mode iso-prod ta méthode RF réentraînée sans la variable coût ? »
 

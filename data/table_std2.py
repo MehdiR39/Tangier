@@ -304,10 +304,10 @@ try:
     _gm = float(dict(_cm.execute("SELECT cle, valeur FROM gel"))["t"])
     for _t, _r in _cm.execute("SELECT t_dec, ret_240 FROM decision"
                               " WHERE retenu=1 AND ret_240 IS NOT NULL"):
-        ranger("FORET MARCHE (recette gelee)", float(_t), min(float(_r) - COUT_MESURE, 3.0))
-    if "FORET MARCHE (recette gelee)" not in res:
-        res["FORET MARCHE (recette gelee)"]["_vide"] = []
-        debuts["FORET MARCHE (recette gelee)"] = _gm
+        ranger("FORET REENTRAINEE 6h", float(_t), min(float(_r) - COUT_MESURE, 3.0))
+    if "FORET REENTRAINEE 6h" not in res:
+        res["FORET REENTRAINEE 6h"]["_vide"] = []
+        debuts["FORET REENTRAINEE 6h"] = _gm
 except Exception as _ecm:
     print("   (ligne FORET MARCHE indisponible : %s)" % str(_ecm)[:90])
 
@@ -440,7 +440,7 @@ for _i, _j in enumerate(_passes):
     FINS[_j] = _minuit - 86400 * (len(_passes) - 1 - _i)
 ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + risque", "G+D a 45 s (gele)", "G+D a 30 s (gele)",
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
-         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET MARCHE (recette gelee)", "ENTREE T+75 (gelee)*"]
+         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET REENTRAINEE 6h", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
 print("COUT : %.2f pt PARTOUT (cases et total). Mesure sur les 92 tickets reels du 18/09, transactions relues sur la"
       " chaine : 4,25 pt · moins la caution recuperee (1,06) · moins la priorite d achat divisee par 5 (0,21)."

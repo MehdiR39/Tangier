@@ -381,16 +381,28 @@ def table_complete():
     st.caption("Chaque courbe part de **zéro à son propre démarrage** — elles ne commencent pas "
                "toutes à la même date, donc deux courbes superposées ne couvrent pas les mêmes "
                "heures de marché. La date de début est rappelée dans la légende.")
-    # Deux points suffisent pour tracer une ligne. Le seuil precedent (> 2) excluait les gels tout
-    # neufs du selecteur : ils n etaient donc visibles nulle part ou on les cherche. Mido, 19/09 :
-    # « je veux la voir AVEC les autres strategies gelees, avec graphique et tout ».
-    dispo = [l for l in D["lignes"] if len(l.get("courbe") or []) >= 2]
-    noms = [l["nom"] for l in dispo]
+    # TOUTES les strategies declarees sont dans le selecteur, y compris celles a zero ticket. Deux
+    # fois de suite j ai exclu un gel tout neuf de l endroit ou on le cherche -- d abord en le
+    # mettant dans un bloc a part, puis en exigeant qu il ait deja une courbe. Mido a du me le dire
+    # deux fois. Une strategie qu on vient de geler DOIT etre visible la ou on regarde, meme vide :
+    # c est justement le moment ou l on veut verifier qu elle existe.
+    dispo = list(D["lignes"])
+    noms = [l["nom"] + ("" if len(l.get("courbe") or []) >= 2 else "  (pas encore de ticket)")
+            for l in dispo]
+    par_nom = dict(zip(noms, dispo))
     defaut = [n for n in (["temoin sans filtre"] + [c["nom"] for c in D["contre_temoin"][:3]]) if n in noms]
     choix = st.multiselect("Lignes affichées", noms, default=defaut, key="courbes")
-    if choix:
+    # Une ligne cochee sans ticket ne se trace pas -- on le dit, au lieu de la faire disparaitre.
+    retenues = [par_nom[n] for n in choix]
+    vides = [l["nom"] for l in retenues if len(l.get("courbe") or []) < 2]
+    if vides:
+        st.caption("Sélectionnée%s mais pas encore de ticket, donc rien à tracer : **%s**. "
+                   "Elle apparaîtra dès sa première coupe."
+                   % ("s" if len(vides) > 1 else "", " · ".join(vides)))
+    traçables = [l for l in retenues if len(l.get("courbe") or []) >= 2]
+    if traçables:
         fig = go.Figure()
-        for i, l in enumerate([x for x in dispo if x["nom"] in choix]):
+        for i, l in enumerate(traçables):
             d = pd.DataFrame(l["courbe"], columns=["t", "cum"])
             d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
             depuis = d["quand"].iloc[0].strftime("%d/%m")
@@ -410,11 +422,10 @@ def table_complete():
         st.caption("Le cumulé est écrasé par le témoin : une ligne à 60 tickets y est un trait "
                    "plat. Par jour, chacune se lit à son échelle — et on voit tout de suite si "
                    "une stratégie gagne **tous les jours** ou si elle tient sur une seule journée.")
-        jours = sorted({d["jour"] for l in dispo if l["nom"] in choix
-                        for d in (l.get("par_jour") or [])})
+        jours = sorted({d["jour"] for l in retenues for d in (l.get("par_jour") or [])})
         if jours:
             fig = go.Figure()
-            for i, l in enumerate([x for x in dispo if x["nom"] in choix]):
+            for i, l in enumerate(retenues):
                 m = {d["jour"]: d for d in (l.get("par_jour") or [])}
                 fig.add_trace(go.Bar(
                     name=l["nom"], x=jours,
@@ -432,7 +443,7 @@ def table_complete():
 
             t = pd.DataFrame([{"stratégie": l["nom"],
                                **{d["jour"][5:]: d["gain"] for d in (l.get("par_jour") or [])}}
-                              for l in dispo if l["nom"] in choix])
+                              for l in retenues])
             st.dataframe(t, use_container_width=True, hide_index=True)
 
     st.subheader("Registre complet")
