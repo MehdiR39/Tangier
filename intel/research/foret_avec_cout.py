@@ -43,6 +43,13 @@ COUT = float(os.environ.get("COUT_MESURE", "0.0371"))
 MISE = 20.0
 GARDE = 0.80
 NULLS = int(os.environ.get("NULLS", "60"))
+# CORRECTION DU 19/09 23h, apres la question de Mido « le top 20 c est du leakage ? ». La premiere
+# version gardait les GARDE % du haut DANS chaque fenetre de 6 h -- donc en classant un ticket contre
+# des voisins pas encore nes a l instant de decider. Pas une fuite de resultat, mais pas decidable en
+# vrai. On decide desormais par SEUIL ABSOLU, le quantile des scores d ENTRAINEMENT, exactement comme
+# `foret_marche` le fait dans son carnet papier. Le nombre de tickets gardes varie alors, et c est le
+# vrai comportement de la regle. SEUIL_ABSOLU=0 rejoue l ancienne, pour mesurer ce que le defaut valait.
+SEUIL_ABSOLU = os.environ.get("SEUIL_ABSOLU", "1") == "1"
 V_RESERVE = 17.5845
 SOL_PAR_EUR = 0.31 / 30.0
 PART_FIXE = 0.0141                 # 1,41 % par jambe, mesure au lamport sur 15 transactions
@@ -98,15 +105,24 @@ def main() -> None:
             if A.sum() < 150 or J.sum() < 20:
                 continue
             nets = yn[J]
-            k = max(5, int(len(nets) * GARDE))
             tem.extend(nets.tolist())
             for nom, cols in jeux.items():
                 X = df[cols].apply(pd.to_numeric, errors="coerce").astype(float)
                 med = X[A].median()
+                XA = X[A].fillna(med).fillna(0)
                 rf = RandomForestClassifier(n_estimators=300, min_samples_leaf=20, n_jobs=-1,
-                                            random_state=0).fit(X[A].fillna(med).fillna(0), yv[A])
+                                            random_state=0).fit(XA, yv[A])
                 p = rf.predict_proba(X[J].fillna(med).fillna(0))[:, 1]
-                tot[nom].extend(nets[np.argsort(p, kind="stable")[:k]].tolist())
+                if SEUIL_ABSOLU:
+                    # DECIDABLE A 45 s : le seuil vient des scores d ENTRAINEMENT, connus avant la
+                    # fenetre, comme le fait `foret_marche` en carnet papier. Le nombre de tickets
+                    # gardes n est alors plus exactement GARDE, et c est le vrai comportement.
+                    seuil = float(np.quantile(rf.predict_proba(XA)[:, 1], GARDE))
+                    tot[nom].extend(nets[p <= seuil].tolist())
+                else:
+                    # CLASSEMENT DANS LA FENETRE : compare un ticket a des voisins pas encore nes.
+                    k = max(5, int(len(nets) * GARDE))
+                    tot[nom].extend(nets[np.argsort(p, kind="stable")[:k]].tolist())
         return tot, np.array(tem)
 
     tot, tem = marche(y_vid, y_net)
