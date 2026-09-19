@@ -400,7 +400,9 @@ class ModeleRapide:
                  now, prix_e, mise, json.dumps(f, default=str)))
             achetes += 1
             if live:
-                await self._acheter_reel(mint, mise, f, risque)
+                # `prix_e` est le prix du pool que NOUS avons lu, pas une promesse du routeur :
+                # c est lui qui permet de refuser une cotation trop chere (voir `_acheter_reel`).
+                await self._acheter_reel(mint, mise, f, risque, prix_e)
         # VENDRE ET COMPTER NE SONT JAMAIS BLOQUES. Un plafond doit arreter les ACHATS, jamais les
         # ventes : sinon atteindre 40 ordres laisserait les positions ouvertes indefiniment, sans
         # personne pour les fermer. Le plafond protege du risque, il ne doit pas en creer un.
@@ -411,7 +413,23 @@ class ModeleRapide:
 
     # ---------------------------------------------------------------- reel
 
-    async def _acheter_reel(self, mint: str, mise: float, f: dict, risque: float) -> None:
+    def _decimales(self, mint: str) -> int:
+        """Les decimales du jeton, lues en base ; 6 par defaut (le standard pump.fun).
+
+        Elles servent a convertir la cotation en prix par jeton pour la comparer au prix du pool.
+        Se tromper ici deplacerait la comparaison d un facteur 10 et ferait refuser tout ou rien,
+        donc on prefere la valeur ENREGISTREE quand elle existe.
+        """
+        try:
+            r = self.ctx.db.query("SELECT decimales FROM mint_offre WHERE mint = ? LIMIT 1", (mint,))
+            if r and r[0]["decimales"] is not None:
+                return int(r[0]["decimales"])
+        except Exception:  # noqa: BLE001
+            pass
+        return 6
+
+    async def _acheter_reel(self, mint: str, mise: float, f: dict, risque: float,
+                            prix_pool: float = 0.0) -> None:
         """Envoie l ordre. Toute erreur ferme la ligne : on ne garde jamais une position fantome."""
         from intel.execution import solana as sol
         cle = self._cfg("cle_fichier", None)
@@ -437,6 +455,36 @@ class ModeleRapide:
                 sol_eur=taux,
                 slippage_pct=float(self._cfg("slippage_achat_pct", 20.0)),
                 max_impact_pct=float(self._cfg("max_impact_pct", 15.0)),
+                # ================================================================================
+                # 19/09 20h50, accord de Mido : LES DEUX GARDES D ENTREE, ENFIN BRANCHES.
+                # Ils existaient depuis le 14/09, mesures positifs, passes par `telegram_rapide` --
+                # et ce moteur-ci, celui qui engage l argent, ne les passait pas. Leurs valeurs par
+                # defaut dans `prepare_buy` valent 0, c est-a-dire DESACTIVE : on a donc achete
+                # trois mois sans aucun des deux.
+                #
+                # POURQUOI MAINTENANT. La dissection du cout ce soir (§3.156) : le marche donne
+                # +2,68 %/ticket, l execution en prend 3,71 %. Il manque UN point. Ces deux gardes
+                # attaquent exactement les deux facons de perdre a l ACHAT.
+                #
+                # 1. ECART A LA COTATION. Le routeur cote parfois bien au-dessus du pool. Mesure du
+                #    14/09, 60 tickets : ecart median +5,8 %, p90 +32,8 %, max +74 % -- et les trois
+                #    plus grosses pertes du jour etaient des achats payes 28 a 59 % trop cher.
+                #        sans plafond   0 % refuses   -52,58 EUR
+                #        plus de 20 %  18 % refuses  +130,02 EUR  <- retenu
+                #        plus de 10 %  40 % refuses   -54,25 EUR  (jette trop)
+                #    Ne coute AUCUN appel : `prix_pool` est le prix que le collecteur a deja lu.
+                # 2. PEUT-ON RESSORTIR ? On cote la revente AVANT d acheter. Mesure du 09/09 sur
+                #    25 pools : 5 sont invendables a notre taille et causent 25 % des tickets
+                #    aneantis. L impact affiche ne suffit pas -- il est symetrique en moyenne, et
+                #    c est sur les pools asymetriques qu il ne dit rien. Coute une cotation.
+                #
+                # CRITERE D ARRET, FIXE AVANT : on debranche si a 200 tickets reels le cout mesure
+                # (`cout_registre.py`) n a pas baisse d au moins 0,5 point. Pas de renegociation.
+                # ================================================================================
+                prix_pool_sol=float(prix_pool or 0.0),
+                decimales=int(self._decimales(mint)),
+                max_ecart_pool_pct=float(self._cfg("max_ecart_pool_pct", 20.0)),
+                max_aller_retour_pct=float(self._cfg("max_aller_retour_pct", 15.0)),
                 # PRIORITE D ACHAT, distincte de celle de la vente depuis le 19/09 (§3.153). Un
                 # achat rate ne coute RIEN -- on ne prend pas le ticket. Une vente ratee laisse une
                 # position ouverte sur un jeton qui s effondre, et on a mesure que garder aggrave

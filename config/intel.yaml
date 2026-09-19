@@ -1217,6 +1217,33 @@ modele_rapide:
   slippage_achat_pct: 20.0
   slippage_vente_pct: 25.0
   max_impact_pct: 15.0         # au-dela, l ordre est refuse AVANT envoi et ne coute rien
+  # ================================================================================================
+  # LES DEUX GARDES D ENTREE, BRANCHES LE 19/09 a 20h50 sur accord de Mido.
+  # Ils existaient depuis le 14/09 et tournaient sur `telegram_rapide` ; ce moteur-ci, celui qui
+  # engage l argent reel, ne les passait pas a `prepare_buy`, dont les defauts valent 0 = DESACTIVE.
+  #
+  # POURQUOI. La dissection du cout du 19/09 au soir (§3.156) : le marche donne +2,68 % par ticket,
+  # l execution en prend 3,71 %. Il manque UN point, et ces deux gardes attaquent exactement les
+  # deux facons de perdre a l ACHAT.
+  #
+  # ECART A LA COTATION -- le routeur cote parfois bien au-dessus du prix reel du pool. Mesure du
+  # 14/09 sur 60 tickets : median +5,8 %, p90 +32,8 %, max +74 %, et les trois plus grosses pertes
+  # du jour etaient des achats payes 28 a 59 % trop cher.
+  #     sans plafond    0 % refuses    -52,58 EUR
+  #     plus de 30 %   10 % refuses   +110,83 EUR
+  #     plus de 20 %   18 % refuses   +130,02 EUR   <- retenu
+  #     plus de 10 %   40 % refuses    -54,25 EUR   (jette trop, l avantage part avec)
+  # Ne coute AUCUN appel : le prix du pool est deja lu toutes les 10 s par le collecteur.
+  max_ecart_pool_pct: 20.0
+  # PEUT-ON RESSORTIR ? On cote la revente AVANT d acheter. Mesure du 09/09 sur 25 pools suivis :
+  # l aller-retour coute 2,9 % en median, mais SIX pools sur vingt-cinq coutent plus de 10 % et
+  # CINQ plus de 25 % -- sur ceux-la on peut acheter et pas sortir, a notre taille. Ils causent
+  # 25 % des tickets aneantis. L impact affiche ne les voit pas : il est symetrique en moyenne, et
+  # c est precisement sur les pools asymetriques qu il ne dit rien. Coute une cotation.
+  max_aller_retour_pct: 15.0
+  # CRITERE D ARRET, FIXE AVANT DE BRANCHER : on debranche si, a 200 tickets reels, le cout mesure
+  # par `cout_registre.py` n a pas baisse d au moins 0,5 point. Ecrit d avance, pas renegociable.
+  # ================================================================================================
   # PAS DE PLAFOND EN NOMBRE D ORDRES. J en avais mis un a 40 par analogie avec le carnet
   # Telegram, sans que l operateur l ait demande -- et il a bloque le carnet des 13h09 le 18/09,
   # alors qu il venait de dire « laisse tourner, n arrete rien sans que je te dise ». Ce qu il a
