@@ -246,6 +246,16 @@ def juger(gel):
         tem.append((t, r))
         if m.probabilite({n: f.get(n) for n in NOMS}) <= m.seuil_p80:
             pris.append((t, r))
+    # Les tickets retenus sont deposes pour `table_std2.py` : c est ainsi qu une ligne alimentee
+    # par une AUTRE source que `papier_combo` entre dans la table, et donc dans le Streamlit.
+    # Mido, 19/09 : « t'as ajoute le nouveau gel ? je peux le voir via le streamlit ». Un gel qu on
+    # ne voit pas est un gel qu on oubliera.
+    tmp = os.path.join(DOSSIER, "tickets.json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"gel": gel["gel"], "age_flux": AGE_FLUX, "cout": COUT,
+                   "maj": time.time(), "tickets": [[t, r] for t, r in sorted(pris)]}, f)
+    os.replace(tmp, os.path.join(DOSSIER, "tickets.json"))
+
     n = len(pris)
     jours = (time.time() - gel["gel"]) / 86400.0
     print("foret_flux: %d ticket(s) retenus sur %d depuis le gel (critere %d ou %d jours ; jour %.2f)"

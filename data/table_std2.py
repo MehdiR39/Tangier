@@ -278,6 +278,22 @@ try:
 except Exception as _e75:
     print("   (ligne T+75 indisponible : %s)" % str(_e75)[:90])
 
+# FORET FLUX 30 s, gelee le 19/09 a 16h26. Elle ne lit AUCUN prix : seulement qui achete et qui
+# vend dans les 30 premieres secondes -- la seule vue que l index des transactions montre surement
+# a l instant de decider (il retarde de 10 a 15 s). `foret_flux.py` depose ses tickets retenus ;
+# la table les relit. Un gel qu on ne voit pas dans la table est un gel qu on oubliera.
+try:
+    _ff = json.load(open("/app/data/recherche/foret_flux/tickets.json", encoding="utf-8"))
+    for _t, _r in _ff["tickets"]:
+        ranger("FORET FLUX 30s (gelee)", float(_t), float(_r))
+    if "FORET FLUX 30s (gelee)" not in res:
+        res["FORET FLUX 30s (gelee)"]["_vide"] = []
+        debuts["FORET FLUX 30s (gelee)"] = _ff["gel"]
+except FileNotFoundError:
+    pass
+except Exception as _eff:
+    print("   (ligne FORET FLUX indisponible : %s)" % str(_eff)[:90])
+
 
 # AU PLUS BAS, gele le 18/09 a 08h00 UTC : le prix a 45 s EST son plus bas depuis la naissance.
 # Meme flux que les autres lignes (papier_combo), donc directement comparable au temoin.
@@ -407,7 +423,7 @@ for _i, _j in enumerate(_passes):
     FINS[_j] = _minuit - 86400 * (len(_passes) - 1 - _i)
 ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + risque", "G+D a 45 s (gele)", "G+D a 30 s (gele)",
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
-         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "ENTREE T+75 (gelee)*"]
+         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
 print("COUT : %.2f pt PARTOUT (cases et total). Mesure sur les 92 tickets reels du 18/09, transactions relues sur la"
       " chaine : 4,25 pt · moins la caution recuperee (1,06) · moins la priorite d achat divisee par 5 (0,21)."
@@ -539,6 +555,13 @@ if _sortie:
     for nom in ORDRE:
         v = SERIE.get(nom) or []
         if not v:
+            # Une strategie DECLAREE mais qui n a encore aucun ticket doit apparaitre quand meme,
+            # a zero : c est ainsi qu on voit un gel tout neuf demarrer au lieu de se demander s il
+            # a ete branche. Mido, 19/09 : « t'as ajoute le nouveau gel ? je peux le voir ? ».
+            if nom in res:
+                _lignes.append({"nom": nom, "n": 0, "total": 0.0, "par_ticket": 0.0,
+                                "jour": 0.0, "n_jour": 0, "debut": debuts.get(nom),
+                                "courbe": [], "par_jour": []})
             continue
         n = len(v)
         total = MISE * (sum(r for _, r in v) - n * SUP)
