@@ -367,7 +367,14 @@ print("  2,62 est HORS de cet intervalle : sur la meme fenetre la table dit -2,1
 print("* ENTREE T+75 : AUTRE population -- les jetons Telegram (ceux de la production), pas le flux papier_combo.")
 print("x = la strategie n existait pas · 0 = elle existait et n a rien pris (ou resultat pas encore connu)")
 ENTETES = _passes + [DERNIER + " -> " + COUPE_H, COUPE_H + " -> maintenant", DERNIER + " TOTAL"]
-print("%-24s %13s %s %12s" % ("", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL"))
+# ETROIT=1 : la version telephone. Mido lit la table sur son mobile, qui coupe a droite -- et il a
+# donc lu pendant des jours une colonne qui n etait pas la bonne. Une table qui ne tient pas dans
+# l ecran de celui qui la lit est une table fausse.
+ETROIT = os.environ.get("ETROIT") == "1"
+if ETROIT:
+    print("%-22s %7s %9s %9s" % ("", "n", "depuis gel", "aujourd hui"))
+else:
+    print("%-24s %13s %s %12s" % ("", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL"))
 for nom in ORDRE:
     if nom not in res:
         continue
@@ -393,9 +400,14 @@ for nom in ORDRE:
             cel.append("%17s" % ("x" if debuts[nom] > FINS[c] else "0"))
     # la surcharge est plate, donc le total au cout mesure se deduit exactement du NOMBRE de
     # tickets : inutile de rejouer la table, et aucune approximation cachee.
-    print("%-24s %13s %s %+9.0f E(%3d)" % (
-        nom, dt.datetime.fromtimestamp(debuts[nom] + 7200, dt.timezone.utc).strftime("%d/%m %Hh%M"),
-        " ".join(cel), tot, n_tot))
+    if ETROIT:
+        j = res[nom].get("_jour") or []
+        jour = MISE * (sum(j) - len(j) * SUP)
+        print("%-22s %7d %+8.0f E %+8.0f E" % (nom[:22], n_tot, tot, jour))
+    else:
+        print("%-24s %13s %s %+9.0f E(%3d)" % (
+            nom, dt.datetime.fromtimestamp(debuts[nom] + 7200, dt.timezone.utc).strftime("%d/%m %Hh%M"),
+            " ".join(cel), tot, n_tot))
 
 
 # on retient l heure de CE tableau pour que le prochain coupe ici
