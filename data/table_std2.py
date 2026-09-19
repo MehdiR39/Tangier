@@ -399,10 +399,15 @@ ENTETES = _passes + [DERNIER + " -> " + COUPE_H, COUPE_H + " -> maintenant", DER
 # donc lu pendant des jours une colonne qui n etait pas la bonne. Une table qui ne tient pas dans
 # l ecran de celui qui la lit est une table fausse.
 ETROIT = os.environ.get("ETROIT") == "1"
+# LARGEUR DU NOM, calculee sur la plus longue ligne au lieu d etre devinee. Un nom plus long que la
+# colonne poussait TOUT le reste de la ligne vers la droite : les colonnes ne tombaient plus les unes
+# sous les autres et la table devenait illisible (Mido, 19/09). On ne tronque pas non plus : un nom
+# coupe au milieu (« FORET 75s top 10 % (lectur ») ne se reconnait pas d une ligne a l autre.
+LNOM = max(len(n) for n in ORDRE)
 if ETROIT:
-    print("%-22s %7s %9s %9s" % ("", "n", "depuis gel", "aujourd hui"))
+    print("%-*s %7s %9s %9s" % (LNOM, "", "n", "depuis gel", "aujourd hui"))
 else:
-    print("%-24s %13s %s %12s" % ("", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL"))
+    print("%-*s %13s %s %12s" % (LNOM, "", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL"))
 for nom in ORDRE:
     if nom not in res:
         continue
@@ -431,10 +436,10 @@ for nom in ORDRE:
     if ETROIT:
         j = res[nom].get("_jour") or []
         jour = MISE * (sum(j) - len(j) * SUP)
-        print("%-22s %7d %+8.0f E %+8.0f E" % (nom[:22], n_tot, tot, jour))
+        print("%-*s %7d %+8.0f E %+8.0f E" % (LNOM, nom, n_tot, tot, jour))
     else:
-        print("%-24s %13s %s %+9.0f E(%3d)" % (
-            nom, dt.datetime.fromtimestamp(debuts[nom] + 7200, dt.timezone.utc).strftime("%d/%m %Hh%M"),
+        print("%-*s %13s %s %+9.0f E(%3d)" % (
+            LNOM, nom, dt.datetime.fromtimestamp(debuts[nom] + 7200, dt.timezone.utc).strftime("%d/%m %Hh%M"),
             " ".join(cel), tot, n_tot))
 
 
@@ -445,7 +450,7 @@ tem = sorted(SERIE.get("temoin sans filtre", []))
 if tem:
     print()
     print("CONTRE LE TEMOIN, sur la periode de CHAQUE strategie (meme marche, meme heures)")
-    print("   %-26s %6s %10s %10s %10s %9s" % ("", "n", "EUR/ticket", "temoin", "ecart", "sur 1000"))
+    print("   %-*s %6s %10s %10s %10s %9s" % (LNOM, "", "n", "EUR/ticket", "temoin", "ecart", "sur 1000"))
     lignes = []
     for nom in ORDRE:
         v = SERIE.get(nom) or []
@@ -459,7 +464,7 @@ if tem:
         b_ = MISE * sum(ref) / len(ref)
         lignes.append((a_ - b_, nom, len(v), a_, b_))
     for d, nom, n, a_, b_ in sorted(lignes, reverse=True):
-        print("   %-26s %6d %+9.3f %+9.3f %+9.3f %+8.0f E" % (nom[:26], n, a_, b_, d, 1000 * d))
+        print("   %-*s %6d %+9.3f %+9.3f %+9.3f %+8.0f E" % (LNOM, nom, n, a_, b_, d, 1000 * d))
 
 # on retient l heure de CE tableau pour que le prochain coupe ici
 try:
