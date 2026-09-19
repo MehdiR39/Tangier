@@ -7835,3 +7835,62 @@ directe : des tickets tirés **au hasard**, sans aucun modèle, donnent sur 37 t
 **−152 et +126 EUR** dans 90 % des cas. L'écart qui saute aux yeux est plus petit que ce que le
 hasard fabrique seul. Et 18 à 76 % des tirages au hasard font aussi bien que chacune des quatre.
 **En dessous de ~250 tickets, une courbe ne distingue pas un modèle d'une pièce de monnaie.**
+
+### 3.158 — Réentraîner la forêt 75s : oui, et surtout le SEUIL — plus un défaut de sélection dans tous les tests du projet, 2026-09-19 23h20
+
+**La question de Mido**, 22h50 : *« on a vu qu'en réentraînant un modèle ça améliore, et on a un
+modèle 75s qui est bon — on peut essayer de réentraîner le modèle 75 ? »* Test construit en
+iso-recette : `foret75_marche.py`, trois bras sur les mêmes tickets et la même fenêtre — TÉMOIN,
+GELÉE (entraînée une seule fois à la première coupe, ce que fait `foret_gel75`), RÉENTRAÎNÉE (à
+chaque coupe de 6 h, sélection des 25 variables refaite). Seule différence entre les deux derniers :
+la fraîcheur des poids.
+
+**PREMIER RÉSULTAT, ET IL ÉTAIT FAUX.** Réentraîner ne servait à rien : −0,42 / +0,06 / −0,03 aux
+trois taux de garde. Annoncé à Mido comme tel.
+
+**LA QUESTION QUI A TOUT CHANGÉ.** Mido, en lisant : *« tu veux dire quoi, le top 20 c'est du
+leakage ? »* Non — mais en vérifiant pour lui répondre, un vrai défaut est apparu, **présent dans
+tous les tests de marche avant du projet** (`foret_avec_cout`, `marche_avant*`, et ce test) : ils
+gardaient les g % du haut **DANS chaque fenêtre de 6 h**, donc en classant un ticket contre des
+voisins **pas encore nés** à l'instant de décider. Ce n'est pas une fuite de résultat — le test ne
+voit jamais la réponse — c'est une fuite de **voisinage futur**, plus légère mais pas implémentable.
+**Les carnets papier sont propres** : `foret_gel` et `foret_marche` décident tous deux par seuil
+absolu (quantile des scores d'entraînement). Seuls les chiffres d'analyse sont touchés, y compris
+le +0,363 · p = 0,016 annoncé une heure plus tôt (§3.157). Corrigé : `SEUIL_ABSOLU=1` par défaut,
+`=0` rejoue l'ancienne version. Règle 24 de la mémoire.
+
+**LE RÉSULTAT S'INVERSE UNE FOIS CORRIGÉ.**
+
+```
+                          n    EUR/ticket   vs témoin
+TÉMOIN                  1586     −0,517       +0,000
+GELÉE       top  5 %      40     +0,590       +1,107
+GELÉE       top 10 %     120     +0,245       +0,762
+GELÉE       top 20 %     324     +0,248       +0,766
+RÉENTRAÎNÉE top  5 %     110     +0,248       +0,765
+RÉENTRAÎNÉE top 10 %     208     +0,865       +1,383
+RÉENTRAÎNÉE top 20 %     318     +1,029       +1,547
+```
+
+**L'EXPLICATION EST MÉCANIQUE, et c'est elle qui vaut mieux que le p.** Regarder les effectifs : la
+gelée ne garde plus que **40** tickets là où la réentraînée en garde **110**. Son seuil, calculé le
+16/09, ne correspond plus à la distribution des scores du 19/09 — **il dérive**. Réentraîner ne
+rafraîchit pas seulement les poids, ça **recalibre la barre**. Le classement dans la fenêtre masquait
+exactement cela en forçant les deux bras au même effectif : c'est pourquoi le test truqué concluait
+« ça ne sert à rien ».
+
+**SECONDE CORRECTION, À LA BARRE DU HASARD ELLE-MÊME.** En euros bruts, une case à 40 tickets a un
+bruit trois fois plus large qu'une case à 320 : le maximum sur six cases était confisqué par la plus
+petite (un tirage à +3,37 € quand notre meilleure case valait +1,55), ce qui condamnait d'avance les
+cases larges — les seules exploitables. Refaite **en écarts-types**, pour que les six cases jouent au
+même jeu. Même correction qu'à §3.150.
+
+**VERDICT.** `RÉENTRAÎNÉE top 20 %` à **+3,09 σ** (+1,507 €/ticket), **1 tirage sur 40** fait aussi
+bien, **p ≈ 0,049**. Sur la ligne, pas au-delà — et avec 40 tirages ce p pourrait être 0,02 comme
+0,10 ; 200 tirages lancés pour le resserrer. **Le NIVEAU (~+1,0 €/ticket) reste à ~1,9 σ de zéro** :
+encourageant, non prouvé, et c'est le niveau qui paie (règle 4).
+
+**CE QUI EST SOLIDE CE SOIR** : la dérive du seuil d'un modèle gelé, vérifiable sans statistique.
+**CE QUI NE L'EST PAS** : que cette recette gagne de l'argent. Seuls des tickets jamais regardés
+peuvent le dire — d'où la proposition d'un carnet papier `FORET 75s RÉENTRAÎNÉE` à critère écrit
+d'avance.
