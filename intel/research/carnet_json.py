@@ -171,10 +171,35 @@ def live():
                           " WHERE %s AND gain_eur IS NOT NULL" % Q).fetchone()
         # TOUS les tickets fermes, pas seulement les 40 derniers : une distribution se lit sur
         # l ensemble, et un histogramme sur 40 points ne montre que du hasard.
-        gains = [{"t": int(t), "gain": round(float(g), 4), "mise": float(m or 20.0)}
-                 for t, g, m in c.execute(
-                     "SELECT ts_entree, gain_eur, mise_eur FROM mr_lignes WHERE %s"
+        cp = sqlite3.connect("file:/app/db/papier_combo.sqlite?mode=ro", uri=True, timeout=30)
+        brut = {p: float(b) for p, b in cp.execute(
+            "SELECT pair, brut_240 FROM issue WHERE brut_240 IS NOT NULL")}
+        cp.close()
+        # `brut_pct` sur les tickets PRIS aussi : c est la seule grandeur comparable avec les
+        # tickets ecartes, qu on n a jamais achetes. Sans elle on ne peut pas repondre a « la foret
+        # a-t-elle ecarte des mauvais ou des bons ? » -- il faut les mettre sur la meme echelle.
+        gains = [{"t": int(t), "gain": round(float(g), 4), "mise": float(m or 20.0),
+                  "brut_pct": round(100 * brut[p], 3) if p in brut else None}
+                 for p, t, g, m in c.execute(
+                     "SELECT pair, ts_entree, gain_eur, mise_eur FROM mr_lignes WHERE %s"
                      " AND gain_eur IS NOT NULL AND ts_entree IS NOT NULL ORDER BY ts_entree" % Q)]
+        # LES TICKETS EVITES. On ne les a pas achetes, donc `gain_eur` est vide -- mais le carnet
+        # PAPIER connait ce que leur prix a fait (`brut_240`). On peut donc dire ce qu ils auraient
+        # rapporte, cout deduit. C est la seule facon de savoir si nos refus nous protegent ou nous
+        # coutent : le 19/09 les tickets bloques par le budget etaient MEILLEURS (+2,91 %) que ceux
+        # qu on a joues (-0,21 %). Mido : « on peut aussi suivre les tickets evites ? »
+        evites = []
+        try:
+            pap = brut
+            for p, t, st_, mo in c.execute(
+                    "SELECT pair, t_dec, statut, motif FROM mr_lignes WHERE %s"
+                    " AND tx_achat IS NULL AND t_dec IS NOT NULL ORDER BY t_dec" % Q):
+                if p in pap:
+                    evites.append({"t": int(t), "statut": st_, "motif": (mo or "")[:60],
+                                   "brut_pct": round(100 * pap[p], 3)})
+        except Exception:  # noqa: BLE001
+            evites = []
+
         # courbe cumulee du reel, dans l ordre des sorties
         cum, courbe = 0.0, []
         for t, g in c.execute("SELECT ts_sortie, gain_eur FROM mr_lignes WHERE %s AND gain_eur IS NOT NULL"
@@ -192,7 +217,7 @@ def live():
         "jour": {"n": jour[0], "gain": round(float(jour[1] or 0.0), 2)},
         "statuts": statuts, "motifs": motifs, "ouvertes": ouvertes,
         "total": {"n": total[0], "gain": round(float(total[1] or 0.0), 2)},
-        "derniers": derniers, "courbe": courbe, "gains": gains,
+        "derniers": derniers, "courbe": courbe, "gains": gains, "evites": evites,
         # Les instants qui coupent l histoire du carnet reel en regimes comparables. Sans eux la
         # page melange des periodes qui n ont ni le meme modele ni la meme mise, et toute moyenne
         # devient un melange. Mido, 19/09 : « contrains-toi aux ordres depuis le passage a la foret,

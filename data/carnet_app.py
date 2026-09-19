@@ -183,6 +183,62 @@ def bandeau_reel():
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
+    # ---- CE QU ON A ECARTE : la foret a-t-elle jete des mauvais ou des bons ? -------------------
+    E = L.get("evites") or []
+    if E and len(G) >= 5:
+        e = pd.DataFrame(E)
+        if choisi["depuis"]:
+            e = e[e["t"] >= choisi["depuis"]]
+        pris = pd.DataFrame(G)
+        if choisi["depuis"]:
+            pris = pris[pris["t"] >= choisi["depuis"]]
+        pris = pris[pris["brut_pct"].notna()]
+        if len(e) and len(pris):
+            st.subheader("Ce qu'on a écarté")
+            st.caption("On n'a pas acheté ces jetons, mais le carnet papier sait ce que leur prix "
+                       "a fait. C'est la seule façon de savoir si nos refus **protègent** ou "
+                       "**coûtent** — et si la forêt écarte bien les mauvais.")
+            LIB = {"ECARTEE": "écartés par la forêt", "BLOQUEE": "bloqués par le budget de perte",
+                   "FREIN": "bloqués par le frein", "ANNULEE": "annulés (échec technique)"}
+            lignes = [{"groupe": "ACHETÉS", "n": len(pris),
+                       "rendement brut moyen %": round(pris["brut_pct"].mean(), 2),
+                       "gagnants %": round(100 * (pris["brut_pct"] > 0).mean())}]
+            for s_, sous in e.groupby("statut"):
+                lignes.append({"groupe": LIB.get(s_, s_), "n": len(sous),
+                               "rendement brut moyen %": round(sous["brut_pct"].mean(), 2),
+                               "gagnants %": round(100 * (sous["brut_pct"] > 0).mean())})
+            t = pd.DataFrame(lignes)
+            fig = go.Figure(go.Bar(
+                x=t["rendement brut moyen %"], y=t["groupe"], orientation="h",
+                marker_color=[ACCENT if g_ == "ACHETÉS" else
+                              (GAIN if v >= 0 else PERTE)
+                              for g_, v in zip(t["groupe"], t["rendement brut moyen %"])],
+                customdata=t[["n", "gagnants %"]].values,
+                hovertemplate="<b>%{y}</b><br>%{x:+.2f} %% en moyenne<br>"
+                              "%{customdata[0]} tickets · %{customdata[1]} %% gagnants<extra></extra>"))
+            fig.add_vline(x=0, line=dict(color=DOUX, width=1))
+            fig.update_layout(height=230, margin=dict(l=0, r=10, t=6, b=0),
+                              xaxis_title="rendement brut du jeton, avant coût (%)",
+                              yaxis=dict(autorange="reversed"), showlegend=False,
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(t, use_container_width=True, hide_index=True)
+
+            ec = e[e["statut"] == "ECARTEE"]
+            if len(ec) >= 5:
+                d_ = ec["brut_pct"].mean() - pris["brut_pct"].mean()
+                if d_ < 0:
+                    st.success("**La forêt écarte bien les mauvais** : les %d jetons qu'elle a "
+                               "refusés font %s %% en moyenne, contre %s %% pour ceux qu'elle a "
+                               "gardés — %s points d'écart en sa faveur."
+                               % (len(ec), eur(ec["brut_pct"].mean(), 2),
+                                  eur(pris["brut_pct"].mean(), 2), eur(-d_, 2)))
+                else:
+                    st.warning("**Attention** : les %d jetons écartés par la forêt font %s %% en "
+                               "moyenne, soit %s points de MIEUX que ceux qu'elle a gardés. Sur un "
+                               "petit nombre c'est du hasard ; si ça tient, elle trie à l'envers."
+                               % (len(ec), eur(ec["brut_pct"].mean(), 2), eur(d_, 2)))
+
     if L.get("derniers"):
         d = pd.DataFrame(L["derniers"])
         d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M")
