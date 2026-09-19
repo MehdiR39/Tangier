@@ -7551,3 +7551,48 @@ les 1,17 pt, et c'est un trou de données à combler.
 
 **Ce qui est retenu pour la table : 4,25 pt**, caution comprise. Caution déduite : **3,19 pt**.
 Médiane 3,48 pt — le moyen (4,25) reste au-dessus, tiré par une poignée de hausses.
+
+
+---
+
+### 3.153 — Les frais, audités jusqu'au bout : 1,27 pt récupérable sur 4,25, et le reste est structurel, 2026-09-19 11h00
+
+Mido : *« on paie trop ou pas, il y a moyen de réduire ou pas »*. Réponse, mesurée sur les
+184 transactions du 18/09 relues **sur la chaîne** (92 achats + 92 ventes, aucune perdue).
+
+**Ce que coûte un aller-retour, poste par poste, en euros sur 1 840 € engagés :**
+
+| poste | points | réductible |
+|---|---|---|
+| perte au swap (frais du pool + routage) | ~1,90 | **non** — médiane 0,94 %/jambe, quartiles 0,72/1,20, très stable |
+| **caution** | **1,06** | **oui — fait le 19/09, 19,49 € rendus** |
+| frais de priorité | 0,52 | **oui, moitié** — 0,21 pt sur la jambe achat |
+| impact (taille / profondeur) | ~0,20 | non, déjà minuscule |
+| dispersion | ~0,6 | — |
+| **total mesuré** | **4,25** | **1,27 récupérable** |
+
+**La priorité, mesurée contre le marché.** Nous payions **500 000 lamports fixes** par ordre, soit
+**4 407 000 microlamports par unité de calcul**. Sur les 150 derniers blocs du programme PumpSwap :
+médiane **0**, 3ᵉ quartile 0, 9ᵉ décile 0, 99ᵉ centile **199 989**. **Nous payions 22 fois le
+concurrent le plus agressif.** Ramené à 100 000, on en paie encore 4,4 fois.
+
+**Asymétrie des deux jambes, et c'est Mido qui l'a posée** (*« le risque c'est pas qu'on trade plus,
+c'est qu'on achète et qu'on ne puisse plus vendre »*) : un **achat** raté ne coûte rien — on ne prend
+pas le ticket. Une **vente** ratée laisse une position sur un jeton qui s'effondre, et garder aggrave
+toujours. Donc `priority_fee_lamports_achat: 100000`, la vente reste à 500 000.
+
+**Correction d'un chiffre que j'avais donné :** j'ai annoncé 0,42 pt d'économie sur la priorité —
+c'était le calcul pour les **deux** jambes. On n'en change qu'une : **0,21 pt**.
+
+**Rejeu des 92 tickets du 18/09 :** −158,85 € deviennent **−135,54 €** (caution +19,49, priorité
++3,82). Soit −1,47 €/ticket au lieu de −1,73.
+
+**Et le fait qui remet tout à l'échelle :** la perte par ticket était de **8,63 %**, le coût
+d'exécution de **4,25**. Les ~4 points restants ne sont pas des frais — **c'est le marché qui
+baisse**. Réduire les coûts d'un tiers ne transforme pas une stratégie perdante en gagnante.
+
+**Piste écartée, mesurée :** durcir la tolérance de glissement. Le réglage à 25 % n'a jamais été
+atteint (pire achat : 12,1 %). Filtrer à 5 % aurait refusé 11 achats et « économisé » 46 € — mais
+refuser 11 tickets **au hasard** fait aussi bien dans **19,4 %** des tirages, et les quintiles de
+glissement ne montrent aucun ordre (le pire est au milieu, corrélation −0,04). Le glissement ne
+prédit rien : il se paie pareil sur tous les tickets.

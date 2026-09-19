@@ -540,7 +540,14 @@ solana:
   # d un ticket de 20 EUR. Verifie contre l API : un ENTIER est applique tel quel, alors qu un
   # niveau nomme (« high ») fait appliquer 59 431, MOINS que le defaut -- la premiere version de ce
   # reglage reduisait donc la priorite en croyant l augmenter (§3.49).
-  priority_fee_lamports: 500000
+  priority_fee_lamports: 500000        # LA VENTE garde 500 000 : une vente ratee coute une position coincee
+  # L ACHAT descend a 100 000 le 19/09 sur accord de Mido. Mesure sur nos 184 transactions reelles :
+  # on payait 500 000 lamports fixes, soit 4 407 000 microlamports par unite de calcul, alors que sur
+  # les 150 derniers blocs du programme PumpSwap la mediane du marche est de ZERO et le 99e centile
+  # de 199 989 -- nous payions 22 fois le concurrent le plus agressif. A 100 000 on en paie encore
+  # 4,4 fois. Gain mesure : 0,42 pt par aller-retour, soit 3,82 EUR sur les 92 tickets du 18/09.
+  # Un achat rate ne coute rien ; c est la seule jambe ou l on peut se le permettre.
+  priority_fee_lamports_achat: 100000
   # Plus de plafond de tickets : il arretait aussi une serie gagnante, et de toute facon aucune
   # ligne de code ne le lisait -- il ne protegeait rien. Remplace par une limite de PERTE, qui ne
   # coupe que si ca perd vraiment et laisse courir tant que ca marche. Mettre 0 pour tout enlever.

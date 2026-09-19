@@ -416,7 +416,13 @@ class ModeleRapide:
                 sol_eur=taux,
                 slippage_pct=float(self._cfg("slippage_achat_pct", 20.0)),
                 max_impact_pct=float(self._cfg("max_impact_pct", 15.0)),
-                priorite_lamports=int(self.ctx.config.get("solana.priority_fee_lamports", 0) or 0),
+                # PRIORITE D ACHAT, distincte de celle de la vente depuis le 19/09 (§3.153). Un
+                # achat rate ne coute RIEN -- on ne prend pas le ticket. Une vente ratee laisse une
+                # position ouverte sur un jeton qui s effondre, et on a mesure que garder aggrave
+                # toujours. Les deux jambes n ont donc pas le meme prix acceptable.
+                priorite_lamports=int(self.ctx.config.get(
+                    "solana.priority_fee_lamports_achat",
+                    self.ctx.config.get("solana.priority_fee_lamports", 0) or 0) or 0),
                 proprietaire=proprio)
             if tx.get("status") != "BUILT" or not tx.get("tx"):
                 raise RuntimeError(tx.get("refused_reason") or "transaction non assemblee")
