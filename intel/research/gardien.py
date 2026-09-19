@@ -40,7 +40,12 @@ COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte
                # la METHODE reentrainee, gelee le 19/09 21h23 : la recette est figee (15 variables,
                # aucune de cout, reentrainement toutes les 6 h, on garde 80 %), les poids se
                # refont. Papier, zero euro, critere a 1 200 tickets.
-               "foret_marche")
+               "foret_marche",
+               # la recette 75 s REENTRAINEE, gelee le 19/09 23h35 : decision a 75 s, 25 variables
+               # rechoisies a chaque coupe, SEUIL ABSOLU a 20 %. Ce qui se refait toutes les 6 h,
+               # c est aussi le seuil -- c est la l essentiel de l effet mesure (§3.158). Papier,
+               # zero euro, critere a 400 retenus, dont une condition sur le NIVEAU.
+               "foret75_carnet")
 PAS = 60.0
 JOURNAL = "/app/logs"
 
