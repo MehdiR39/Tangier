@@ -7502,3 +7502,52 @@ positives : `BANDE + PAUSE` +115 € (48), `FORÊT 75s top 10 %` +31 € (32), `
 **Règle 20 :** *un coût qu'on va multiplier par des euros se mesure en euros.* Une moyenne de ratios
 par ticket n'est pas le ratio des totaux, et l'écart est d'autant plus grand que les queues sont
 épaisses — ici, presque deux points.
+
+
+---
+
+### 3.152 — Audit à fond du coût, parce qu'il a coûté 150 € : 4,25 pt d'exécution pure, décomposés, 2026-09-19 10h40
+
+Mido : *« avant de me montrer la table avec ces chiffres, vérifie à fond — hier on a perdu 150 € en
+prod pour comprendre les coûts »*. Sept vérifications, deux corrections.
+
+**1. Couverture.** 92 tickets réels clôturés, **92 appariés**, aucun perdu. Et 92 comptes-jetons
+vides trouvés le 19/09 : une caution par ticket, jamais reprise.
+
+**2. Le timing réel — première correction.** L'entrée réelle est à **54 s** (quartiles 52/57, min 48,
+max 62), pas 47 s ; la tenue est de **241 s** (240/243). Comparer le réel à `brut_240` (47 s → 287 s)
+mélangeait donc **7 secondes de retard d'entrée** avec les frais. Refait sur la fenêtre que **chaque
+ticket a réellement utilisée** (son âge d'entrée → son âge de sortie, prix à 1 s, 92/92 mesurables) :
+
+```
+engagé 1 840,00 · théorique même fenêtre -80,60 · réel -158,85
+-> COUT PUR D EXECUTION  78,25 EUR = 4,25 pt     (le retard d'entrée valait 0,44 pt)
+```
+
+**3. Décomposition en euros** (et non en médianes — les euros s'additionnent) :
+
+| poste | euros | points |
+|---|---|---|
+| frais de pool (aller-retour) | 20,42 | 1,11 |
+| frais de priorité (2 × 0,048 €) | 8,83 | 0,48 |
+| caution | 19,49 | 1,06 |
+| impact, **coffres réels aux deux jambes** | 7,91 | 0,43 |
+| **somme des postes connus** | **56,66** | **3,08** |
+| mesuré | 78,25 | 4,25 |
+| **inexpliqué** | **21,59** | **1,17** |
+
+**4. Le coffre ne se vide pas** en médiane (82 → 100 SOL, +22 %) ; l'impact réel aux deux jambes
+(0,43 pt) est conforme à la formule. 20 % des tickets vendent quand même dans un coffre réduit de
+moitié.
+
+**5. Où est l'inexpliqué.** Sur les 22 tickets effondrés (< −50 %), le coût moyen est de **2,09 pt** ;
+sur les 70 autres, **4,93 pt**. Les cinq tickets les plus coûteux (4,59 · 4,22 · 3,76 · 3,46 ·
+2,50 €) portent **24 % du coût total** — et ce sont tous des jetons qui ont **monté** (+16 % à
++214 %). Le coût pur est donc concentré sur les **hausses**, pas sur les chutes : vendre un jeton qui
+vient de monter coûte plus cher (le pool est déséquilibré, l'écart prix-exécution se creuse). Le
+glissement à l'achat est mesuré à −0,36 % (favorable) ; **`prix_sortie` n'est jamais enregistré
+(0/92)** — on ne peut donc pas mesurer le glissement à la vente directement. C'est là que se cachent
+les 1,17 pt, et c'est un trou de données à combler.
+
+**Ce qui est retenu pour la table : 4,25 pt**, caution comprise. Caution déduite : **3,19 pt**.
+Médiane 3,48 pt — le moyen (4,25) reste au-dessus, tiré par une poignée de hausses.
