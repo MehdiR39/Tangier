@@ -163,25 +163,6 @@ def table_complete():
     c[3].metric("Mise", "%.0f €" % D["mise"], "par ticket", delta_color="off")
     st.caption("table · %s" % age(D["genere"]))
 
-    # LES GELS QUI DEMARRENT, en haut et en clair. Une strategie a 0 ticket n a pas de courbe, donc
-    # elle n apparait ni dans le classement (il exige 20 tickets) ni dans le selecteur du graphique.
-    # Elle n etait visible qu au fond du registre -- Mido : « je vois pas foret flux 30 dans la
-    # page ». Un gel qu on ne voit pas demarrer est un gel qu on croira oublie.
-    jeunes = sorted([l for l in D["lignes"] if l["n"] < 20],
-                    key=lambda l: -(l.get("debut") or 0))
-    if jeunes:
-        st.subheader("Gels qui démarrent")
-        st.caption("Trop peu de tickets pour être jugés — ils n'apparaissent pas encore dans le "
-                   "classement ni dans les courbes. C'est normal, et c'est ici qu'on les suit.")
-        st.dataframe(pd.DataFrame([{
-            # `debut` vaut l heure du GEL tant qu aucun ticket n est tombe, puis celle du PREMIER
-            # ticket. Le libelle dit donc « depuis » et non « gelée le » : ecrire l un pour l autre
-            # ferait croire qu un gel est plus recent qu il ne l est.
-            "stratégie": l["nom"], "tickets": l["n"],
-            "depuis": heure(l["debut"]) if l.get("debut") else "—",
-            "total €": l["total"]} for l in jeunes]),
-            use_container_width=True, hide_index=True)
-
     st.subheader("Contre le témoin")
     st.caption("Une stratégie qui n'a tourné qu'un bon après-midi paraît brillante par accident. "
                "Chacune est comparée à « acheter tout » **sur sa propre période** — même marché, "
@@ -236,7 +217,10 @@ def table_complete():
     st.caption("Chaque courbe part de **zéro à son propre démarrage** — elles ne commencent pas "
                "toutes à la même date, donc deux courbes superposées ne couvrent pas les mêmes "
                "heures de marché. La date de début est rappelée dans la légende.")
-    dispo = [l for l in D["lignes"] if len(l.get("courbe") or []) > 2]
+    # Deux points suffisent pour tracer une ligne. Le seuil precedent (> 2) excluait les gels tout
+    # neufs du selecteur : ils n etaient donc visibles nulle part ou on les cherche. Mido, 19/09 :
+    # « je veux la voir AVEC les autres strategies gelees, avec graphique et tout ».
+    dispo = [l for l in D["lignes"] if len(l.get("courbe") or []) >= 2]
     noms = [l["nom"] for l in dispo]
     defaut = [n for n in (["temoin sans filtre"] + [c["nom"] for c in D["contre_temoin"][:3]]) if n in noms]
     choix = st.multiselect("Lignes affichées", noms, default=defaut, key="courbes")

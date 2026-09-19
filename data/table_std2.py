@@ -492,11 +492,16 @@ if tem:
     lignes = []
     for nom in ORDRE:
         v = SERIE.get(nom) or []
-        if nom == "temoin sans filtre" or len(v) < 20:
+        # SEUIL A 5, pas 20. Une ligne jeune doit figurer AVEC les autres -- la page trace son
+        # incertitude a +/- 2 ecarts-types, et sur 6 tickets cette barre est enorme : elle dit la
+        # verite mieux qu une absence, qui laisse croire que la strategie n existe pas.
+        if nom == "temoin sans filtre" or len(v) < 5:
             continue
         t0 = min(x[0] for x in v)
         ref = [r for t, r in tem if t >= t0]
-        if len(ref) < 30:
+        # Le TEMOIN sur la meme fenetre : 10 tickets suffisent pour qu une ligne jeune figure au
+        # classement. Sa barre d incertitude sera enorme, et c est precisement l information utile.
+        if len(ref) < 10:
             continue
         a_ = MISE * sum(r for _, r in v) / len(v)
         b_ = MISE * sum(ref) / len(ref)
