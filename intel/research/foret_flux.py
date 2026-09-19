@@ -156,9 +156,34 @@ def cibles():
         c.close()
 
 
+def _arbre(t, i=0):
+    """Un arbre sklearn -> la structure que `ensemble.Ensemble` sait descendre.
+
+    Meme convention que sklearn : `valeur <= seuil` part a GAUCHE. La feuille porte la proportion
+    de la classe 1 ; `Ensemble` les MOYENNE quand `sigmoide` est faux -- c est exactement ce que
+    fait une foret aleatoire. Le format est donc natif pour elle, pas un detournement.
+    """
+    if t.children_left[i] == -1:
+        v = t.value[i][0]
+        return {"leaf_value": float(v[1] / v.sum()) if v.sum() else 0.0}
+    return {"split_feature": int(t.feature[i]), "threshold": float(t.threshold[i]),
+            "default_left": True, "missing_type": "None",
+            "left_child": _arbre(t, t.children_left[i]),
+            "right_child": _arbre(t, t.children_right[i])}
+
+
 def geler():
-    """Entraine UNE fois sur tout ce qui precede, et ecrit le modele au format du moteur."""
-    import lightgbm as lgb
+    """Entraine UNE fois sur tout ce qui precede, et ecrit le modele au format du moteur.
+
+    RANDOM FOREST, et non LightGBM. Mido, 19/09 : « pourquoi t'as choisi LightGBM a la place de
+    RF ? ». J avais pris LightGBM parce que les modeles deja geles sont a son format et que le
+    moteur savait le lire -- un argument de PLOMBERIE, pas de statistique. Or toute l etude qui a
+    etabli le +0,430 EUR/ticket tournait sur une RandomForest (300 arbres, min_samples_leaf=20).
+    Geler un autre algorithme que celui qui a produit le resultat, c est geler autre chose.
+    Et la mesure lui donne raison : en marche avant, RF 0,689 d AUC contre 0,615 pour le LightGBM
+    que j avais gele (qui affichait 0,996 sur ses propres donnees -- il avait appris par coeur).
+    """
+    from sklearn.ensemble import RandomForestClassifier
     P = pools()
     F = variables(P)
     C = cibles()
@@ -176,16 +201,17 @@ def geler():
         raise RuntimeError("pas assez de donnees pour geler : %d lignes" % len(y))
     med = {n: float(np.nanmedian(X[:, i])) if np.isfinite(X[:, i]).any() else 0.0
            for i, n in enumerate(NOMS)}
-    b = lgb.train({"objective": "binary", "num_leaves": 15, "min_data_in_leaf": 20,
-                   "learning_rate": 0.05, "verbose": -1, "feature_fraction": 0.8,
-                   "bagging_fraction": 0.8, "bagging_freq": 1, "seed": 7},
-                  lgb.Dataset(X, label=y, feature_name=NOMS), num_boost_round=300)
-    p = b.predict(X)
-    d = b.dump_model()
-    sortie = {"feature_names": NOMS, "n_modeles": 1, "sigmoide": True,
+    Xr = np.array([[med[n] if not np.isfinite(r[i]) else r[i] for i, n in enumerate(NOMS)]
+                   for r in X])
+    rf = RandomForestClassifier(n_estimators=300, min_samples_leaf=20, n_jobs=-1,
+                                random_state=0).fit(Xr, y)
+    p = rf.predict_proba(Xr)[:, 1]
+    sortie = {"feature_names": NOMS, "n_modeles": 1, "sigmoide": False,
               "seuil_p80": float(np.quantile(p, GARDE)), "medianes": med,
-              "modeles": [d],
-              "entraine_sur": "v1_avant, %d pools, flux <= %d s, cout %.2f pt, gel %s"
+              "modeles": [{"tree_info": [{"tree_structure": _arbre(e.tree_)}
+                                         for e in rf.estimators_]}],
+              "entraine_sur": "v1_avant, %d pools, flux <= %d s, RandomForest 300 arbres "
+                              "(min_samples_leaf 20), cout %.2f pt, gel %s"
                               % (len(y), AGE_FLUX, 100 * COUT,
                                  dt.datetime.now(TZ).strftime("%d/%m %Hh%M"))}
     os.makedirs(os.path.dirname(MODELE), exist_ok=True)
