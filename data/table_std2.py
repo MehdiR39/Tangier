@@ -6,7 +6,7 @@ Usage : python table_std.py [heure de coupe, ex 14:44]
 import sqlite3, json, sys, os, datetime as dt
 import statistics as _st
 MISE = float(os.environ.get("MISE", "25"))
-CAUTION = os.environ.get("CAUTION", "payee") == "payee"
+CAUTION = os.environ.get("CAUTION", "payee") == "payee"     # l HISTORIQUE a paye sa caution : on ne le reecrit pas
 V, SOL_EUR, PRIO, PROTO, DEPOT = 17.5845, 0.31/30.0, 0.048, 0.0111, 0.00203928
 _K = [1.0]
 def cout(q):
@@ -74,8 +74,16 @@ _K[0] = 0.0262 / _st.mean(PROTO + PRIO/30 + 2*SOL_EUR*30/((q or 0)+V) + DEPOT/(S
 # le nouveau dit ce que ca aurait coute. La surcharge est PLATE -- a 20 EUR la formule rend 2,83 pt
 # quel que soit le coffre (mediane = moyenne) -- donc l appliquer par ticket est exact.
 COUT_MESURE = float(os.environ.get("COUT_MESURE", "0.0655"))
+# Le 6,55 a ete mesure sur 92 tickets dont AUCUN ne recuperait sa caution (92 comptes vides trouves le
+# 19/09, 14,46 EUR). Depuis le 19/09 09h30 la recuperation est active : la caution revient au
+# portefeuille, donc le cout mesure baisse de sa part -- DEPOT / (SOL par EUR x MISE), soit ~1,06 pt
+# a 20 EUR. CAUTION=payee redonne l ancien chiffre.
 _COUT_APPLIQUE = _st.mean(cout(q) for q in _qs)
 SUP = COUT_MESURE - _COUT_APPLIQUE
+# et ce que les MEMES tickets couteraient depuis le 19/09 09h30, caution recuperee : une colonne de plus,
+# l historique reste tel qu il a ete paye
+COUT_RECUP = COUT_MESURE - DEPOT / (SOL_EUR * MISE)
+SUP_RECUP = COUT_RECUP - _COUT_APPLIQUE
 for t, risque, regime, cr, b240, q in c.execute(
         "SELECT d.t_dec, d.risque, d.regime, d.cout_reduit, i.brut_240, d.q FROM decision d"
         " JOIN issue i ON i.pair=d.pair WHERE d.eligible=1 AND i.brut_240 IS NOT NULL AND d.q IS NOT NULL"):
@@ -351,15 +359,15 @@ ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + 
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
          "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
-print("COUT : la colonne TOTAL applique %.2f pt (formule recalee sur 2,62) · la colonne MESURE applique"
-      " %.2f pt, le cout REEL mesure sur les 92 tickets du carnet du 18/09 (IC95 3,52-10,03)."
-      % (100 * _COUT_APPLIQUE, 100 * COUT_MESURE))
+print("COUT : TOTAL applique %.2f pt (formule recalee sur 2,62) · MESURE applique %.2f pt (cout REEL, 92 tickets du 18/09,"
+      " IC95 3,52-10,03) · RECUP applique %.2f pt = le meme moins la caution, recuperee depuis le 19/09 09h30."
+      % (100 * _COUT_APPLIQUE, 100 * COUT_MESURE, 100 * COUT_RECUP))
 print("  2,62 est HORS de cet intervalle : sur la meme fenetre la table dit -2,14 %/ticket, le reel -8,63 %.")
 print("* ENTREE T+75 : AUTRE population -- les jetons Telegram (ceux de la production), pas le flux papier_combo.")
 print("x = la strategie n existait pas · 0 = elle existait et n a rien pris (ou resultat pas encore connu)")
 ENTETES = _passes + [DERNIER + " -> " + COUPE_H, COUPE_H + " -> maintenant", DERNIER + " TOTAL"]
-print("%-24s %13s %s %12s %14s" % ("", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL",
-                                   "TOTAL MESURE"))
+print("%-24s %13s %s %12s %14s %10s" % ("", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL",
+                                        "TOTAL MESURE", "RECUP"))
 for nom in ORDRE:
     if nom not in res:
         continue
@@ -380,9 +388,9 @@ for nom in ORDRE:
             cel.append("%17s" % ("x" if debuts[nom] > FINS[c] else "0"))
     # la surcharge est plate, donc le total au cout mesure se deduit exactement du NOMBRE de
     # tickets : inutile de rejouer la table, et aucune approximation cachee.
-    print("%-24s %13s %s %+9.0f E(%3d) %+11.0f E" % (
+    print("%-24s %13s %s %+9.0f E(%3d) %+11.0f E %+8.0f E" % (
         nom, dt.datetime.fromtimestamp(debuts[nom] + 7200, dt.timezone.utc).strftime("%d/%m %Hh%M"),
-        " ".join(cel), tot, n_tot, tot - n_tot * MISE * SUP))
+        " ".join(cel), tot, n_tot, tot - n_tot * MISE * SUP, tot - n_tot * MISE * SUP_RECUP))
 
 
 # on retient l heure de CE tableau pour que le prochain coupe ici

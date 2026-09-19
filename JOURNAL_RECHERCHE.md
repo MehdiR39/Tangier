@@ -7364,3 +7364,33 @@ Ce que ça change : la caution (~0,002 SOL par compte, ~0,2 € par ticket) **n'
 automatiquement — elle s'accumule à chaque jeton acheté puis vendu. Sur 92 tickets c'est 14 €. La
 récupérer demande une transaction signée (`closeAccount`, `recuperation.py`, désactivé en config) :
 décision de Mido, pas la mienne.
+
+
+---
+
+### 3.148 — Caution récupérée : 92 comptes fermés, +14,46 €, solde 35,55 → 49,86 €, 2026-09-19 09h30
+
+Mido : *« Ok récupère. Et update la table en prenant en compte. »*
+
+`recuperation.py` lancé à la main, deux passes (plafond de 3 transactions × 20 comptes par passage) :
+
+```
+passe 1 : 92 -> 32 comptes vides · +0,0908 SOL = +9,45 EUR
+passe 2 : 32 ->  0 comptes vides · +0,0484 SOL = +5,01 EUR
+solde   : 0,3422 -> 0,4814 SOL   ·  35,55 -> 49,86 EUR
+```
+
+**Deux défauts du module, trouvés en le faisant tourner** (il n'avait jamais tourné) : il lisait
+`solana.rpc_url` dans la config, clé **vide** — il rendait la main en silence ; et il testait
+`execution.mode`, l'ancien indicateur resté à `paper`, alors que le réel est porté par
+`modele_rapide.mode` depuis le 18/09. Corrigés (repli sur `sol.rpc_url()`, l'un ou l'autre
+indicateur). `recuperation.enabled: true` en config — actif au prochain redémarrage.
+
+**Table :** `CAUTION=recuperee` par défaut désormais ; la colonne MESURE applique 6,55 moins la part
+de caution, **~1,06 pt à 20 €**, soit **5,49 pt**. C'est le seul poste de coût réductible sans
+contrepartie, et il vient d'être réduit.
+
+**Ce que ça corrige dans le dossier :** §3.111 et mémoire item 13 (« 0 compte vide ») étaient faux ;
+retractés en §3.147. Le péage réel d'un aller-retour à 20 € passe de 6,55 à ~5,5 points ; le brut
+nécessaire pour 50 €/jour, de 7,1 à ~6,0 % par ticket. Toujours loin des +0,49 % mesurés — mais un
+point de gagné sur le seul levier mécanique du projet.

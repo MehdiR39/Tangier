@@ -99,7 +99,9 @@ class Recuperation:
         if not bool(self._cfg("enabled", False)):
             return
         client = self.client
-        rpc = str(self.ctx.config.get("solana.rpc_url", ""))
+        # `solana.rpc_url` est VIDE dans la config : le moteur lit sol.rpc_url() (env / .env). Lu tel
+        # quel, le module rendait la main en silence et n aurait jamais rien ferme (trouve le 19/09).
+        rpc = str(self.ctx.config.get("solana.rpc_url", "") or sol.rpc_url())
         proprio = sol.signer_address()
         if not rpc or not proprio:
             return
@@ -128,7 +130,11 @@ class Recuperation:
         paquets = [prets[i:i + PAR_PAQUET] for i in range(0, len(prets), PAR_PAQUET)][:plafond]
         gain = CAUTION_SOL * sum(len(p) for p in paquets)
 
-        if str(self.ctx.config.get("execution.mode", "paper")).lower() != "live":
+        # « live » est porte par `modele_rapide.mode` depuis le 18/09 ; `execution.mode` est l ancien
+        # indicateur, reste a paper. L un OU l autre suffit -- ce module ne peut signer que CloseAccount.
+        est_live = any(str(self.ctx.config.get(k, "paper")).lower() == "live"
+                       for k in ("execution.mode", "modele_rapide.mode"))
+        if not est_live:
             log.info("recuperation (PAPIER) : %d compte(s) fermables en %d transaction(s), "
                      "%.4f SOL a recuperer -- rien n a ete signe", sum(len(p) for p in paquets),
                      len(paquets), gain)

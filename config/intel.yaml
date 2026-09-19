@@ -1220,6 +1220,8 @@ modele_rapide:
 # Comme tout ce qui signe ici, il faut DEUX actes pour qu il agisse : `enabled: true` ci-dessous ET
 # `execution.mode: live`. En papier il se contente d afficher ce qu il fermerait.
 recuperation:
-  enabled: false
+  # ACTIVEE le 19/09 09h30 sur accord de Mido : 92 comptes vides trouves, 14,46 EUR recuperes a la main
+  # (§3.148). Le module ne sait faire que CloseAccount sur un compte a solde exactement nul.
+  enabled: true
   pas_secondes: 1800            # boucle lente : rien ne presse, et ca evite de gener les ordres
   max_transactions_par_passage: 3   # 3 x 20 comptes = 60 fermetures par passage au maximum
