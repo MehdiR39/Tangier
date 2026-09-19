@@ -7418,3 +7418,31 @@ marquées interrompues par le module lui-même. Gardien relancé avec **dix** no
 
 **Règle 19 :** *tout processus qui alimente une ligne de la table est sous le gardien, sous son
 propre nom, avec un journal fichier — sinon la ligne peut mourir 24 h sans bruit.*
+
+
+---
+
+### 3.150 — Veille de la table : les 11 sources surveillées, avec une tolérance par source, 2026-09-19 10h15
+
+Mido : *« toutes les strats de la table doivent être suivies »*. `veille_table.py` : toutes les
+10 minutes, la dernière écriture de **chaque** source de la table, comparée à un retard toléré
+**propre à cette source**, et une alerte Telegram quand elle dépasse — une seule par panne, plus un
+message quand la source repart.
+
+| source | lignes de la table | toléré |
+|---|---|---|
+| papier_combo | témoin, régime, RISQUE seul, BANDE, ENSEMBLE, FORÊT ALÉATOIRE, AU PLUS BAS, FREIN, IPFS… | 20 min |
+| papier_gd45 / gd30 / large | G+D 45 s · G+D 30 s · coffre, foule, tendance, D+F, G+D les trois | 20 min |
+| foret_gel45 / 75 | FORÊT 45s et 75s, top 5 % et 10 % | **450 min** (cycle de 6 h) |
+| social, stock | variables détenteurs et stock | 30 min |
+| prix_rapide, moteur_prix | prix 1 s, et la source de tout | 20 min |
+| telegram (tg_lignes) | ENTRÉE T+75 | 180 min |
+
+**La tolérance par source est le cœur du garde-fou** : 20 minutes pour un collecteur continu, 7 h 30
+pour un gel qui note par cycles de 6 h. Une tolérance unique produirait soit des alertes fausses
+qu'on apprend à ignorer, soit un silence de 24 h comme celui du 18/09.
+
+Audit à la mise en route : **11 sources sur 11 répondent** (retards de 0 à 2 min, sauf les deux gels
+à 275 et 279 min, dans leur cycle). La veille ne répare rien — le gardien relance, la veille
+prévient ; les deux sont séparés pour qu'une panne de l'un ne masque pas l'autre. Gardien à **onze**
+processus, veille comprise.

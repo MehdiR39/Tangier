@@ -28,7 +28,7 @@ import sys
 import time
 
 COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte", "foret_gel", "foret_gel75", "v1_enregistreur",
-               "papier_gd45", "papier_gd30", "papier_large")
+               "papier_gd45", "papier_gd30", "papier_large", "veille_table")
 PAS = 60.0
 JOURNAL = "/app/logs"
 
