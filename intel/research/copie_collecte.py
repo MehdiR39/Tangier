@@ -31,6 +31,11 @@ WSOL = "So11111111111111111111111111111111111111112"
 FENETRE_S = 900
 PAR_PAGE = 1000          # maximum documente ; les transactions echouees sont filtrees a la source
 PAGES_MAX = 20
+# Solana a active les transactions « version 1 » le 15/09 a 01h04 UTC (§3.90). Un client qui demande
+# 0 se voit refuser TOUT le pool des qu une seule transactionversionnee s y trouve (-32015), il ne
+# perd pas juste cette transaction. La valeur par defaut reste 0 pour ne rien changer aux collectes
+# deja faites ; les appelants recents (v1_enregistreur, flux_latence) montent a 1.
+VERSION_MAX = 0
 
 
 def rpc(corps):
@@ -100,7 +105,7 @@ def lire_pool(p):
     while pages < PAGES_MAX:
         opts = {"transactionDetails": "full", "sortOrder": "asc", "limit": PAR_PAGE,
                 "filters": {"blockTime": {"gte": int(t0) - 5, "lte": int(t0) + FENETRE_S}, "status": "succeeded"},
-                "encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}
+                "encoding": "jsonParsed", "maxSupportedTransactionVersion": VERSION_MAX}
         if jeton:
             opts["paginationToken"] = jeton
         res = rpc({"jsonrpc": "2.0", "id": 1, "method": "getTransactionsForAddress", "params": [pair, opts]}) or {}

@@ -47,7 +47,17 @@ SERIE = {}                 # nom -> [(instant, rendement net)] : pour comparer c
                            # le seul critere est de faire mieux que prendre tout sans filtre.
 
 
+# INSTANT DE LA PHOTO, fige au demarrage. Le script met une minute a tourner et lit la MEME base
+# a plusieurs moments : le temoin au debut, les strategies gelees a la fin. Des tickets arrivent
+# entre-temps, et la derniere colonne montrait alors des filtres avec PLUS de tickets que le
+# temoin -- impossible, puisque le temoin prend tout. Mido l a vu le 19/09. Tout ce qui arrive
+# apres cet instant attendra la prochaine table.
+T_PHOTO = dt.datetime.now(dt.timezone.utc).timestamp()
+
+
 def ranger(nom, t, r):
+    if t > T_PHOTO:
+        return
     SERIE.setdefault(nom, []).append((t, r))
     # la journee en cours compte DEUX fois : dans son total a jour, et dans la tranche
     # « depuis le dernier point » qui montre ce qui vient de s ajouter.
@@ -92,15 +102,14 @@ _K[0] = 0.0262 / _st.mean(PROTO + PRIO/30 + 2*SOL_EUR*30/((q or 0)+V) + DEPOT/(S
 #   priorite d achat 500 000 -> 100 000         -0,21 pt
 # soit 2,98 pt aujourd hui. COUT_MESURE=0.0425 redonne le tableau d avant les corrections.
 COUT_MESURE = float(os.environ.get("COUT_MESURE", "0.0298"))
-# Le 6,55 a ete mesure sur 92 tickets dont AUCUN ne recuperait sa caution (92 comptes vides trouves le
-# 19/09, 14,46 EUR). Depuis le 19/09 09h30 la recuperation est active : la caution revient au
-# portefeuille, donc le cout mesure baisse de sa part -- DEPOT / (SOL par EUR x MISE), soit ~1,06 pt
-# a 20 EUR. CAUTION=payee redonne l ancien chiffre.
-# Mido veut la table ENTIERE en caution recuperee (19/09 09h30) : les cases par jour (formule sans le
-# depot) ET la colonne mesuree (6,55 moins la part de caution, ~1 pt a 20 EUR). CAUTION=payee redonne
-# l ancien tableau, tel que les tickets historiques l ont reellement paye.
-if not CAUTION:
-    COUT_MESURE -= DEPOT / (SOL_EUR * MISE)
+# CORRIGE le 19/09 : la caution etait SOUSTRAITE DEUX FOIS. Le 2,98 ci-dessus la deduit deja
+# (4,25 - 1,06 - 0,21) ; ce bloc la rededuisait, et la ligne d en-tete une troisieme fois -- la table
+# appliquait 2,19 pt et en affichait 1,40 au lieu de 2,98, soit 0,20 EUR par ticket de trop sur
+# CHAQUE case. Le sens par defaut est desormais : COUT_MESURE = caution RECUPEREE, point.
+# CAUTION=payee rajoute la part de caution pour retrouver ce que les tickets historiques ont
+# reellement paye -- c est le seul cas ou l on touche a COUT_MESURE.
+if CAUTION:
+    COUT_MESURE += DEPOT / (SOL_EUR * MISE)
 _COUT_APPLIQUE = _st.mean(cout(q) for q in _qs)
 SUP = COUT_MESURE - _COUT_APPLIQUE
 for t, risque, regime, cr, b240, q in c.execute(
@@ -380,7 +389,7 @@ ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + 
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
 print("COUT : %.2f pt PARTOUT (cases et total). Mesure sur les 92 tickets reels du 18/09, transactions relues sur la"
       " chaine : 4,25 pt · moins la caution recuperee (1,06) · moins la priorite d achat divisee par 5 (0,21)."
-      % (100 * (COUT_MESURE if CAUTION else COUT_MESURE - DEPOT / (SOL_EUR * MISE))))
+      % (100 * COUT_MESURE))
 print("  ce qui reste, structurel : swap 1,90 (0,94 %/jambe) · impact 0,20 · priorite vente 0,26 · dispersion 0,6.")
 print("")
 print("* ENTREE T+75 : AUTRE population -- les jetons Telegram (ceux de la production), pas le flux papier_combo.")
