@@ -36,7 +36,11 @@ COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte
                # la foret de vidage au FLUX D ORDRES, gelee le 19/09 16h00 : elle n apprend que sur
                # les transactions <= 30 s, la seule vue que l index montre surement a l instant de
                # decider. Papier, zero euro, critere a 600 tickets.
-               "foret_flux")
+               "foret_flux",
+               # la METHODE reentrainee, gelee le 19/09 21h23 : la recette est figee (15 variables,
+               # aucune de cout, reentrainement toutes les 6 h, on garde 80 %), les poids se
+               # refont. Papier, zero euro, critere a 1 200 tickets.
+               "foret_marche")
 PAS = 60.0
 JOURNAL = "/app/logs"
 

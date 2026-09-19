@@ -295,6 +295,13 @@ class ModeleRapide:
             "  ts_sortie INTEGER, prix_sortie REAL, tx_vente TEXT, gain_eur REAL,"
             "  motif TEXT, variables TEXT)")
         self.ctx.db.execute("CREATE INDEX IF NOT EXISTS i_mr_statut ON mr_lignes(statut)")
+        # `impact_annonce` : ce que le routeur annonce AVANT l achat (`priceImpactPct`). Ajoute le
+        # 19/09 a 22h sur une table qui existait deja, donc par ALTER et non dans le CREATE : les
+        # lignes anterieures restent a NULL, ce qui est exact -- on ne l enregistrait pas.
+        try:
+            self.ctx.db.execute("ALTER TABLE mr_lignes ADD COLUMN impact_annonce REAL")
+        except Exception:  # noqa: BLE001
+            pass                                  # la colonne existe deja
 
     # ---------------------------------------------------------------- cycle
 
@@ -496,7 +503,27 @@ class ModeleRapide:
             if tx.get("status") != "BUILT" or not tx.get("tx"):
                 raise RuntimeError(tx.get("refused_reason") or "transaction non assemblee")
             h = await sol.send(self.client, rpc, sol.sign(tx["tx"], cle))
-            self.ctx.db.execute("UPDATE mr_lignes SET tx_achat=? WHERE mint=?", (h, mint))
+            # L IMPACT ANNONCE PAR LE ROUTEUR, enregistre a partir du 19/09 22h. Il etait lu depuis
+            # toujours et jete aussitot -- `prepare_buy` le renvoie sous le nom trompeur
+            # `slippage_pct`, mais c est bien `priceImpactPct` de la cotation.
+            #
+            # POURQUOI IL COMPTE. La variable `cout` que le modele utilise est une FORMULE
+            # (0,017 + 2.mise_SOL/(q+V)) : elle annonce 0,21 % en median quand le cout reel mesure
+            # est de 3,29 %, et elle correle a r = +0,025 avec lui -- c est-a-dire pas du tout. Or
+            # elle porte 21 % de l importance du modele en production : un cinquieme du modele
+            # repose sur un chiffre faux. L impact du routeur, lui, annonce 2,65 % de median sur le
+            # marche vivant, le bon ordre de grandeur, et il est connu AVANT d acheter.
+            #
+            # On l enregistre sans rien en faire pour l instant. Dans quelques jours on saura
+            # comment il predit le cout reel, et on reglera les seuils SUR UNE MESURE au lieu de les
+            # deviner -- et il deviendra une variable de modele, probablement meilleure que la
+            # formule qu il remplacerait.
+            try:
+                self.ctx.db.execute(
+                    "UPDATE mr_lignes SET tx_achat=?, impact_annonce=? WHERE mint=?",
+                    (h, float(tx.get("slippage_pct") or 0.0), mint))
+            except Exception:  # noqa: BLE001
+                self.ctx.db.execute("UPDATE mr_lignes SET tx_achat=? WHERE mint=?", (h, mint))
             log.info("modele_rapide: ACHAT %s — %s", mint[:10], h[:16])
             await self._prevenir(
                 "🟢 <b>%s…</b> acheté · <i>au plus bas + bande</i>\n"
