@@ -466,6 +466,51 @@ if tem:
     for d, nom, n, a_, b_ in sorted(lignes, reverse=True):
         print("   %-*s %6d %+9.3f %+9.3f %+9.3f %+8.0f E" % (LNOM, nom, n, a_, b_, d, 1000 * d))
 
+# ------------------------------------------------------------------ SORTIE JSON (page de suivi)
+# JSON=chemin ecrit exactement les memes nombres que ce qui vient d etre imprime, pour la page web.
+# UNE SEULE SOURCE : la page ne recalcule rien, sinon deux vues du meme chiffre finiraient par
+# diverger et il faudrait deviner laquelle croire.
+_sortie = os.environ.get("JSON")
+if _sortie:
+    _t0 = min((min(x[0] for x in v) for v in SERIE.values() if v), default=0)
+
+    def _courbe(v, pas=3600):
+        """Cumul en euros, un point par heure -- assez fin pour la forme, assez court pour le web."""
+        out, cum, seau = [], 0.0, None
+        for t, r in sorted(v):
+            cum += MISE * (r - SUP)
+            s = int(t // pas) * pas
+            if s != seau:
+                out.append([s, round(cum, 2)])
+                seau = s
+            else:
+                out[-1][1] = round(cum, 2)
+        return out
+
+    _lignes = []
+    for nom in ORDRE:
+        v = SERIE.get(nom) or []
+        if not v:
+            continue
+        n = len(v)
+        total = MISE * (sum(r for _, r in v) - n * SUP)
+        j = res[nom].get("_jour") or []
+        _lignes.append({
+            "nom": nom, "n": n, "total": round(total, 2),
+            "par_ticket": round(total / n, 4),
+            "jour": round(MISE * (sum(j) - len(j) * SUP), 2), "n_jour": len(j),
+            "debut": debuts.get(nom), "courbe": _courbe(v),
+        })
+    _contre = [{"nom": nom, "n": n, "par_ticket": round(a_, 4), "temoin": round(b_, 4),
+                "ecart": round(d, 4), "sur_1000": round(1000 * d, 1)}
+               for d, nom, n, a_, b_ in sorted(lignes, reverse=True)] if tem else []
+    json.dump({
+        "genere": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "mise": MISE, "cout_pt": round(100 * COUT_MESURE, 2), "caution": not CAUTION,
+        "debut_donnees": _t0, "lignes": _lignes, "contre_temoin": _contre,
+    }, open(_sortie, "w"), ensure_ascii=False)
+    print("\nJSON ecrit : %s" % _sortie)
+
 # on retient l heure de CE tableau pour que le prochain coupe ici
 try:
     with open(MEMO, "w") as f:

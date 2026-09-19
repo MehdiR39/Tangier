@@ -1,0 +1,144 @@
+"""Alimente la page de suivi locale : deux fichiers JSON dans `data/`, relus par Streamlit.
+
+POURQUOI CE PROCESSUS. Mido, 19/09 : « au lieu de passer par Claude pourquoi pas la faire dans un
+streamlit avec une adresse locale ? » -- et il a raison. Une page qui depend de ma session s arrete
+avec elle ; celle-ci tourne toute seule, ne coute rien, et peut relire le carnet reel toutes les
+vingt secondes au lieu du quart d heure.
+
+LE CHEMIN DES DONNEES. `/app/db` est un volume Docker : l hote ne sait pas le lire. `/app/data`, lui,
+est monte depuis `C:\\Users\\Osiris\\Documents\\Tangier\\data`. C est donc par la qu on passe : ce
+processus, DANS le conteneur, ecrit deux fichiers que Streamlit lit DEHORS, sans docker exec.
+
+DEUX RYTHMES, parce que les deux grandeurs ne bougent pas a la meme vitesse :
+    carnet.json       la table entiere (`table_std2.py`, 17 s de calcul) toutes les 5 minutes.
+                      ~25 tickets par heure sur 2 600 : la rafraichir plus vite ne montrerait rien.
+    carnet_live.json  le carnet REEL toutes les 20 s -- achats, P&L du jour, et l etat du budget
+                      de perte. C est ca qui bouge, et c est l argent de Mido.
+
+UNE SEULE SOURCE. La table n est pas recalculee ici : on relance le script que Mido lit dans son
+terminal, avec sa sortie JSON. Deux vues du meme chiffre finissent toujours par diverger, et il
+faut alors deviner laquelle croire.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import time
+
+DATA = os.environ.get("CARNET_DIR", "/app/data")
+INTEL = os.environ.get("INTEL_DB", "/app/db/intel.sqlite")
+MISE_TABLE = os.environ.get("MISE", "25")
+PAS_TABLE = int(os.environ.get("PAS_TABLE", "300"))
+PAS_LIVE = int(os.environ.get("PAS_LIVE", "20"))
+# Le plafond que le moteur applique : perte cumulee sur 24 h GLISSANTES, pas sur la journee
+# calendaire (`modele_rapide.py`). C est ce qui a bloque 229 achats le 19/09 alors que la journee
+# elle-meme etait positive -- la page doit donc montrer la fenetre glissante, pas le total du jour.
+PERTE_MAX = float(os.environ.get("MAX_PERTE_JOUR_EUR", "150"))
+TZ = dt.timezone(dt.timedelta(hours=2))
+
+
+def ecrire(nom, obj):
+    """Ecriture atomique : Streamlit relit en boucle et ne doit jamais tomber sur un fichier a moitie."""
+    tmp = os.path.join(DATA, nom + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, os.path.join(DATA, nom))
+
+
+def table():
+    """Relance `table_std2.py` avec sa sortie JSON, et recopie le texte pour l onglet brut."""
+    # Nom distinct du « .tmp » d `ecrire`, sinon les deux se marchent dessus : le script ecrit son
+    # JSON, `ecrire` ecrase le meme fichier puis le renomme, et le nettoyage ne trouve plus rien.
+    brut = os.path.join(DATA, "carnet.brut.json")
+    env = dict(os.environ, MISE=MISE_TABLE, JSON=brut)
+    r = subprocess.run([sys.executable, "data/table_std2.py"], cwd="/app", env=env,
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout)[-400:])
+    with open(brut, encoding="utf-8") as f:
+        d = json.load(f)
+    d["texte"] = r.stdout
+    ecrire("carnet.json", d)
+    os.remove(brut)
+    return len(d.get("lignes") or [])
+
+
+def live():
+    """Le carnet REEL : ce que le moteur a fait, et si le budget de perte le bloque en ce moment."""
+    c = sqlite3.connect("file:%s?mode=ro" % INTEL, uri=True, timeout=30)
+    try:
+        now = time.time()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(mr_lignes)")]
+        if "gain_eur" not in cols:
+            return None
+        Q = "mode='live'"
+        fenetre = c.execute(
+            "SELECT COUNT(*), COALESCE(SUM(gain_eur),0) FROM mr_lignes WHERE %s AND ts_entree >= ?"
+            % Q, (now - 86400,)).fetchone()
+        jour0 = dt.datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        jour = c.execute(
+            "SELECT COUNT(*), COALESCE(SUM(gain_eur),0) FROM mr_lignes WHERE %s AND ts_entree >= ?"
+            % Q, (jour0,)).fetchone()
+        statuts = dict(c.execute("SELECT statut, COUNT(*) FROM mr_lignes WHERE %s AND t_dec >= ?"
+                                 " GROUP BY statut" % Q, (jour0,)))
+        motifs = dict(c.execute("SELECT motif, COUNT(*) FROM mr_lignes WHERE %s AND t_dec >= ?"
+                                " AND motif IS NOT NULL GROUP BY motif ORDER BY 2 DESC LIMIT 5" % Q,
+                                (jour0,)))
+        ouvertes = c.execute("SELECT COUNT(*) FROM mr_lignes WHERE %s AND statut='OUVERTE'" % Q).fetchone()[0]
+        derniers = [
+            {"t": t, "symbole": s, "mise": m, "gain": g, "statut": st, "risque": rq}
+            for t, s, m, g, st, rq in c.execute(
+                "SELECT t_dec, COALESCE(symbole, substr(mint,1,6)), mise_eur, gain_eur, statut, risque"
+                " FROM mr_lignes WHERE %s AND tx_achat IS NOT NULL ORDER BY t_dec DESC LIMIT 40" % Q)]
+        total = c.execute("SELECT COUNT(*), COALESCE(SUM(gain_eur),0) FROM mr_lignes"
+                          " WHERE %s AND gain_eur IS NOT NULL" % Q).fetchone()
+        # courbe cumulee du reel, dans l ordre des sorties
+        cum, courbe = 0.0, []
+        for t, g in c.execute("SELECT ts_sortie, gain_eur FROM mr_lignes WHERE %s AND gain_eur IS NOT NULL"
+                              " AND ts_sortie IS NOT NULL ORDER BY ts_sortie" % Q):
+            cum += float(g)
+            courbe.append([int(t), round(cum, 2)])
+    finally:
+        c.close()
+    perte = float(fenetre[1] or 0.0)
+    return {
+        "genere": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "fenetre_24h": {"n": fenetre[0], "gain": round(perte, 2),
+                        "plafond": -PERTE_MAX, "bloque": perte <= -PERTE_MAX,
+                        "marge": round(perte + PERTE_MAX, 2)},
+        "jour": {"n": jour[0], "gain": round(float(jour[1] or 0.0), 2)},
+        "statuts": statuts, "motifs": motifs, "ouvertes": ouvertes,
+        "total": {"n": total[0], "gain": round(float(total[1] or 0.0), 2)},
+        "derniers": derniers, "courbe": courbe,
+    }
+
+
+def main() -> None:
+    print("carnet_json: demarre · table %d s · live %d s · vers %s" % (PAS_TABLE, PAS_LIVE, DATA), flush=True)
+    prochaine_table = 0.0
+    while True:
+        t = time.time()
+        if t >= prochaine_table:
+            try:
+                n = table()
+                print("carnet_json: table ecrite (%d lignes)" % n, flush=True)
+            except Exception as e:  # noqa: BLE001
+                print("carnet_json: TABLE EN ECHEC : %s" % str(e)[:300], flush=True)
+                ecrire("carnet_erreur.json", {"quand": dt.datetime.now(TZ).isoformat(timespec="seconds"),
+                                              "erreur": str(e)[:600]})
+            prochaine_table = time.time() + PAS_TABLE
+        try:
+            d = live()
+            if d:
+                ecrire("carnet_live.json", d)
+        except Exception as e:  # noqa: BLE001
+            print("carnet_json: LIVE EN ECHEC : %s" % str(e)[:200], flush=True)
+        time.sleep(max(1, PAS_LIVE - (time.time() - t)))
+
+
+if __name__ == "__main__":
+    main()
