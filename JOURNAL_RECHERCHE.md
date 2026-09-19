@@ -7702,3 +7702,71 @@ faudrait **27 900 tickets — 62 jours** — pour que ce +70 sorte du bruit.
 **Décisions.** Recherche (mon arbitrage) : geler une forêt de vidage au flux d'ordres, à côté de
 celle en service, pour qu'elle accumule des tickets hors échantillon. Argent réel : **rien**. Le
 niveau n'est pas prouvé et je ne mise pas sur un intervalle qui contient −282 €/jour.
+
+
+### 3.156 — Le coût, ouvert jusqu'au lamport : ce n'est ni le marché ni nous, 2026-09-19 20h30
+
+**La question de Mido**, après une journée où j'avais donné cinq coûts différents : *« on ne gagne
+pas parce que les coûts bouffent tout ? »* Oui — et voici, pour la première fois, où va chaque
+centime.
+
+**LE POINT DE DÉPART.** Sur les 793 tickets que le moteur a vus, le marché donne **+2,68 %** par
+ticket avant tout coût (médiane +4,56 %, 61 % de gagnants, pire −100 %, meilleur +642 %). Le coût
+mesuré au portefeuille est de **3,71 %**. Le point d'équilibre est donc à 2,68 % : **il manque un
+point**, pas dix. Et les 5 % meilleurs jetons portent 315 % du rendement total — sans eux la
+moyenne tombe à −6,08 %. On ne peut pas se permettre d'en rater.
+
+**LA RÉSERVE VIRTUELLE EST CONFIRMÉE — la vérification la plus risquée du projet.** Chaque ticket
+donne deux échanges sur le même pool ; deux équations, deux inconnues (la commission `f` et la
+réserve `V`). Résolu par bissection sur 91 tickets : **V = 17,99** (quartiles 17,72 / 18,65) contre
+17,5845 supposé depuis le 15/09. Tous les prix, tous les rendements, toutes les tables reposaient
+là-dessus. **Ça tient.**
+
+**OÙ VA L'ARGENT, comptabilité complète d'un achat de 0,205788 SOL :**
+
+| | SOL | part |
+|---|---|---|
+| le pool | 0,201793 | 98,06 % |
+| destinataire A | 0,000938 | 0,456 % |
+| destinataire B | 0,000938 | 0,456 % |
+| destinataire C | 0,000605 | 0,294 % |
+| dépôt du compte-jeton | 0,001514 | 0,735 % — **récupéré**, pas un coût |
+
+**Trois prélèvements = 1,21 % par jambe**, plus les 0,20 % que le pool garde en interne =
+**1,41 % par jambe, 2,82 % l'aller-retour.** Mesuré identique sur les 15 transactions examinées.
+
+**CE QUE LE PROTOCOLE ANNONCE.** La configuration globale de PumpSwap (`ADyA8hdefvWN…`, 949 octets)
+porte **LP 20 pdb + protocole 5 pdb + créateur 5 pdb = 0,30 %**. Et c'est exactement ce que paient
+les tiers : mesuré à **0,200 % par jambe sur 642 190 échanges** lus dans `v1_avant` (la commission
+interne du pool, seule visible par cette méthode). **Nous payons 1,41 %.**
+
+**CE QUI EST DONC ÉTABLI, et ce qui ne l'est pas.**
+- Établi : le coût n'est **ni du glissement, ni de la latence, ni notre modèle**. Ce sont trois
+  transferts de frais, réguliers, exécutés dans notre transaction.
+- Établi : la caution est bien récupérée — 0 compte ouvert sur 123 tickets, lu sur la chaîne, et
+  `recuperation` ferme les comptes toutes les 30 min (34 fermés, 0,0694 SOL rendus).
+- **Non établi : à qui vont ces 1,21 %.** Nos transactions passent par Jupiter (5 programmes,
+  25 instructions, PumpSwap appelé en CPI). Les destinataires changent à chaque jeton et ne sont
+  **pas** les créateurs enregistrés (0 correspondance sur 8). Un seul appartient au programme de
+  frais `pfeeUxB6…`.
+
+**LE LEVIER, et il est plus grand que le trou.** La commission effective varie de **0,90 % à
+3,54 % selon le jeton**, par paliers nets (quatre pools exactement à 1,55 %). Un jeton à 0,90 %
+coûte 1,8 % l'aller-retour, un à 2,4 % en coûte 4,8. **Trois points d'écart quand il en manque
+1,03.** Il existe donc des jetons sur lesquels on serait rentable dès demain.
+
+**CE QUI RESTE À TROUVER : où ce taux est écrit.** Pas dans le compte du pool — les 301 octets ont
+été comparés entre 20 pools de commissions 0,90 à 2,41 %, aucune corrélation au-delà de r = 0,46 sur
+ce qui ressemble à des fragments d'adresses. Reste la configuration de Jupiter, ou un compte attaché
+au créateur. **Si ce taux est lisible avant d'acheter, c'est un filtre, et le projet redevient
+viable.** C'est la première piste depuis une semaine qui vaut plus que ce qu'il manque.
+
+**Ce que j'ai corrigé en chemin**, et qui aurait faussé la conclusion :
+1. J'ai d'abord mesuré 1,72 % de prélèvement — il incluait le **dépôt du compte-jeton**, qui est
+   récupéré. Le vrai chiffre est 1,21 %.
+2. J'ai cru voir qu'on payait bien plus que les tiers. La comparaison était **fausse** : pour eux,
+   `copie_collecte` déduit le SOL du mouvement du **coffre**, donc elle ne peut pas voir un
+   prélèvement fait avant le pool. Refaite sur la chaîne, la mesure des tiers est trop bruitée
+   (quartiles 0,94 / 8,90) pour conclure.
+3. Mon levier « gros pools » valait 0,36 point avec V figé à 17,58 ; avec V résolu par pool la
+   corrélation tombe de −0,79 à −0,49. Il reste réel mais plus faible que je ne l'ai annoncé.
