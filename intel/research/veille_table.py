@@ -34,17 +34,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 PAS = float(os.environ.get("VEILLE_PAS_MIN", "10")) * 60.0
 DB = "/app/db"
 
+# LES 26 LIGNES DE LA TABLE, chacune rattachee a la source qui la nourrit -- verifie le 19/09 en
+# lisant ORDRE dans table_std2.py et en remontant le code qui appelle ranger() pour chaque ligne.
+# Aucune ligne ne doit manquer ici : c est ce controle, pas la liste des processus, qui garantit
+# qu une ligne de la table ne meurt pas en silence.
+#
 # (nom lisible, fichier, table, colonne de temps, retard tolere en minutes, lignes de la table)
 SOURCES = [
     ("papier_combo", f"{DB}/papier_combo.sqlite", "decision", "t_dec", 20,
-     "temoin, regime, RISQUE seul, BANDE, ENSEMBLE, FORET ALEATOIRE, AU PLUS BAS, RISQUE+FREIN, RISQUE+IPFS..."),
+     "13 lignes : temoin, regime seul, RISQUE seul, regime+risque, BANDE, BANDE+PAUSE, ENSEMBLE de 12,"
+     " FORET ALEATOIRE, PRIX+DETENTEURS, AU PLUS BAS, BAS+BANDE, RISQUE+FREIN, RISQUE+IPFS"),
     ("papier_gd45", f"{DB}/papier_gd.sqlite", "decision", "t_dec", 20, "G+D a 45 s"),
     ("papier_gd30", f"{DB}/papier_gd30.sqlite", "decision", "t_dec", 20, "G+D a 30 s"),
     ("papier_large", f"{DB}/papier_large.sqlite", "decision", "t_dec", 20,
-     "coffre seul, G foule, D tendance, D+F, G+D les trois"),
+     "6 lignes : coffre seul, G foule <= 74, D tendance > 0, D+F tendance+pause, G+D les trois, PISTE FOULE"),
     ("foret_gel45", f"{DB}/papier_foret.sqlite", "decision", "t_dec", 450, "FORET 45s top 5 % et 10 %"),
     ("foret_gel75", f"{DB}/papier_foret75.sqlite", "decision", "t_dec", 450, "FORET 75s top 5 % et 10 %"),
-    ("social", f"{DB}/papier_social.sqlite", "jeton", "t_vu", 30, "variable detenteurs"),
+    ("social", f"{DB}/papier_social.sqlite", "jeton", "t_vu", 30,
+     "PRIX + DETENTEURS (sac1, n_sacs5) -- et la variable detenteurs des deux forets"),
+    # RISQUE + IPFS lit `solana_social.uri`, remplie par telegram_rapide/social au fil des lancements :
+    # une source a part, qui peut se taire sans que papier_combo se taise.
+    ("metadonnee_uri", f"{DB}/intel.sqlite", "solana_social", "rowid", 45, "RISQUE + IPFS (usine a jetons)"),
     ("stock", f"{DB}/papier_stock.sqlite", "photo", "t", 30, "gel du stock (collecte)"),
     ("prix_rapide", f"{DB}/prix_rapide.sqlite", "prix", "ts", 20, "prix a 1 s"),
     ("moteur_prix", f"{DB}/intel.sqlite", "solana_prix_chaine", "ts", 20, "LA SOURCE DE TOUT"),
@@ -52,12 +62,60 @@ SOURCES = [
 ]
 
 
+_compteurs: dict[str, tuple[int, float]] = {}       # table sans horodatage -> (lignes, instant)
+
+
+# CORRESPONDANCE EXPLICITE ligne de la table -> source. Ecrite a la main, verifiee par
+# tests/intel_tests/test_veille_table.py, qui lit ORDRE dans table_std2.py et echoue si UNE ligne
+# n est pas ici. Ajouter une ligne a la table sans la surveiller devient donc impossible en silence.
+LIGNES = {
+    "temoin sans filtre": "papier_combo",
+    "regime seul": "papier_combo",
+    "RISQUE seul (modele)": "papier_combo",
+    "regime + risque": "papier_combo",
+    "G+D a 45 s (gele)": "papier_gd45",
+    "G+D a 30 s (gele)": "papier_gd30",
+    "coffre seul": "papier_large",
+    "G  foule <= 74": "papier_large",
+    "D  tendance > 0": "papier_large",
+    "D+F  tendance + pause": "papier_large",
+    "G+D  les trois": "papier_large",
+    "BANDE 0,20-0,35 (gelee)": "papier_combo",
+    "BANDE + PAUSE (gelee)": "papier_combo",
+    "PISTE FOULE (gelee)": "papier_large",
+    "ENSEMBLE de 12 (gele)": "papier_combo",
+    "FORET ALEATOIRE (gelee)": "papier_combo",
+    "PRIX + DETENTEURS (gele)": "social",
+    "AU PLUS BAS (gele)": "papier_combo",
+    "BAS + BANDE (gele)": "papier_combo",
+    "RISQUE + FREIN (gele)": "papier_combo",
+    "RISQUE + IPFS (gele)": "metadonnee_uri",
+    "FORET 45s top 5 % (gelee)": "foret_gel45",
+    "FORET 45s top 10 % (lecture)": "foret_gel45",
+    "FORET 75s top 5 % (gelee)": "foret_gel75",
+    "FORET 75s top 10 % (lecture)": "foret_gel75",
+    "ENTREE T+75 (gelee)*": "telegram",
+}
+
+
 def retard(f: str, table: str, col: str) -> float | None:
-    """Minutes depuis la derniere ecriture, None si la base est illisible ou vide."""
+    """Minutes depuis la derniere ecriture, None si la base est illisible ou vide.
+
+    `solana_social` n a AUCUNE colonne de temps : on y suit le nombre de lignes, et le « retard »
+    est le temps ecoule depuis la derniere fois qu il a augmente. Sans ca, cette source -- celle de
+    RISQUE + IPFS -- serait la seule a ne pas pouvoir etre surveillee.
+    """
     if not os.path.exists(f):
         return None
     try:
         c = sqlite3.connect("file:%s?mode=ro" % f, uri=True, timeout=20)
+        if col == "rowid":
+            n = int(c.execute("SELECT COUNT(*) FROM %s" % table).fetchone()[0])
+            vus, quand = _compteurs.get(table, (None, time.time()))
+            if vus is None or n > vus:
+                _compteurs[table] = (n, time.time())
+                return 0.0
+            return (time.time() - quand) / 60.0
         v = c.execute("SELECT MAX(%s) FROM %s" % (col, table)).fetchone()[0]
         return (time.time() - float(v)) / 60.0 if v else None
     except Exception:  # noqa: BLE001
@@ -95,9 +153,10 @@ def main() -> None:
             muette = r is None or r > tol
             if muette and nom not in muettes:
                 muettes[nom] = t0
-                alerter("VEILLE TABLE · %s ne repond plus (%s) - lignes touchees : %s"
+                touchees = sorted(k for k, v in LIGNES.items() if v == nom) or [lignes]
+                alerter("VEILLE TABLE · %s ne repond plus (%s)\nlignes touchees (%d) : %s"
                         % (nom, ("base illisible" if r is None else "%.0f min de silence, tolere %d" % (r, tol)),
-                           lignes))
+                           len(touchees), " · ".join(touchees)))
             elif not muette and nom in muettes:
                 mn = (t0 - muettes.pop(nom)) / 60.0
                 alerter("VEILLE TABLE · %s est repartie apres %.0f min" % (nom, mn))

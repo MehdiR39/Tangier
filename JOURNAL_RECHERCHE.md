@@ -7438,6 +7438,16 @@ message quand la source repart.
 | prix_rapide, moteur_prix | prix 1 s, et la source de tout | 20 min |
 | telegram (tg_lignes) | ENTRÉE T+75 | 180 min |
 
+**Complété le 19/09 10h30** (§3.150 bis) : Mido — *« dans la table il y a plus que ça »* — avait
+raison, mon premier affichage repliait 13 lignes derrière un « … » et une source manquait.
+Correspondance **explicite ligne → source** écrite dans `veille_table.py` (`LIGNES`), et un test
+(`test_veille_table.py`) qui **lit `ORDRE` dans la table elle-même** et échoue si une ligne n'a pas
+de source, si une source nommée n'existe pas, ou si une tolérance est absurde. Ajouter une ligne à
+la table sans la surveiller devient impossible en silence. Source ajoutée : **`metadonnee_uri`**
+(`solana_social.uri`, qui nourrit RISQUE + IPFS) — elle n'a aucune colonne de temps, on y suit donc
+le **nombre de lignes** et le retard est le temps depuis sa dernière augmentation. Résultat :
+**26 lignes sur 26 couvertes, 12 sources, toutes OK.**
+
 **La tolérance par source est le cœur du garde-fou** : 20 minutes pour un collecteur continu, 7 h 30
 pour un gel qui note par cycles de 6 h. Une tolérance unique produirait soit des alertes fausses
 qu'on apprend à ignorer, soit un silence de 24 h comme celui du 18/09.
