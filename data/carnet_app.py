@@ -158,24 +158,57 @@ def table_complete():
     st.subheader("Contre le témoin")
     st.caption("Une stratégie qui n'a tourné qu'un bon après-midi paraît brillante par accident. "
                "Chacune est comparée à « acheter tout » **sur sa propre période** — même marché, "
-               "mêmes heures. C'est le seul classement qui compte.")
+               "mêmes heures.")
+    st.caption("**La barre noire est l'incertitude (±2 écarts-types).** Tant qu'elle traverse le "
+               "trait du zéro, l'écart ne se distingue pas du hasard, si grand soit-il : un ticket "
+               "vaut %s € d'écart-type, donc 55 tickets suffisent à fabriquer ±%s € par pur hasard. "
+               "Les lignes qui ne franchissent pas leur bruit sont affichées en sourdine."
+               % (eur(D.get("sigma_ticket") or 0, 2).lstrip("+"),
+                  eur(2 * (D.get("sigma_ticket") or 0) / 55 ** .5, 2).lstrip("+")))
     ct = pd.DataFrame(D["contre_temoin"])
-    if not ct.empty:
+    if not ct.empty and "bruit" in ct:
+        net = ct["sigmas"].abs() >= 2
+        couleurs = [(GAIN if v >= 0 else PERTE) if s else
+                    ("rgba(63,156,109,.28)" if v >= 0 else "rgba(201,86,75,.28)")
+                    for v, s in zip(ct["ecart"], net)]
         fig = go.Figure(go.Bar(
-            x=ct["ecart"], y=ct["nom"], orientation="h",
-            marker_color=[GAIN if v >= 0 else PERTE for v in ct["ecart"]],
-            customdata=ct[["n", "par_ticket", "temoin"]].values,
-            hovertemplate="<b>%{y}</b><br>écart %{x:+.3f} €/ticket<br>"
+            x=ct["ecart"], y=ct["nom"], orientation="h", marker_color=couleurs,
+            error_x=dict(type="data", array=2 * ct["bruit"], color=DOUX, thickness=1.4, width=3),
+            customdata=ct[["n", "par_ticket", "temoin", "sigmas"]].values,
+            hovertemplate="<b>%{y}</b><br>écart %{x:+.3f} €/ticket — "
+                          "<b>%{customdata[3]:+.2f} écart-type</b><br>"
                           "%{customdata[0]} tickets · elle %{customdata[1]:+.3f} · "
                           "témoin %{customdata[2]:+.3f}<extra></extra>"))
         fig.update_layout(height=max(320, 26 * len(ct)), margin=dict(l=0, r=10, t=6, b=0),
-                          xaxis_title="€ par ticket, écart au témoin",
+                          xaxis_title="€ par ticket, écart au témoin (barre = ±2 écarts-types)",
                           yaxis=dict(autorange="reversed"),
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         fig.add_vline(x=0, line=dict(color=DOUX, width=1))
         st.plotly_chart(fig, use_container_width=True)
 
+        surs = ct[net]
+        if surs.empty:
+            st.info("**Aucune stratégie ne franchit son propre bruit.** Rien n'est encore prouvé, "
+                    "ni dans un sens ni dans l'autre.")
+        else:
+            for _, r in surs.iterrows():
+                mot = "bat le marché" if r["ecart"] > 0 else "fait pire que ne rien filtrer"
+                (st.success if r["ecart"] > 0 else st.error)(
+                    "**%s** %s : %s €/ticket sur %d tickets, soit %s écarts-types."
+                    % (r["nom"], mot, eur(r["ecart"], 3), r["n"], eur(r["sigmas"], 2)))
+
+        st.caption("Le classement par écart-type, qui est le seul comparable :")
+        cl = ct[["nom", "n", "ecart", "bruit", "sigmas"]].copy()
+        cl["|σ|"] = cl["sigmas"].abs()
+        cl = cl.sort_values("|σ|", ascending=False).drop(columns="|σ|")
+        cl.columns = ["stratégie", "tickets", "écart €/ticket", "son bruit", "écarts-types"]
+        st.dataframe(cl, use_container_width=True, hide_index=True,
+                     height=min(700, 36 * len(cl) + 40))
+
     st.subheader("Gain cumulé")
+    st.caption("Chaque courbe part de **zéro à son propre démarrage** — elles ne commencent pas "
+               "toutes à la même date, donc deux courbes superposées ne couvrent pas les mêmes "
+               "heures de marché. La date de début est rappelée dans la légende.")
     dispo = [l for l in D["lignes"] if len(l.get("courbe") or []) > 2]
     noms = [l["nom"] for l in dispo]
     defaut = [n for n in (["temoin sans filtre"] + [c["nom"] for c in D["contre_temoin"][:3]]) if n in noms]
@@ -185,8 +218,13 @@ def table_complete():
         for i, l in enumerate([x for x in dispo if x["nom"] in choix]):
             d = pd.DataFrame(l["courbe"], columns=["t", "cum"])
             d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
-            fig.add_trace(go.Scatter(x=d["quand"], y=d["cum"], mode="lines", name=l["nom"],
-                                     line=dict(color=TEINTES[i % len(TEINTES)], width=2)))
+            depuis = d["quand"].iloc[0].strftime("%d/%m")
+            fig.add_trace(go.Scatter(
+                x=d["quand"], y=d["cum"], mode="lines",
+                name="%s — dep. %s, %d tickets" % (l["nom"], depuis, l["n"]),
+                line=dict(color=TEINTES[i % len(TEINTES)], width=2),
+                hovertemplate="<b>%s</b><br>%%{x|%%d/%%m %%Hh}<br>%%{y:+.0f} € cumulés<extra></extra>"
+                              % l["nom"]))
         fig.add_hline(y=0, line=dict(color=DOUX, width=1, dash="dot"))
         fig.update_layout(height=400, margin=dict(l=0, r=0, t=6, b=0), yaxis_title="€ cumulés",
                           legend=dict(orientation="h", y=-.16),

@@ -475,11 +475,22 @@ if _sortie:
     _t0 = min((min(x[0] for x in v) for v in SERIE.values() if v), default=0)
 
     def _courbe(v, pas=3600):
-        """Cumul en euros, un point par heure -- assez fin pour la forme, assez court pour le web."""
-        out, cum, seau = [], 0.0, None
-        for t, r in sorted(v):
+        """Cumul en euros, un point par heure -- assez fin pour la forme, assez court pour le web.
+
+        Le premier point vaut ZERO, a l instant du premier ticket. Sans lui, la courbe demarre au
+        cumul de la premiere heure (le temoin a +80 EUR, regime+risque a -20) et les departs
+        semblent decales sans raison -- Mido l a vu sur la page le 19/09.
+        """
+        v = sorted(v)
+        if not v:
+            return []
+        # Le zero est pose au DEBUT du premier seau, et chaque point porte la FIN du sien : sinon le
+        # point de depart tombe apres le premier seau (son instant exact est posterieur au plancher
+        # de l heure) et la courbe recule dans le temps sur son premier segment.
+        out, cum, seau = [[int(v[0][0] // pas) * pas, 0.0]], 0.0, None
+        for t, r in v:
             cum += MISE * (r - SUP)
-            s = int(t // pas) * pas
+            s = int(t // pas) * pas + pas
             if s != seau:
                 out.append([s, round(cum, 2)])
                 seau = s
@@ -501,12 +512,27 @@ if _sortie:
             "jour": round(MISE * (sum(j) - len(j) * SUP), 2), "n_jour": len(j),
             "debut": debuts.get(nom), "courbe": _courbe(v),
         })
-    _contre = [{"nom": nom, "n": n, "par_ticket": round(a_, 4), "temoin": round(b_, 4),
-                "ecart": round(d, 4), "sur_1000": round(1000 * d, 1)}
-               for d, nom, n, a_, b_ in sorted(lignes, reverse=True)] if tem else []
+    # ECART-TYPE D UN TICKET, mesure sur le temoin -- toute la population, sans selection. C est lui
+    # qui fixe ce qu on peut distinguer du hasard : un ecart plus petit que son propre bruit ne se
+    # depense pas. Sans ce chiffre, un classement en euros bruts met en tete les lignes les MOINS
+    # nombreuses, donc les plus bruyantes (Mido, 19/09 : « bande + pause c'est de la merde et
+    # finalement c'est ce qui marche ? » -- non : 58 tickets, 1,2 ecart-type).
+    _nets = [MISE * (r - SUP) for _, r in (SERIE.get("temoin sans filtre") or [])]
+    _sigma = (_st.pstdev(_nets) if len(_nets) > 1 else 0.0)
+    for _l in _lignes:
+        _l["bruit"] = round(_sigma / (_l["n"] ** 0.5), 4) if _l["n"] else None
+    _contre = []
+    if tem:
+        for d, nom, n, a_, b_ in sorted(lignes, reverse=True):
+            bruit = _sigma / (n ** 0.5) if n else None
+            _contre.append({"nom": nom, "n": n, "par_ticket": round(a_, 4), "temoin": round(b_, 4),
+                            "ecart": round(d, 4), "sur_1000": round(1000 * d, 1),
+                            "bruit": round(bruit, 4) if bruit else None,
+                            "sigmas": round(d / bruit, 2) if bruit else None})
     json.dump({
         "genere": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "mise": MISE, "cout_pt": round(100 * COUT_MESURE, 2), "caution": not CAUTION,
+        "sigma_ticket": round(_sigma, 3),
         "debut_donnees": _t0, "lignes": _lignes, "contre_temoin": _contre,
     }, open(_sortie, "w"), ensure_ascii=False)
     print("\nJSON ecrit : %s" % _sortie)
