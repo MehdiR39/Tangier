@@ -27,7 +27,8 @@ import subprocess
 import sys
 import time
 
-COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte", "foret_gel", "foret_gel75", "v1_enregistreur")
+COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte", "foret_gel", "foret_gel75", "v1_enregistreur",
+               "papier_gd45", "papier_gd30", "papier_large")
 PAS = 60.0
 JOURNAL = "/app/logs"
 

@@ -7394,3 +7394,27 @@ contrepartie, et il vient d'être réduit.
 retractés en §3.147. Le péage réel d'un aller-retour à 20 € passe de 6,55 à ~5,5 points ; le brut
 nécessaire pour 50 €/jour, de 7,1 à ~6,0 % par ticket. Toujours loin des +0,49 % mesurés — mais un
 point de gagné sur le seul levier mécanique du projet.
+
+
+---
+
+### 3.149 — Pourquoi G+D, coffre seul, foule, tendance ne voyaient plus de ticket : leurs collecteurs sont morts le 18/09 à 9h14, 2026-09-19 09h55
+
+Mido : *« pourquoi certaines strats comme G+D, coffre seul… ne voient pas de ticket depuis un
+moment ? »* Vérifié : `papier_gd`, `papier_gd30`, `papier_large` — dernier ticket **18/09 09h14**,
+tous les trois. Le collecteur de transactions est mort à 9h13 (§3.146). **Quatre processus détachés
+sont tombés dans la même minute** ; la cause n'est pas établie (rien dans les journaux : ils
+écrivaient dans des tuyaux que personne ne lisait). Aucun n'était sous le gardien, donc aucun n'a
+été relancé — pendant 24 h, sept lignes de la table n'ont rien vu, sans qu'aucun signal ne le dise.
+
+Le flux lui-même est sain : 14 décisions `papier_combo` dans la dernière demi-heure, 51 pools vus
+par le moteur dans l'heure.
+
+**Fait :** trois modules-enveloppes (`papier_gd45`, `papier_gd30`, `papier_large`) qui fixent
+l'environnement et appellent `papier_gd_direct.main()` — le gardien reconnaît un processus par son
+nom de module, trois instances du même module lui étaient invisibles. Relancés, avec un journal
+chacun ; leurs gels d'origine (16/09) sont intacts ; 1 + 4 positions « perdues au redémarrage »
+marquées interrompues par le module lui-même. Gardien relancé avec **dix** noms.
+
+**Règle 19 :** *tout processus qui alimente une ligne de la table est sous le gardien, sous son
+propre nom, avec un journal fichier — sinon la ligne peut mourir 24 h sans bruit.*
