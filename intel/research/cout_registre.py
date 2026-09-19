@@ -149,13 +149,27 @@ def agrege():
     postes = ("frais_reseau", "caution", "impact", "pool", "inexplique")
 
     def part(s):
+        """Trois normalisations, parce qu aucune ne suffit seule.
+
+        POINTS : euros de cout / euros deployes. Compare des regimes de mise differents -- mais
+                 masque justement un changement de mise, puisqu il est deja divise par elle.
+        EUROS PAR TICKET : ce que chaque ticket coute vraiment au portefeuille. C est cette
+                 colonne qui montre que passer de 20 a 10 EUR (19/09) divise le cout par deux.
+        EUROS : le total brut, pour savoir combien on a paye en tout.
+        Mido, 19/09 : « pour le graphique de cout je pense qu'il faut normaliser par rapport au
+        nombre de tickets non ? » -- oui, et d autant plus le jour ou la mise change.
+        """
+        n = len(s) or 1
         dep = sum(x["mise"] for x in s) or 1.0
         d = {p: round(100 * sum(x[p] for x in s) / dep, 3) for p in postes}
         d["total"] = round(100 * sum(x["total"] for x in s) / dep, 3)
         d["n"] = len(s)
         d["euros"] = {p: round(sum(x[p] for x in s), 2) for p in postes}
         d["euros"]["total"] = round(sum(x["total"] for x in s), 2)
+        d["par_ticket"] = {p: round(sum(x[p] for x in s) / n, 4) for p in postes}
+        d["par_ticket"]["total"] = round(sum(x["total"] for x in s) / n, 4)
         d["deploye"] = round(dep, 2)
+        d["mise_moy"] = round(dep / n, 2)
         return d
 
     jours = {}
@@ -166,7 +180,9 @@ def agrege():
         s = lignes[max(0, i - 29):i + 1]
         if len(s) >= 5:
             glissant.append({"t": lignes[i]["t"], "n": len(s),
-                             "total": round(100 * sum(y["total"] for y in s) / sum(y["mise"] for y in s), 3)})
+                             "total": round(100 * sum(y["total"] for y in s) / sum(y["mise"] for y in s), 3),
+                             "par_ticket": round(sum(y["total"] for y in s) / len(s), 4),
+                             "mise_moy": round(sum(y["mise"] for y in s) / len(s), 2)})
     avant = [x for x in lignes if x["t"] < BASCULE]
     apres = [x for x in lignes if x["t"] >= BASCULE]
     return {

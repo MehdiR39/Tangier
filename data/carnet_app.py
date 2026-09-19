@@ -270,31 +270,41 @@ def couts():
                     "contre %.2f avant · %d tickets" % (av["total"], ap["n"]), delta_color="off")
 
     st.subheader("Où part l'argent")
+    unite = st.radio("Normalisation", ["€ par ticket", "points de mise"], horizontal=True,
+                     key="unite_cout", label_visibility="collapsed")
+    par_tick = unite.startswith("€")
+    st.caption("**€ par ticket** : ce que chaque ticket coûte vraiment. C'est la seule vue qui "
+               "montre l'effet d'un changement de mise — passer de 20 à 10 € divise le coût par "
+               "deux. **Points de mise** : le coût en % de ce qu'on engage ; il compare des régimes "
+               "de mise différents, mais masque justement le changement de mise."
+               if par_tick else
+               "**Points de mise** : coût en % de ce qu'on engage. Déjà divisé par la mise, donc "
+               "il ne bouge pas quand la mise change. Bascule sur **€ par ticket** pour voir "
+               "l'effet du passage de 20 à 10 €.")
+
+    def val(d, cle):
+        return (d["par_ticket"][cle] if par_tick else d[cle]) if d else None
+
     fig = go.Figure()
+    blocs = [("tout", t)] + ([("avant", av)] if av else []) + ([("depuis", ap)] if ap else [])
     for cle, lib, col in POSTES:
-        fig.add_trace(go.Bar(name=lib, y=["tout (%d)" % t["n"]], x=[t[cle]], orientation="h",
-                             marker_color=col,
-                             hovertemplate="%s : %%{x:.3f} pt<extra></extra>" % lib))
-        if av:
-            fig.add_trace(go.Bar(name=lib, y=["avant (%d)" % av["n"]], x=[av[cle]], orientation="h",
-                                 marker_color=col, showlegend=False,
-                                 hovertemplate="%s : %%{x:.3f} pt<extra></extra>" % lib))
-        if ap:
-            fig.add_trace(go.Bar(name=lib, y=["depuis (%d)" % ap["n"]], x=[ap[cle]], orientation="h",
-                                 marker_color=col, showlegend=False,
-                                 hovertemplate="%s : %%{x:.3f} pt<extra></extra>" % lib))
+        for i, (nom, d) in enumerate(blocs):
+            fig.add_trace(go.Bar(
+                name=lib, y=["%s (%d tickets, mise %.0f €)" % (nom, d["n"], d.get("mise_moy") or 0)],
+                x=[val(d, cle)], orientation="h", marker_color=col, showlegend=(i == 0),
+                hovertemplate="%s : %%{x:.4f}<extra></extra>" % lib))
     fig.update_layout(barmode="stack", height=230, margin=dict(l=0, r=0, t=6, b=0),
-                      xaxis_title="points de coût (1 pt = 1 % de la mise)",
+                      xaxis_title="€ par ticket" if par_tick else "points de coût (1 pt = 1 % de la mise)",
                       legend=dict(orientation="h", y=-.3),
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig, use_container_width=True)
 
-    d = pd.DataFrame([{"poste": lib,
-                       "tout (pt)": t[cle], "avant (pt)": (av or {}).get(cle),
-                       "depuis (pt)": (ap or {}).get(cle),
+    u = "€/ticket" if par_tick else "pt"
+    d = pd.DataFrame([{"poste": lib, "tout (%s)" % u: val(t, cle),
+                       "avant (%s)" % u: val(av, cle), "depuis (%s)" % u: val(ap, cle),
                        "euros au total": t["euros"][cle]} for cle, lib, _ in POSTES]
-                     + [{"poste": "TOTAL", "tout (pt)": t["total"],
-                         "avant (pt)": (av or {}).get("total"), "depuis (pt)": (ap or {}).get("total"),
+                     + [{"poste": "TOTAL", "tout (%s)" % u: val(t, "total"),
+                         "avant (%s)" % u: val(av, "total"), "depuis (%s)" % u: val(ap, "total"),
                          "euros au total": t["euros"]["total"]}])
     st.dataframe(d, use_container_width=True, hide_index=True)
     st.caption("La bascule du 19/09 10h53 : récupération de la caution activée, priorité d'achat "
@@ -303,22 +313,32 @@ def couts():
 
     if S.get("glissant"):
         st.subheader("Le coût dans le temps")
-        st.caption("Moyenne glissante sur les 30 derniers tickets. Un point apparaît dès le 5ᵉ.")
+        st.caption("Moyenne glissante sur les 30 derniers tickets. Un point apparaît dès le 5ᵉ. "
+                   "La mise moyenne de la fenêtre est tracée en dessous : une baisse du coût qui "
+                   "suit une baisse de mise n'est pas une amélioration de l'exécution.")
         g = pd.DataFrame(S["glissant"])
         g["quand"] = pd.to_datetime(g["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
-        fig = go.Figure(go.Scatter(x=g["quand"], y=g["total"], mode="lines",
-                                   line=dict(color=ACCENT, width=2)))
+        col = "par_ticket" if (par_tick and "par_ticket" in g) else "total"
+        fig = go.Figure(go.Scatter(x=g["quand"], y=g[col], mode="lines",
+                                   line=dict(color=ACCENT, width=2), name="coût"))
+        if "mise_moy" in g:
+            fig.add_trace(go.Scatter(x=g["quand"], y=g["mise_moy"], mode="lines", name="mise moyenne",
+                                     line=dict(color=DOUX, width=1, dash="dot"), yaxis="y2"))
         fig.add_hline(y=0, line=dict(color=DOUX, width=1, dash="dot"))
-        fig.update_layout(height=260, margin=dict(l=0, r=0, t=6, b=0),
-                          yaxis_title="points de coût", showlegend=False,
+        fig.update_layout(height=280, margin=dict(l=0, r=0, t=6, b=0),
+                          yaxis_title="€ par ticket" if col == "par_ticket" else "points de coût",
+                          yaxis2=dict(title="mise €", overlaying="y", side="right", showgrid=False),
+                          legend=dict(orientation="h", y=-.2),
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
     if S.get("par_jour"):
         st.subheader("Par jour")
-        j = pd.DataFrame([{"jour": k, "tickets": v["n"], "déployé €": v["deploye"],
-                           "coût pt": v["total"], "coût €": v["euros"]["total"],
-                           **{lib: v[cle] for cle, lib, _ in POSTES}}
+        j = pd.DataFrame([{"jour": k, "tickets": v["n"], "mise moy €": v.get("mise_moy"),
+                           "déployé €": v["deploye"], "coût pt": v["total"],
+                           "coût €/ticket": (v.get("par_ticket") or {}).get("total"),
+                           "coût € total": v["euros"]["total"],
+                           **{lib: val(v, cle) for cle, lib, _ in POSTES}}
                           for k, v in S["par_jour"].items()])
         st.dataframe(j, use_container_width=True, hide_index=True)
 
