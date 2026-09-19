@@ -101,6 +101,28 @@ _K[0] = 0.0262 / _st.mean(PROTO + PRIO/30 + 2*SOL_EUR*30/((q or 0)+V) + DEPOT/(S
 #   caution recuperee (module actif)            -1,06 pt
 #   priorite d achat 500 000 -> 100 000         -0,21 pt
 # soit 2,98 pt aujourd hui. COUT_MESURE=0.0425 redonne le tableau d avant les corrections.
+# =====================================================================================
+# LE COUT EST 2,98 pt. FIGE LE 19/09. NE PLUS LE RECALCULER.
+#
+# D OU IL VIENT, chaque terme mesure, pas devine :
+#   4,25 pt   cout d execution PUR, sur la fenetre reellement utilisee par chaque ticket (entree a
+#             54 s, pas 47), 92 tickets reels, transactions relues une par une sur la chaine.
+#             Decompose : pool 1,11 + priorite 0,48 + caution 1,06 + impact 0,43 + 1,17 inexplique.
+#  -1,06 pt   la CAUTION. 92 comptes-jetons vides trouves le 19/09, 14,47 EUR bloques. Le module
+#             `recuperation` est ACTIF depuis 09h30 (`recuperation.enabled: true`, verifie).
+#  -0,21 pt   la PRIORITE D ACHAT, passee de 500 000 a 100 000 lamports (`priority_fee_lamports_achat`,
+#             verifie ; la VENTE reste a 500 000). On payait 22x le 99e centile du marche.
+#  = 2,98 pt
+# Les deux retraits sont des changements de CODE verifies dans la config qui tourne, pas des
+# hypotheses. Ce qui n est pas encore verifie, c est que la realite les confirme : 12 tickets depuis
+# la bascule, le cout y lit 10,66 pt +/- 13,70 -- l intervalle va de -3 a +24, donc rien. Il faut
+# ~100 tickets ; a 12 ordres/jour, huit jours.
+#
+# POURQUOI CE PAVE. Le 19/09 j ai donne a Mido 2,98 puis 5,37 puis 4,69 dans la meme journee :
+# 5,37 melangeait les periodes avant et apres la bascule, et 4,69 jetait le travail du matin par
+# sur-correction apres qu il m ait repris. Il a repondu « t'es pas possible ». Regle : ce fichier
+# part de 2,98 et n en bouge plus jusqu aux ~100 tickets. COUT_MESURE=0.0425 pour revoir la table
+# avant les economies -- explicitement, jamais par defaut.
 COUT_MESURE = float(os.environ.get("COUT_MESURE", "0.0298"))
 # CORRIGE le 19/09 : la caution etait SOUSTRAITE DEUX FOIS. Le 2,98 ci-dessus la deduit deja
 # (4,25 - 1,06 - 0,21) ; ce bloc la rededuisait, et la ligne d en-tete une troisieme fois -- la table
