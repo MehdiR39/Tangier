@@ -7770,3 +7770,53 @@ viable.** C'est la première piste depuis une semaine qui vaut plus que ce qu'il
    (quartiles 0,94 / 8,90) pour conclure.
 3. Mon levier « gros pools » valait 0,36 point avec V figé à 17,58 ; avec V résolu par pool la
    corrélation tombe de −0,79 à −0,49. Il reste réel mais plus faible que je ne l'ai annoncé.
+
+
+### 3.157 — La forêt en service trie VRAIMENT : 0 tirage sur 60, p = 0,016, 2026-09-19 21h50
+
+**Ce qui a lancé le test.** Mido, en regardant la page : la forêt écarte des jetons à +14,2 % de
+rendement brut et garde ceux à +1,3 %. J'en avais tiré un mécanisme — elle s'appuie sur `q`, les
+fusées naissent dans les petits pools, donc elle les jette — et j'ai proposé de lui retirer la
+taille du coffre.
+
+**HYPOTHÈSE RÉFUTÉE.** Marche avant, 2 767 tickets, coupes de 6 h, coût 3,71 pt, on garde 80 % :
+
+| | €/ticket | vs témoin | fusées gardées |
+|---|---|---|---|
+| témoin : tout prendre | −0,411 | +0,000 | 100 % |
+| **la forêt en service** | **−0,076** | **+0,335** | 69 % |
+| SANS le coffre | −0,116 | +0,295 | 69 % |
+| SANS la liquidité | −0,216 | +0,196 | 68 % |
+| `q` seul : les plus GROS | −0,773 | −0,362 | 62 % |
+| `q` seul : les plus PETITS | −0,395 | +0,016 | 100 % |
+
+Lui retirer `q` et `cout` **dégrade** (+0,295 contre +0,335). Elle n'utilise pas la taille du coffre
+bêtement — préférer les gros pools est d'ailleurs la **pire** ligne du tableau (−0,362).
+
+**BARRE DU HASARD : 60 marches avant permutées, meilleur des trois jeux retenu à chaque tirage.**
+Maximum du hasard **+0,298**. Le nôtre **+0,335**. **Zéro tirage sur 60, p ≈ 0,016.** Le tri de la
+forêt en service est donc réel, et ce n'est pas une illusion produite par le découpage.
+
+**MAIS LA DISTINCTION QUI COMPTE TIENT TOUJOURS** — celle de §3.155 :
+- contre le témoin : **+0,335 €/ticket, prouvé** ;
+- argent réellement gagné : **−0,076 €/ticket**.
+
+Elle bat le marché de façon démontrée, et elle perd quand même. Le coût de 3,71 % avale sa marge.
+**Il manque 0,076 € par ticket.**
+
+**CE QUE LE TEST APPREND EN PLUS, et qui n'était pas la question.** Prendre les plus PETITS pools
+garde **100 % des fusées** et ne rapporte que **+0,016** : les catastrophes vivent au même endroit
+que les fusées et les annulent exactement. Le but n'est donc pas « attraper les fusées » — c'est
+les attraper **sans** prendre les catastrophes qui naissent dans les mêmes petits pools. Cible
+beaucoup plus précise que celle que je poursuivais le matin.
+
+**L'observation de Mido reste vraie et non expliquée** : la forêt garde 69 % des fusées quand un
+filtre neutre en garderait 80 %. Elle en perd — simplement pas à cause de `q` seul.
+
+**POURQUOI QUATRE VARIANTES DU MÊME MODÈLE SEMBLENT SI DIFFÉRENTES** (même séance, même question
+de Mido). 45s/75s × top 5 %/top 10 % : de −72,9 à +81,5 EUR, soit 148 EUR d'écart visuel. Les six
+comparaisons deux à deux plafonnent à **1,15 σ** — aucune n'est significative. Démonstration
+directe : des tickets tirés **au hasard**, sans aucun modèle, donnent sur 37 tickets un total entre
+**−152 et +126 EUR** dans 90 % des cas. L'écart qui saute aux yeux est plus petit que ce que le
+hasard fabrique seul. Et 18 à 76 % des tirages au hasard font aussi bien que chacune des quatre.
+**En dessous de ~250 tickets, une courbe ne distingue pas un modèle d'une pièce de monnaie.**
