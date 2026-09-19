@@ -7642,3 +7642,63 @@ il y en a **969**. Sur ces tickets : **forêt +197,58 €, modèle en service �
 **31 tickets**, soit quelques heures. La brancher maintenant, ce serait décider trois heures avant
 le juge qu'on a soi-même nommé — l'erreur exacte qui a coûté cher avec la bande (§3.104) et le frein
 (§3.125). **Si le critère passe : mise 20 €, pas moins.**
+
+
+### 3.155 — Le FLUX D'ORDRES bat le prix : la seule information neuve depuis une semaine, 2026-09-19 12h00
+
+**La question.** §3.154 avait montré que la forêt de vidage en service tient à 86 % sur la liquidité
+(`q`, `vol`, `cout`, `q_croiss`) — une seule information vue sous quatre angles — et que les
+rendements ne pèsent rien. Ajouter des variables de prix ne pouvait donc rien apporter. Mido :
+*« peut-on l'améliorer plus ? »* Il fallait une information d'une **autre nature**.
+
+**Ce qu'on lui a donné.** Les 16 variables de transactions des 45 premières secondes
+(`v1_enregistreur`) : qui achète, combien, combien de vendeurs, combien de portefeuilles jamais vus,
+la concentration des achats. Cette famille portait 44 % de l'importance par permutation sur la table
+des 107 variables — devant le prix (14 %) — et n'avait **jamais** été donnée à un modèle de vidage.
+
+**Protocole** (`intel/research/foret_vidage_plus.py`) : trois modèles (prix seul / flux seul / les
+deux), marche avant par coupes de 6 h du 16/09 au 18/09 18h, entraînement sur tout ce qui précède,
+jugement sur les 6 h suivantes, on garde 80 % comme la forêt en service. Coût 2,98 pt. Deux témoins
+qui ne s'entraînent sur rien : tout prendre, et trier sur `q` seul.
+
+| | n | €/ticket | vs témoin | sans 3 meilleurs |
+|---|---|---|---|---|
+| **flux d'ordres SEUL** | 1108 | **+0,155** | **+0,430** | **+0,208** |
+| prix + flux | 1108 | +0,061 | +0,336 | +0,114 |
+| prix (la référence) | 1108 | −0,105 | +0,170 | −0,053 |
+| tout prendre | 1390 | −0,275 | — | −0,202 |
+| `q` seul | 1108 | −0,636 | −0,361 | −0,461 |
+
+**Loi du maximum : ça passe.** 100 marches avant avec les résultats permutés, en retenant à chaque
+tirage **le meilleur des trois modèles** — le maximum sous permutation de la procédure entière, choix
+du modèle compris. Meilleur du hasard **+0,473** ; le nôtre **+0,430** ; **1 tirage sur 100 fait
+aussi bien, p ≈ 0,020**. Le flux d'ordres est la seule des trois lignes encore positive quand on lui
+retire ses 3 meilleurs tickets. Le prix seul, lui, ne se distingue pas du hasard.
+
+**MAIS : ce qui passe est le CONTRASTE, pas le NIVEAU.** Distinction qui vaut pour toute la table et
+que j'ai failli rater.
+
+| | mesuré | bruit à 1108 tickets | verdict |
+|---|---|---|---|
+| contre le témoin | +0,430 | **0,175** | 2,5 σ — solide |
+| argent gagné (niveau) | +0,155 | **0,389** | −0,62 à +0,93 — indécidable |
+
+Le contraste compare deux règles sur **les mêmes tickets** à 20 % près : l'essentiel de la variance
+se compense, le plancher de bruit est 0,175 €. Le niveau n'a rien contre quoi se compenser et
+encaisse toute la violence de ces jetons (σ = 0,65 par ticket, soit **12,95 €** à 20 € de mise) :
+plancher 0,389 €. À 453 tickets/jour cela donne **+70 €/jour, intervalle −282 à +423**, et il
+faudrait **27 900 tickets — 62 jours** — pour que ce +70 sorte du bruit.
+
+**Deux erreurs commises en direct, notées pour ne pas les refaire.**
+1. À 90 tirages, voyant le maximum courant du hasard passer à +0,473, j'ai annoncé à Mido que le test
+   tombait du mauvais côté. Faux : **un** tirage au-dessus sur 90, c'est p ≈ 0,02. *Un maximum courant
+   n'est pas un verdict ; seul le COMPTE des tirages qui dépassent en est un.*
+2. J'ai calculé le plancher de bruit à 0,389 € et conclu que +0,430 était dedans. Faux : j'avais
+   traité les tickets du modèle comme un échantillon indépendant alors qu'ils sont **un
+   sous-ensemble des tickets du témoin**. Pour une comparaison appariée le plancher est
+   σ·√(m/(n·k)) = 0,175 €. *La permutation avait raison, le calcul de coin de table avait tort —
+   quand les deux divergent, c'est la permutation qui tranche.*
+
+**Décisions.** Recherche (mon arbitrage) : geler une forêt de vidage au flux d'ordres, à côté de
+celle en service, pour qu'elle accumule des tickets hors échantillon. Argent réel : **rien**. Le
+niveau n'est pas prouvé et je ne mise pas sur un intervalle qui contient −282 €/jour.
