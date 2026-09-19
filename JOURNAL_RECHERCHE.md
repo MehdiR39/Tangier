@@ -7596,3 +7596,49 @@ atteint (pire achat : 12,1 %). Filtrer à 5 % aurait refusé 11 achats et « éc
 refuser 11 tickets **au hasard** fait aussi bien dans **19,4 %** des tirages, et les quintiles de
 glissement ne montrent aucun ordre (le pire est au milieu, corrélation −0,04). Le glissement ne
 prédit rien : il se paie pareil sur tous les tickets.
+
+
+---
+
+### 3.154 — La forêt aléatoire analysée, et l'attente de son propre verdict, 2026-09-19 11h15
+
+Mido : *« la forêt s'en sort pas mal, elle est construite comment ? »* puis *« la mettre en prod
+avec une petite mise si ça ne dégrade pas les coûts ? »*
+
+**Contre le témoin, sur sa propre période** — la seule lecture qui vaille (Mido : *« c'est pas un
+critère que tout le monde soit positif, notre but c'est de battre le marché »*) : **+617 € par
+1 000 tickets sur 661 tickets**, le meilleur rapport signal/effectif de la table. Et l'avantage
+tient les deux jours : **18/09 +0,832 €/ticket** (jour rouge, témoin −0,662), **19/09 +0,287**
+(jour vert, témoin +0,282). Il ne vient pas de la bonne matinée.
+
+**Ce qu'elle est.** 300 arbres, entraînée sur 26 566 lancements du 09→15/09, gelée le 18/09 01h31,
+19 variables de prix à 45 s. Elle prédit **P(chute à −50 % ou pire à 240 s)** et achète sous 0,2765
+— le 80ᵉ centile de ses scores d'entraînement, donc elle écarte le cinquième le plus dangereux.
+
+**Importance par PERMUTATION, hors échantillon (967 tickets, AUC 0,669) :**
+
+| variable | perte d'AUC | part |
+|---|---|---|
+| `q` (taille du coffre) | +0,0234 | 25 % |
+| `vol` (volatilité) | +0,0198 | 21 % |
+| `cout` (coût d'exécution prévu) | +0,0193 | 21 % |
+| `q_croiss` (croissance du coffre) | +0,0173 | 19 % |
+| `ret_naiss` | +0,0049 | 5 % |
+| tous les autres rendements | ≈ 0 | — |
+
+**86 % du modèle est de la LIQUIDITÉ**, et les rendements (`ret_10/60/120`, `dd_max`) ne pèsent rien.
+Elle ne devine pas si le jeton monte : **elle reconnaît un pool trop petit et trop agité pour
+survivre**. À noter : `cout` est une fonction directe de `q` (impact = 2·mise/(q+V)) — `q`, `cout` et
+`q_croiss` mesurent largement la même chose. Ce n'est pas quatre informations, c'en est une.
+
+**La mise : 20 € est l'optimum, descendre coûte.** Coût par ticket, caution récupérée et priorité
+d'achat à 100 000 : **5 € → 3,23 pt · 10 € → 2,69 · 20 € → 2,55 · 30 € → 2,61 · 50 € → 2,86.** Les
+frais fixes (0,062 €/aller-retour) ne se diluent plus en dessous de 20 €, l'impact prend le dessus
+au-dessus de 30. **Réduire le risque en baissant la mise est une fausse économie** : il vaut mieux
+prendre moins de tickets.
+
+**Décision : on attend son propre critère.** `ensemble.py` exige 1 000 tickets postérieurs au gel —
+il y en a **969**. Sur ces tickets : **forêt +197,58 €, modèle en service −99,35 €**. Il manque
+**31 tickets**, soit quelques heures. La brancher maintenant, ce serait décider trois heures avant
+le juge qu'on a soi-même nommé — l'erreur exacte qui a coûté cher avec la bande (§3.104) et le frein
+(§3.125). **Si le critère passe : mise 20 €, pas moins.**
