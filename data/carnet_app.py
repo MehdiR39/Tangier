@@ -68,6 +68,14 @@ def age(iso):
         return "?"
 
 
+def heure(ts):
+    """Un instant unix -> jour et heure de Paris. Les dates du projet se lisent toutes en Paris."""
+    try:
+        return dt.datetime.fromtimestamp(float(ts), TZ).strftime("%d/%m %H:%M")
+    except Exception:
+        return "—"
+
+
 def eur(v, d=0):
     """Format francais : espace pour les milliers, virgule decimale, vrai signe moins.
     (`"%,.*f"` n existe pas en Python -- il faut `format`, sinon ValueError a l ouverture.)"""
