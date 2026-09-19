@@ -32,7 +32,11 @@ COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte
                # alimente la page de suivi locale (Streamlit) : table toutes les 5 min, carnet reel
                # toutes les 20 s, et le registre des couts ticket par ticket. Sans lui la page se
                # fige en silence -- elle affiche l age de ses donnees, mais autant qu elle vive.
-               "carnet_json")
+               "carnet_json",
+               # la foret de vidage au FLUX D ORDRES, gelee le 19/09 16h00 : elle n apprend que sur
+               # les transactions <= 30 s, la seule vue que l index montre surement a l instant de
+               # decider. Papier, zero euro, critere a 600 tickets.
+               "foret_flux")
 PAS = 60.0
 JOURNAL = "/app/logs"
 
