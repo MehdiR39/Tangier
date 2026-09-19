@@ -28,7 +28,11 @@ import sys
 import time
 
 COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte", "foret_gel", "foret_gel75", "v1_enregistreur",
-               "papier_gd45", "papier_gd30", "papier_large", "veille_table")
+               "papier_gd45", "papier_gd30", "papier_large", "veille_table",
+               # alimente la page de suivi locale (Streamlit) : table toutes les 5 min, carnet reel
+               # toutes les 20 s, et le registre des couts ticket par ticket. Sans lui la page se
+               # fige en silence -- elle affiche l age de ses donnees, mais autant qu elle vive.
+               "carnet_json")
 PAS = 60.0
 JOURNAL = "/app/logs"
 

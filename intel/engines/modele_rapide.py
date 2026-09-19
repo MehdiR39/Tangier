@@ -98,15 +98,36 @@ class ModeleRapide:
         return self.ctx.config.get("modele_rapide.%s" % cle, defaut)
 
     def _charge_modele(self):
+        """Charge le modele de vidage, quel que soit son FORMAT.
+
+        Deux formats coexistent dans le projet et exposent la meme interface (`probabilite`,
+        `seuil_p80`) :
+            `tree_info`  export LightGBM direct         -> `arbres.Modele`   (modele_vidage.json)
+            `modeles`    enveloppe d ensemble, n>=1     -> `ensemble.Ensemble` (foret_vidage.json)
+        On choisit d apres le CONTENU du fichier, pas d apres son nom : brancher la foret ne doit
+        pas demander de se souvenir de quel loader va avec quel fichier.
+        """
         if self._modele is None:
             import sys
             d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "research")
             if d not in sys.path:
                 sys.path.insert(0, d)
-            from arbres import Modele  # noqa: PLC0415
-            self._modele = Modele(self._cfg("modele", MODELE))
-            log.info("modele_rapide: modele charge (%d arbres, seuil %.4f)",
-                     len(self._modele.arbres), self._modele.seuil_p80)
+            chemin = self._cfg("modele", MODELE)
+            with open(chemin, encoding="utf-8") as f:
+                forme = json.load(f)
+            if "tree_info" in forme:
+                from arbres import Modele  # noqa: PLC0415
+                self._modele = Modele(chemin)
+                n = len(self._modele.arbres)
+            elif "modeles" in forme:
+                from ensemble import Ensemble  # noqa: PLC0415
+                self._modele = Ensemble(chemin)
+                n = sum(len(m.get("tree_info") or []) for m in forme["modeles"])
+            else:
+                raise ValueError("modele_rapide: format inconnu pour %s (ni tree_info ni modeles)"
+                                 % chemin)
+            log.info("modele_rapide: modele charge depuis %s (%d arbres, seuil %.4f)",
+                     os.path.basename(chemin), n, self._modele.seuil_p80)
         return self._modele
 
     # ---------------------------------------------------------------- decision

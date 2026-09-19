@@ -1149,7 +1149,35 @@ modele_rapide:
   #
   # Valeurs : risque | bas_bande | bas
   regle: risque
-  seuil_risque: 0.2694         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
+  # ================================================================================================
+  # 19/09 — LA FORET ALEATOIRE REMPLACE LE MODELE LIGHTGBM, ET LA MISE PASSE DE 20 A 10 EUR.
+  # Accord de Mido apres qu il ait pose la bonne question : « ce qu'on a en prod fait du gros
+  # negatif ». Il avait raison, et j exigeais des preuves pour CHANGER tout en n en exigeant aucune
+  # pour GARDER. Objectif fixe par lui : rester en prod pour apprendre, en perdant le moins possible.
+  #
+  # POURQUOI LA FORET. Le cout constant (pool + inexplique) est de 2,36 %, mesure sur 112 tickets
+  # reels decomposes au centime (`cout_registre.py`). Une regle dont le rendement BRUT est sous ce
+  # seuil perd mecaniquement, quoi qu on fasse. Sur les lignes a fort volume :
+  #     foret aleatoire   brut +3,41 %   459 tickets/jour   +1,45 sigma
+  #     risque (sortant)  brut +2,32 %   457 tickets/jour   +1,22 sigma
+  # Meme volume, donc meme apprentissage, mais la foret est la seule au-dessus du cout constant.
+  # Elle n est PAS prouvee (1,45 sigma) : c est le moins mauvais pari, pas une certitude.
+  #
+  # POURQUOI 10 EUR ET NON 20. Les frais de reseau sont FIXES (0,091 EUR/ticket), donc miser plus
+  # les dilue et l optimum calcule est a 27 EUR. Mais le pari est defavorable :
+  #     passer de 10 a 20 EUR rapporte +21,7 EUR/jour si la foret a un vrai edge
+  #                          et coute  -26,7 EUR/jour si elle n en a pas.
+  # A 1,45 sigma, « elle n en a pas » reste serieux. Le nombre de TICKETS ne depend pas de la mise :
+  # on achete la meme information pour moitie moins cher. Mido : « pourquoi 20 a la place de 10 ? ».
+  #
+  # CRITERE D ARRET, ECRIT AVANT DE BRANCHER (l erreur du frein etait de le fixer apres) :
+  #   - on coupe si la perte cumulee depuis ce changement atteint -150 EUR ;
+  #   - on coupe si, a 500 tickets reels, le rendement brut de la foret est sous 2,36 % ;
+  #   - on reevalue a 500 tickets dans tous les cas.
+  # Rien de tout cela ne se renegocie apres coup.
+  # ================================================================================================
+  modele: /app/data/recherche/balayage/foret_vidage.json
+  seuil_risque: 0.2764636667438582   # le seuil p80 de la FORET, calcule sur ses donnees d apprentissage
   # LE FREIN DU MARCHE : DEBRANCHE le 18/09 a 19h30 Paris, apres 24 h en production. Mido : « mec
   # c est toi qui a dit le frein fonctionne ». Il avait raison de le demander, et la verification
   # lui donne raison sur le fond.
@@ -1182,7 +1210,7 @@ modele_rapide:
   frein_seuil: 0.50            # frontiere NATURELLE : plus de perdants que de gagnants         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
   pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
   fenetre_minutes: 15
-  mise_eur: 20.0
+  mise_eur: 10.0               # 19/09 : 20 -> 10 EUR. Voir le pave au-dessus de `modele`.
   # Le taux SOL/EUR est LU SUR LE MARCHE a chaque achat (sol.sol_eur), jamais fige : le 08/09 un
   # taux en dur de 180 EUR alors que le SOL valait 96 engageait 2,67 EUR pour un ticket annonce a 5.
   # Si le taux est illisible, l achat est REPORTE plutot que mal dimensionne.
