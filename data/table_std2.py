@@ -520,6 +520,21 @@ if _sortie:
                 out[-1][1] = round(cum, 2)
         return out
 
+    def _par_jour(v):
+        """Le gain de CHAQUE journee, separement -- pas le cumul.
+
+        Le graphique cumule est ecrase par le temoin (2 672 tickets, -2 100 EUR) : les lignes a
+        60 tickets y sont des traits plats colles a zero. Par jour, chacune se lit a son echelle.
+        Mido, 19/09 : « je veux un autre plus bas avec les perf par jour ».
+        """
+        par = {}
+        for t, r in v:
+            k = dt.datetime.fromtimestamp(t + 7200, dt.timezone.utc).strftime("%Y-%m-%d")
+            e = par.setdefault(k, [0.0, 0])
+            e[0] += MISE * (r - SUP)
+            e[1] += 1
+        return [{"jour": k, "gain": round(g, 2), "n": n} for k, (g, n) in sorted(par.items())]
+
     _lignes = []
     for nom in ORDRE:
         v = SERIE.get(nom) or []
@@ -532,7 +547,7 @@ if _sortie:
             "nom": nom, "n": n, "total": round(total, 2),
             "par_ticket": round(total / n, 4),
             "jour": round(MISE * (sum(j) - len(j) * SUP), 2), "n_jour": len(j),
-            "debut": debuts.get(nom), "courbe": _courbe(v),
+            "debut": debuts.get(nom), "courbe": _courbe(v), "par_jour": _par_jour(v),
         })
     # ECART-TYPE D UN TICKET, mesure sur le temoin -- toute la population, sans selection. C est lui
     # qui fixe ce qu on peut distinguer du hasard : un ecart plus petit que son propre bruit ne se

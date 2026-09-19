@@ -231,8 +231,37 @@ def table_complete():
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
+        st.subheader("Gain par jour")
+        st.caption("Le cumulé est écrasé par le témoin : une ligne à 60 tickets y est un trait "
+                   "plat. Par jour, chacune se lit à son échelle — et on voit tout de suite si "
+                   "une stratégie gagne **tous les jours** ou si elle tient sur une seule journée.")
+        jours = sorted({d["jour"] for l in dispo if l["nom"] in choix
+                        for d in (l.get("par_jour") or [])})
+        if jours:
+            fig = go.Figure()
+            for i, l in enumerate([x for x in dispo if x["nom"] in choix]):
+                m = {d["jour"]: d for d in (l.get("par_jour") or [])}
+                fig.add_trace(go.Bar(
+                    name=l["nom"], x=jours,
+                    y=[(m.get(j) or {}).get("gain") for j in jours],
+                    marker_color=TEINTES[i % len(TEINTES)],
+                    customdata=[[(m.get(j) or {}).get("n") or 0] for j in jours],
+                    hovertemplate="<b>%s</b><br>%%{x}<br>%%{y:+.0f} € sur %%{customdata[0]} tickets"
+                                  "<extra></extra>" % l["nom"]))
+            fig.add_hline(y=0, line=dict(color=DOUX, width=1))
+            fig.update_layout(barmode="group", height=340, margin=dict(l=0, r=0, t=6, b=0),
+                              yaxis_title="€ gagnés ce jour-là",
+                              legend=dict(orientation="h", y=-.2),
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig, use_container_width=True)
+
+            t = pd.DataFrame([{"stratégie": l["nom"],
+                               **{d["jour"][5:]: d["gain"] for d in (l.get("par_jour") or [])}}
+                              for l in dispo if l["nom"] in choix])
+            st.dataframe(t, use_container_width=True, hide_index=True)
+
     st.subheader("Registre complet")
-    r = pd.DataFrame([{k: v for k, v in l.items() if k != "courbe"} for l in D["lignes"]])
+    r = pd.DataFrame([{k: v for k, v in l.items() if k not in ("courbe", "par_jour")} for l in D["lignes"]])
     r["depuis"] = pd.to_datetime(r["debut"], unit="s", utc=True).dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M")
     r = r[["nom", "n", "total", "par_ticket", "jour", "n_jour", "depuis"]].sort_values("total", ascending=False)
     r.columns = ["stratégie", "tickets", "total €", "€/ticket", "aujourd'hui €", "tickets du jour", "depuis"]
