@@ -360,16 +360,14 @@ ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + 
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
          "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
-print("COUT (%s) : TOTAL applique %.2f pt (formule recalee sur 2,62) · MESURE applique %.2f pt = le cout REEL des 92 tickets"
-      " du 18/09 (6,55, IC95 3,52-10,03)%s."
-      % ("caution PAYEE" if CAUTION else "caution RECUPEREE partout, depuis le 19/09 09h30", 100 * _COUT_APPLIQUE,
-         100 * COUT_MESURE, "" if CAUTION else " moins la part de caution"))
+print("COUT : %.2f pt PARTOUT (cases et total) = le cout REEL mesure sur les 92 tickets du 18/09 (6,55, IC95 3,52-10,03)%s."
+      % (100 * COUT_MESURE, "" if CAUTION else " moins la caution, recuperee depuis le 19/09 09h30"))
+print("  (l ancienne colonne a 2,62 pt est retiree : elle annoncait -2,14 %/ticket la ou le carnet reel faisait -8,63 %.)")
 print("  2,62 est HORS de cet intervalle : sur la meme fenetre la table dit -2,14 %/ticket, le reel -8,63 %.")
 print("* ENTREE T+75 : AUTRE population -- les jetons Telegram (ceux de la production), pas le flux papier_combo.")
 print("x = la strategie n existait pas · 0 = elle existait et n a rien pris (ou resultat pas encore connu)")
 ENTETES = _passes + [DERNIER + " -> " + COUPE_H, COUPE_H + " -> maintenant", DERNIER + " TOTAL"]
-print("%-24s %13s %s %12s %14s" % ("", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL",
-                                   "TOTAL MESURE"))
+print("%-24s %13s %s %12s" % ("", "depuis", " ".join("%17s" % c for c in ENTETES), "TOTAL"))
 for nom in ORDRE:
     if nom not in res:
         continue
@@ -377,10 +375,15 @@ for nom in ORDRE:
     for c in COLS:
         v = res[nom].get(c)
         if v:
+            # UN SEUL COUT PARTOUT, le reel (5,56 pt). L ancienne formule (1,82) restait affichee a
+            # cote « pour comparer » et ne servait qu a tromper : c est elle qui annoncait
+            # -2,14 %/ticket quand le carnet reel faisait -8,63 % sur la meme fenetre. Chaque case
+            # porte donc la surcharge SUP, comme le total.
+            euros = MISE * (sum(v) - len(v) * SUP)
             if c != "_jour":
-                tot += MISE * sum(v)
+                tot += euros
                 n_tot += len(v)
-            cel.append("%+12.0f E(%3d)" % (MISE * sum(v), len(v)))
+            cel.append("%+12.0f E(%3d)" % (euros, len(v)))
         else:
             # Une case vide veut dire DEUX choses tres differentes, et les confondre trompe :
             #   « x »  la strategie n existait pas encore a cette date ;
@@ -390,9 +393,9 @@ for nom in ORDRE:
             cel.append("%17s" % ("x" if debuts[nom] > FINS[c] else "0"))
     # la surcharge est plate, donc le total au cout mesure se deduit exactement du NOMBRE de
     # tickets : inutile de rejouer la table, et aucune approximation cachee.
-    print("%-24s %13s %s %+9.0f E(%3d) %+11.0f E" % (
+    print("%-24s %13s %s %+9.0f E(%3d)" % (
         nom, dt.datetime.fromtimestamp(debuts[nom] + 7200, dt.timezone.utc).strftime("%d/%m %Hh%M"),
-        " ".join(cel), tot, n_tot, tot - n_tot * MISE * SUP))
+        " ".join(cel), tot, n_tot))
 
 
 # on retient l heure de CE tableau pour que le prochain coupe ici
