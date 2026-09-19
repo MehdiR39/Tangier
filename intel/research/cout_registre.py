@@ -45,7 +45,13 @@ REGISTRE = os.path.join(DATA, "cout_tickets.jsonl")
 SERIE = os.path.join(DATA, "cout_serie.json")
 TZ = dt.timezone(dt.timedelta(hours=2))
 
-FORMULE = 1                       # version des formules ; une ligne garde la sienne pour toujours
+# VERSION DES FORMULES. Une ligne garde la sienne pour toujours.
+#   1  caution SUPPOSEE nulle apres la bascule du 19/09 10h53 -- une hypothese deguisee en mesure.
+#      Archive dans `cout_tickets_v1_caution_supposee.jsonl`, jamais effacee.
+#   2  caution LUE sur la chaine : le compte-jeton du mint existe-t-il encore dans le portefeuille ?
+#      S il a ete referme, le loyer est revenu ; sinon il est immobilise. Mido, 19/09 :
+#      « fais tout ce qui est reel et vrai ».
+FORMULE = 2
 V_RESERVE = 17.5845               # reserve virtuelle PumpSwap (octet 245)
 LOYER_SOL = 0.00203928            # loyer d un compte-jeton
 POOL_PCT = 0.0025                 # commission PumpSwap par jambe
@@ -59,6 +65,36 @@ def rpc(corps):
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r).get("result")
+
+
+def comptes_ouverts():
+    """Les mints dont le compte-jeton est ENCORE ouvert dans le portefeuille.
+
+    C est la mesure de la caution, et elle remplace une hypothese. Jusqu au 19/09 ce fichier
+    ECRIVAIT `caution = 0` pour tout ticket posterieur a l activation du module de recuperation --
+    une supposition deguisee en mesure, exactement ce que Mido reproche. La verite se lit sur la
+    chaine : si le compte-jeton d un mint n existe plus, sa caution est revenue au portefeuille ;
+    s il existe encore, elle est immobilisee.
+
+    Un seul appel pour tout le portefeuille, en lecture seule, adresse publique derivee -- la cle
+    ne sort jamais de `solana._keypair`.
+    """
+    sys.path.insert(0, "/app")
+    from intel.execution import solana as sol
+    a = sol.signer_address()
+    if not a:
+        return None
+    ouverts = set()
+    for prog in ("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                 "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"):
+        r = rpc({"jsonrpc": "2.0", "id": 1, "method": "getTokenAccountsByOwner",
+                 "params": [a, {"programId": prog}, {"encoding": "jsonParsed"}]}) or {}
+        for x in r.get("value") or []:
+            try:
+                ouverts.add(x["account"]["data"]["parsed"]["info"]["mint"])
+            except Exception:  # noqa: BLE001
+                continue
+    return ouverts
 
 
 def frais_sol(signature):
@@ -109,15 +145,23 @@ def sol_par_eur(ci):
     return 0.31 / 30.0                      # 0,31 SOL pour 30 EUR, constante du projet
 
 
-def decompose(t, taux):
-    """Les cinq postes, en euros. `taux` = SOL par euro."""
+def decompose(t, taux, ouverts=None):
+    """Les cinq postes, en euros. `taux` = SOL par euro.
+
+    `ouverts` = les mints dont le compte-jeton existe ENCORE (lu sur la chaine). La caution vaut
+    zero quand le compte a ete referme, le loyer plein sinon. On ne suppose plus.
+    """
     mise_sol = t["mise"] * taux
     fa = frais_sol(t["tx_achat"])
     fv = frais_sol(t["tx_vente"])
     reseau = ((fa or 0) + (fv or 0)) / taux                      # SOL -> EUR
-    # La caution est PAYEE a l ouverture du compte-jeton et RENDUE si le compte est referme.
-    # Depuis la bascule du 19/09 10h53 le module `recuperation` la reprend : cout net nul.
-    caution = 0.0 if t["t"] >= BASCULE else LOYER_SOL / taux
+    # La caution est PAYEE a l ouverture du compte-jeton et RENDUE quand il est referme. LU, pas
+    # suppose : si le mint n est plus dans le portefeuille, son compte a ete ferme et le loyer est
+    # revenu. `source_caution` garde la trace de la facon dont on l a su.
+    if ouverts is None:
+        caution, src = (0.0 if t["t"] >= BASCULE else LOYER_SOL / taux), "suppose"
+    else:
+        caution, src = (LOYER_SOL / taux if t["mint"] in ouverts else 0.0), "chaine"
     # Notre propre ordre deplace le prix : deux jambes dans un pool de taille q (+ reserve virtuelle)
     impact = (2 * mise_sol / (t["q"] + V_RESERVE)) * t["mise"] if t["q"] else 0.0
     pool = 2 * POOL_PCT * t["mise"]
@@ -133,6 +177,7 @@ def decompose(t, taux):
         "inexplique": round(total - connu, 4), "total": round(total, 4),
         "total_pct": round(100 * total / t["mise"], 3),
         "frais_lus": fa is not None and fv is not None,
+        "source_caution": src,
     }
 
 
@@ -203,10 +248,24 @@ def main() -> None:
         vus = deja_ecrits()
         neufs = tickets_a_traiter(vus)
         taux = sol_par_eur(None)
+        # ON N ECRIT PAS UN TICKET TANT QUE SA CAUTION N EST PAS TRANCHEE. Le module `recuperation`
+        # passe toutes les 30 min : un ticket ferme il y a 10 minutes a encore son compte ouvert et
+        # serait inscrit « caution payee » pour toujours (le registre est append-only). On attend
+        # donc deux cycles avant de figer sa ligne.
+        MUR = 3600
+        maintenant = time.time()
+        attente = [t for t in neufs if maintenant - t["t"] < MUR]
+        neufs = [t for t in neufs if maintenant - t["t"] >= MUR]
+        try:
+            ouverts = comptes_ouverts()
+        except Exception as e:  # noqa: BLE001
+            print("cout_registre: portefeuille illisible (%s) -- on attend" % str(e)[:120], flush=True)
+            ouverts = None
+            neufs = []
         n = 0
         for t in neufs:
             try:
-                d = decompose(t, taux)
+                d = decompose(t, taux, ouverts)
             except Exception as e:  # noqa: BLE001
                 print("cout_registre: %s... echec %s" % (t["pair"][:8], str(e)[:120]), flush=True)
                 continue
@@ -219,7 +278,8 @@ def main() -> None:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(agrege(), f, ensure_ascii=False)
             os.replace(tmp, SERIE)
-        print("cout_registre: %d ticket(s) ajoute(s) · %d au total" % (n, len(vus) + n), flush=True)
+        print("cout_registre: %d ajoute(s) · %d au total · %d en attente de maturite"
+              % (n, len(vus) + n, len(attente)), flush=True)
         if not boucle:
             return
         time.sleep(300)
