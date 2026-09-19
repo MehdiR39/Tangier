@@ -351,16 +351,34 @@ class Runtime:
         # les sept tests GELES cesseraient de collecter en silence. On accroche donc le gardien ici,
         # au seul endroit dont le redemarrage est garanti. Il ne fait que DEMARRER des processus
         # manquants : il ne tue rien, ne touche a aucune base, ne decide rien.
+        # QUI GARDE LE GARDIEN. Jusqu au 19/09 il n etait lance QU UNE FOIS, ici, au demarrage de
+        # l ordonnanceur : s il mourait en cours de nuit, plus personne ne relancait les collecteurs
+        # et les gels cessaient de collecter en silence -- exactement la panne contre laquelle il
+        # existe, d un cran plus haut. On le REVERIFIE donc periodiquement. Comme lui, ce controle
+        # ne sait que DEMARRER : il lit /proc, et s il ne voit pas de gardien il en lance un.
         if self.ctx.config.get("recherche.gardien_enabled", True):
-            try:
+            async def _gardien_veille() -> dict[str, Any]:
+                import os as _os
                 import subprocess as _sp
                 import sys as _sy
+                for _p in _os.listdir("/proc"):
+                    if not _p.isdigit():
+                        continue
+                    try:
+                        with open("/proc/%s/cmdline" % _p) as _fh:
+                            if "intel.research.gardien" in _fh.read().replace("\0", " "):
+                                return {"status": "ok", "gardien": "vivant"}
+                    except OSError:
+                        continue          # le processus vient de disparaitre : rien a dire
                 _log = open("/app/logs/gardien.log", "a")
                 _sp.Popen([_sy.executable, "-u", "-m", "intel.research.gardien"], cwd="/app",
                           stdout=_log, stderr=_sp.STDOUT, start_new_session=True)
-                log.info("gardien des collecteurs de recherche lance")
-            except Exception as exc:  # noqa: BLE001
-                log.warning("gardien non lance (%s)", str(exc)[:120])
+                log.warning("gardien absent : relance")
+                return {"status": "ok", "gardien": "relance"}
+
+            tasks.append(asyncio.create_task(self._loop(
+                "gardien_veille", _gardien_veille,
+                int(self.ctx.config.get("recherche.gardien_pas_secondes", 120)))))
         # Acheter sur le MODELE : « au plus bas » et bande de risque 0,20-0,35, sortie a 240 s sans
         # stop ni prise de gain -- ces deux reflexes coutent 6,6 points par ticket (mesure sur la
         # regle Telegram : +7,24 % en tenue aveugle contre +0,62 % avec les deux seuils). Boucle

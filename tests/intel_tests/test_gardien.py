@@ -13,9 +13,22 @@ from intel.research import gardien
 
 
 def test_il_surveille_tous_les_collecteurs():
-    assert set(gardien.COLLECTEURS) == {"papier_combo", "social_collecte", "prix_rapide",
-                                       "stock_collecte", "foret_gel", "foret_gel75", "v1_enregistreur",
-                                       "papier_gd45", "papier_gd30", "papier_large", "veille_table"}
+    """Les collecteurs dont la mort casserait un test GELE en silence doivent y etre.
+
+    Ecrit d abord en egalite stricte, ce test refusait toute nouvelle ligne de recherche : cinq
+    collecteurs ont ete ajoutes entre le 18 et le 19/09 (`carnet_json`, `foret_flux`, `foret_marche`,
+    `foret75_carnet`) sans que personne ne le mette a jour -- il etait donc rouge, et un test rouge
+    en permanence ne protege plus rien. On verifie desormais l INCLUSION des collecteurs critiques,
+    plus l absence de doublon (un doublon ferait tourner deux fois le meme collecteur sur la meme
+    base). Ajouter une ligne ne casse plus rien ; en retirer une casse toujours.
+    """
+    critiques = {"papier_combo", "social_collecte", "prix_rapide", "stock_collecte",
+                 "foret_gel", "foret_gel75", "v1_enregistreur", "papier_gd45", "papier_gd30",
+                 "papier_large", "veille_table", "carnet_json", "foret_flux", "foret_marche",
+                 "foret75_carnet"}
+    manquants = critiques - set(gardien.COLLECTEURS)
+    assert not manquants, "collecteurs non surveilles : %s" % sorted(manquants)
+    assert len(gardien.COLLECTEURS) == len(set(gardien.COLLECTEURS)), "doublon dans COLLECTEURS"
 
 
 def test_il_ne_tue_rien_et_n_ecrit_dans_aucune_base():
@@ -51,3 +64,19 @@ def test_l_ordonnanceur_le_lance():
     src = inspect.getsource(scheduler)
     assert "intel.research.gardien" in src
     assert "gardien_enabled" in src
+
+
+def test_l_ordonnanceur_le_reverifie_et_ne_le_lance_pas_qu_une_fois():
+    """Lance une seule fois au demarrage, un gardien mort n etait remplace par personne.
+
+    C est la panne contre laquelle le gardien existe, d un cran plus haut : les collecteurs
+    s arretent, les tests geles cessent de collecter, et rien ne le dit. Le controle doit donc
+    tourner en boucle -- et, comme le gardien lui-meme, ne savoir que DEMARRER.
+    """
+    from intel.engines import scheduler
+    src = inspect.getsource(scheduler)
+    assert "_gardien_veille" in src, "le gardien doit etre reverifie, pas lance une seule fois"
+    i = src.index("async def _gardien_veille")
+    corps = src[i:src.index("tasks.append", i)]
+    for interdit in ("kill", "terminate", "SIGTERM", "sqlite3"):
+        assert interdit not in corps, "la veille du gardien ne doit jamais %s" % interdit
