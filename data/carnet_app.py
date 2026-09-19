@@ -25,6 +25,7 @@ import datetime as dt
 import json
 import os
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -231,32 +232,43 @@ def bandeau_reel():
             # gros gains aussi, et dans quelle proportion ».
             ec = e[e["statut"] == "ECARTEE"]
             if len(ec) >= 5:
-                st.caption("**Par tranche** — la moyenne peut cacher qu'on jette autant de gros "
-                           "gains que de grosses pertes. Dans ce marché un jeton à +240 % existe, "
-                           "une perte s'arrête à −100 % : en jeter un gros coûte plus cher qu'en "
-                           "éviter un mauvais.")
+                st.caption("**Dans chaque tranche, combien de jetons ont été gardés et combien "
+                           "écartés.** La question est simple : la forêt jette-t-elle surtout les "
+                           "catastrophes (à gauche), ou jette-t-elle aussi les fusées (à droite) ? "
+                           "Dans ce marché un jeton monte à +240 % quand une perte s'arrête à "
+                           "−100 % — en jeter un gros coûte plus cher qu'en éviter un mauvais.")
                 B = [-1e9, -50, -20, 0, 20, 50, 1e9]
-                NB = ["catastrophe\n< −50 %", "grosse perte\n−50 à −20", "petite perte\n−20 à 0",
-                      "petit gain\n0 à +20", "bon gain\n+20 à +50", "gros gain\n> +50 %"]
+                NB = ["catastrophe<br>< −50 %", "grosse perte<br>−50 à −20", "petite perte<br>−20 à 0",
+                      "petit gain<br>0 à +20", "bon gain<br>+20 à +50", "gros gain<br>> +50 %"]
                 cg = pd.cut(pris["brut_pct"], B, labels=NB).value_counts().reindex(NB).fillna(0)
                 ce = pd.cut(ec["brut_pct"], B, labels=NB).value_counts().reindex(NB).fillna(0)
+                tot = (cg + ce).replace(0, np.nan)
                 fig = go.Figure()
-                fig.add_trace(go.Bar(name="gardés (%d)" % len(pris), x=NB,
-                                     y=(100 * cg / len(pris)).round(1), marker_color=ACCENT,
-                                     hovertemplate="%{y:.0f} %% des gardés<extra></extra>"))
-                fig.add_trace(go.Bar(name="écartés (%d)" % len(ec), x=NB,
-                                     y=(100 * ce / len(ec)).round(1), marker_color=DOUX,
-                                     hovertemplate="%{y:.0f} %% des écartés<extra></extra>"))
-                fig.update_layout(height=320, margin=dict(l=0, r=0, t=6, b=0), barmode="group",
-                                  yaxis_title="part du groupe (%)",
-                                  legend=dict(orientation="h", y=-.18),
+                fig.add_trace(go.Bar(name="gardés", x=NB, y=cg.values, marker_color=ACCENT,
+                                     text=[int(v) if v else "" for v in cg.values],
+                                     textposition="inside",
+                                     hovertemplate="<b>%{x}</b><br>%{y} jetons gardés<extra></extra>"))
+                fig.add_trace(go.Bar(name="écartés", x=NB, y=ce.values, marker_color=PERTE,
+                                     text=[int(v) if v else "" for v in ce.values],
+                                     textposition="inside",
+                                     customdata=(100 * ce / tot).round(0).values,
+                                     hovertemplate="<b>%{x}</b><br>%{y} jetons écartés — "
+                                                   "soit %{customdata:.0f} %% de cette tranche"
+                                                   "<extra></extra>"))
+                fig.update_layout(height=340, margin=dict(l=0, r=0, t=6, b=0), barmode="stack",
+                                  yaxis_title="nombre de jetons",
+                                  legend=dict(orientation="h", y=-.22),
                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                 st.plotly_chart(fig, use_container_width=True)
-                cata = 100 * ce.iloc[0] / len(ec) - 100 * cg.iloc[0] / len(pris)
-                gros = 100 * ce.iloc[-1] / len(ec) - 100 * cg.iloc[-1] / len(pris)
-                st.caption("Elle écarte **%+.0f points de catastrophes** en plus — et "
-                           "**%+.0f points de gros gains** en plus. Si le second dépasse le "
-                           "premier, le tri coûte plus qu'il ne protège." % (cata, gros))
+                st.caption("La part rouge de chaque barre est ce que la forêt a refusé dans cette "
+                           "tranche. **Elle trie bien si le rouge domine à gauche et disparaît à "
+                           "droite.**")
+                lig = pd.DataFrame({"tranche": [n.replace("<br>", " ") for n in NB],
+                                    "jetons vus": (cg + ce).astype(int).values,
+                                    "gardés": cg.astype(int).values,
+                                    "écartés": ce.astype(int).values,
+                                    "% écarté": (100 * ce / tot).round(0).values})
+                st.dataframe(lig, use_container_width=True, hide_index=True)
             if len(ec) >= 5:
                 d_ = ec["brut_pct"].mean() - pris["brut_pct"].mean()
                 if d_ < 0:
