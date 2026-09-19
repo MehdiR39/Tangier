@@ -60,13 +60,23 @@ def lire(chemin, defaut=None):
 
 
 def age(iso):
-    """Depuis combien de temps ce fichier a-t-il été écrit ? Une page figée doit se dénoncer."""
+    """Âge de la donnée ET heure du rendu. Une page figée doit se dénoncer.
+
+    L'âge seul ne suffit pas : Streamlit ne rafraîchit ses blocs que tant qu'un onglet est
+    activement connecté. Une session qui décroche continue d'afficher son dernier rendu — âge
+    compris, donc figé sur une valeur rassurante. Mido, 19/09 : « tu te fous de moi ? elle y est
+    pas » — la page lui servait un rendu de 21h37 alors que la donnée datait de 21h45.
+    On affiche donc AUSSI l'heure à laquelle ce bloc a été dessiné : si elle cesse d'avancer,
+    la page est morte et ça se voit.
+    """
+    maintenant = dt.datetime.now(TZ).strftime("%H:%M:%S")
     try:
         d = dt.datetime.fromisoformat(iso)
         s = (dt.datetime.now(dt.timezone.utc) - d).total_seconds()
-        return ("il y a %.0f s" % s) if s < 90 else ("il y a %.0f min" % (s / 60))
+        vieux = ("il y a %.0f s" % s) if s < 90 else ("il y a %.0f min" % (s / 60))
     except Exception:
-        return "?"
+        vieux = "?"
+    return "%s · affiché à %s" % (vieux, maintenant)
 
 
 def heure(ts):
@@ -548,6 +558,17 @@ def couts():
 st.title("Carnet Tangier")
 st.caption("Tout ce qui a réellement tourné, au coût d'exécution mesuré sur la chaîne. "
            "Les chiffres viennent de `data/table_std2.py` — cette page ne recalcule rien.")
+
+
+# HORLOGE DE VIE, en haut et bien visible. Elle ne sert qu'à une chose : si elle cesse d'avancer,
+# la page est décrochée et tout ce qui est affiché en dessous est périmé. Sans elle, une session
+# figée ressert indéfiniment son dernier rendu — âge des données compris, donc rassurant à tort.
+@st.fragment(run_every=2)
+def horloge():
+    st.caption("⏱ page vivante · %s" % dt.datetime.now(TZ).strftime("%d/%m %H:%M:%S"))
+
+
+horloge()
 
 onglets = st.tabs(["Carnet réel", "Coûts", "Stratégies"])
 with onglets[0]:
