@@ -129,6 +129,60 @@ def bandeau_reel():
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
+    G = L.get("gains") or []
+    if len(G) >= 5:
+        # LE REGIME REGARDE. Melanger les periodes avant et apres une bascule, c est moyenner deux
+        # bots differents : avant le 19/09 15h30 c est un autre modele ET une mise double.
+        reg = L.get("regimes") or [{"cle": "tout", "nom": "Tout le carnet réel", "depuis": None}]
+        noms = [r["nom"] for r in reg]
+        defaut = len(noms) - 1 if len(noms) > 1 else 0        # par defaut : le regime EN COURS
+        choisi = reg[noms.index(st.radio("Période", noms, index=defaut, horizontal=True,
+                                         key="regime_reel", label_visibility="collapsed"))]
+        g = pd.DataFrame(G)
+        if choisi["depuis"]:
+            g = g[g["t"] >= choisi["depuis"]]
+        if g.empty:
+            st.info("Aucun ticket fermé sur cette période pour l'instant.")
+            return
+        g["quand"] = pd.to_datetime(g["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
+        st.caption("%d tickets fermés · %s € au total · mise %s €"
+                   % (len(g), eur(g["gain"].sum(), 2), eur(g["mise"].mean(), 0).lstrip("+")))
+
+        st.subheader("Chaque ticket, un par un")
+        st.caption("Vert = fermé en gain, rouge = fermé en perte. La hauteur est le résultat "
+                   "réel du ticket, pas une estimation.")
+        fig = go.Figure(go.Bar(
+            x=g["quand"], y=g["gain"],
+            marker_color=[GAIN if v >= 0 else PERTE for v in g["gain"]],
+            hovertemplate="%{x|%d/%m %H:%M}<br><b>%{y:+.2f} €</b><extra></extra>"))
+        fig.add_hline(y=0, line=dict(color=DOUX, width=1))
+        fig.update_layout(height=280, margin=dict(l=0, r=0, t=6, b=0), yaxis_title="gain du ticket €",
+                          showlegend=False, bargap=.1,
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Comment les gains se répartissent")
+        gag, per = g[g["gain"] >= 0]["gain"], g[g["gain"] < 0]["gain"]
+        st.caption("Ce marché est **asymétrique** : un gagnant peut rapporter plusieurs fois ce "
+                   "qu'un perdant coûte, mais les perdants sont plus nombreux. C'est la forme de "
+                   "cette distribution qui décide si une stratégie peut gagner, pas sa moyenne.")
+        c = st.columns(4)
+        c[0].metric("Gagnants", "%d (%.0f %%)" % (len(gag), 100 * len(gag) / len(g)))
+        c[1].metric("Gain moyen", eur(gag.mean(), 2) + " €" if len(gag) else "—")
+        c[2].metric("Perte moyenne", eur(per.mean(), 2) + " €" if len(per) else "—")
+        c[3].metric("Médiane", eur(g["gain"].median(), 2) + " €")
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(x=per, marker_color=PERTE, name="pertes", nbinsx=30))
+        fig.add_trace(go.Histogram(x=gag, marker_color=GAIN, name="gains", nbinsx=30))
+        fig.add_vline(x=0, line=dict(color=DOUX, width=1))
+        fig.add_vline(x=g["gain"].mean(), line=dict(color=ACCENT, width=2, dash="dash"),
+                      annotation_text="moyenne %s €" % eur(g["gain"].mean(), 2))
+        fig.update_layout(height=300, margin=dict(l=0, r=0, t=26, b=0), barmode="overlay",
+                          xaxis_title="gain du ticket €", yaxis_title="nombre de tickets",
+                          legend=dict(orientation="h", y=-.22),
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+
     if L.get("derniers"):
         d = pd.DataFrame(L["derniers"])
         d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M")

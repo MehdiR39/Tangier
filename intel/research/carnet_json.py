@@ -39,6 +39,11 @@ PAS_LIVE = int(os.environ.get("PAS_LIVE", "20"))
 # elle-meme etait positive -- la page doit donc montrer la fenetre glissante, pas le total du jour.
 PERTE_MAX = float(os.environ.get("MAX_PERTE_JOUR_EUR", "150"))
 TZ = dt.timezone(dt.timedelta(hours=2))
+# Les deux bascules du 19/09, qui coupent le carnet reel en trois regimes qu il ne faut pas
+# melanger : avant, on payait la caution et une priorite d achat cinq fois trop chere ; depuis
+# 15h30, c est la foret aleatoire qui decide et la mise est a 10 EUR au lieu de 20.
+BASCULE_ECO = dt.datetime(2026, 9, 19, 10, 53, tzinfo=TZ).timestamp()
+BASCULE_FORET = dt.datetime(2026, 9, 19, 15, 30, tzinfo=TZ).timestamp()
 
 
 def ecrire(nom, obj):
@@ -164,6 +169,12 @@ def live():
                 " FROM mr_lignes WHERE %s AND tx_achat IS NOT NULL ORDER BY t_dec DESC LIMIT 40" % Q)]
         total = c.execute("SELECT COUNT(*), COALESCE(SUM(gain_eur),0) FROM mr_lignes"
                           " WHERE %s AND gain_eur IS NOT NULL" % Q).fetchone()
+        # TOUS les tickets fermes, pas seulement les 40 derniers : une distribution se lit sur
+        # l ensemble, et un histogramme sur 40 points ne montre que du hasard.
+        gains = [{"t": int(t), "gain": round(float(g), 4), "mise": float(m or 20.0)}
+                 for t, g, m in c.execute(
+                     "SELECT ts_entree, gain_eur, mise_eur FROM mr_lignes WHERE %s"
+                     " AND gain_eur IS NOT NULL AND ts_entree IS NOT NULL ORDER BY ts_entree" % Q)]
         # courbe cumulee du reel, dans l ordre des sorties
         cum, courbe = 0.0, []
         for t, g in c.execute("SELECT ts_sortie, gain_eur FROM mr_lignes WHERE %s AND gain_eur IS NOT NULL"
@@ -181,7 +192,16 @@ def live():
         "jour": {"n": jour[0], "gain": round(float(jour[1] or 0.0), 2)},
         "statuts": statuts, "motifs": motifs, "ouvertes": ouvertes,
         "total": {"n": total[0], "gain": round(float(total[1] or 0.0), 2)},
-        "derniers": derniers, "courbe": courbe,
+        "derniers": derniers, "courbe": courbe, "gains": gains,
+        # Les instants qui coupent l histoire du carnet reel en regimes comparables. Sans eux la
+        # page melange des periodes qui n ont ni le meme modele ni la meme mise, et toute moyenne
+        # devient un melange. Mido, 19/09 : « contrains-toi aux ordres depuis le passage a la foret,
+        # ou mets un truc qui permet de choisir ».
+        "regimes": [
+            {"cle": "tout", "nom": "Tout le carnet réel", "depuis": None},
+            {"cle": "economies", "nom": "Depuis les économies (19/09 10h53)", "depuis": BASCULE_ECO},
+            {"cle": "foret", "nom": "Depuis la forêt + mise 10 € (19/09 15h30)", "depuis": BASCULE_FORET},
+        ],
     }
 
 
