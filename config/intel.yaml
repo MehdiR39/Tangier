@@ -1241,8 +1241,16 @@ modele_rapide:
   # 25 % des tickets aneantis. L impact affiche ne les voit pas : il est symetrique en moyenne, et
   # c est precisement sur les pools asymetriques qu il ne dit rien. Coute une cotation.
   max_aller_retour_pct: 15.0
-  # CRITERE D ARRET, FIXE AVANT DE BRANCHER : on debranche si, a 200 tickets reels, le cout mesure
-  # par `cout_registre.py` n a pas baisse d au moins 0,5 point. Ecrit d avance, pas renegociable.
+  # CRITERE D ARRET, FIXE AVANT DE BRANCHER -- DEUX conditions, pas une :
+  #   1. le cout mesure par `cout_registre.py` a baisse d au moins 0,5 point a 200 tickets reels ;
+  #   2. la part des FUSEES gardees (brut > +50 %) n a pas baisse.
+  # La seconde a ete ajoutee apres coup, le 19/09 a 21h, et elle manquait : les deux gardes filtrent
+  # l impact, donc indirectement la taille du pool -- et les fusees naissent dans les PETITS pools
+  # (coffre median 74 SOL contre 128 pour les tickets gardes). Un garde-fou qui fait baisser le cout
+  # en supprimant ce qui rapporte serait une victoire comptable et une defaite reelle. Mesure du
+  # 19/09 : sur 172 tickets reels, le seuil de 15 % aurait refuse 12 tickets (7 %) valant +0,62 EUR
+  # au total -- donc neutre -- mais un tiers des fusees. C est cette proportion qu il faut surveiller.
+  # Ecrit d avance, pas renegociable.
   # ================================================================================================
   # PAS DE PLAFOND EN NOMBRE D ORDRES. J en avais mis un a 40 par analogie avec le carnet
   # Telegram, sans que l operateur l ait demande -- et il a bloque le carnet des 13h09 le 18/09,
