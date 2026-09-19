@@ -7772,7 +7772,7 @@ viable.** C'est la première piste depuis une semaine qui vaut plus que ce qu'il
    corrélation tombe de −0,79 à −0,49. Il reste réel mais plus faible que je ne l'ai annoncé.
 
 
-### 3.157 — La forêt en service trie VRAIMENT : 0 tirage sur 60, p = 0,016, 2026-09-19 21h50
+### 3.157 — La MÉTHODE est prouvée (p = 0,016), le modèle FIGÉ ne l'est pas (+1,12 σ), 2026-09-19 21h50
 
 **Ce qui a lancé le test.** Mido, en regardant la page : la forêt écarte des jetons à +14,2 % de
 rendement brut et garde ceux à +1,3 %. J'en avais tiré un mécanisme — elle s'appuie sur `q`, les
@@ -7794,8 +7794,23 @@ Lui retirer `q` et `cout` **dégrade** (+0,295 contre +0,335). Elle n'utilise pa
 bêtement — préférer les gros pools est d'ailleurs la **pire** ligne du tableau (−0,362).
 
 **BARRE DU HASARD : 60 marches avant permutées, meilleur des trois jeux retenu à chaque tirage.**
-Maximum du hasard **+0,298**. Le nôtre **+0,335**. **Zéro tirage sur 60, p ≈ 0,016.** Le tri de la
-forêt en service est donc réel, et ce n'est pas une illusion produite par le découpage.
+Maximum du hasard **+0,298**. Le nôtre **+0,335**. **Zéro tirage sur 60, p ≈ 0,016.**
+
+**CORRECTION, le soir même — Mido : « je pense que là tu as mélangé deux sujets ».** Il a raison, et
+la distinction est essentielle. Ce p = 0,016 appartient à une forêt **RÉENTRAÎNÉE à chaque coupe**
+en marche avant : c'est une **méthode** qui est validée, pas le modèle qui tourne. Le modèle en
+production, `foret_vidage.json`, est **figé**, entraîné une seule fois sur les données du 09 au
+15/09 et jamais réentraîné depuis. Son bilan propre, sur ses 815 tickets postérieurs au gel :
+
+| | |
+|---|---|
+| total | +109,19 EUR, soit +0,134 par ticket |
+| contre le témoin | +0,547, bruit 0,489 → **+1,12 σ** |
+
+**+1,12 σ : encourageant, PAS démontré.** Écrire « la forêt en service trie vraiment, p = 0,016 »
+était faux — j'attribuais à une instance figée la preuve obtenue sur la méthode qui la réentraîne.
+Et l'écart n'est pas théorique : c'est peut-être justement le réentraînement qui fait la différence,
+et personne ne l'a mesuré sur le modèle figé.
 
 **MAIS LA DISTINCTION QUI COMPTE TIENT TOUJOURS** — celle de §3.155 :
 - contre le témoin : **+0,335 €/ticket, prouvé** ;
