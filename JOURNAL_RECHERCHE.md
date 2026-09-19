@@ -7456,3 +7456,49 @@ Audit à la mise en route : **11 sources sur 11 répondent** (retards de 0 à 2 
 à 275 et 279 min, dans leur cycle). La veille ne répare rien — le gardien relance, la veille
 prévient ; les deux sont séparés pour qu'une panne de l'un ne masque pas l'autre. Gardien à **onze**
 processus, veille comprise.
+
+
+---
+
+### 3.151 — Le coût réel est 4,69 pt, pas 6,55 : la moyenne multiplicative surestimait, 2026-09-19 10h20
+
+Mido : *« vérifie bien si tu surestimes, vérifie bien le code, on vend au bon coût, on récupère la
+caution »*. Il avait raison sur les deux points.
+
+**Vérification n°1, la fenêtre.** `brut_240` va de **47 s à 287 s** (`A + EXEC_S` → `+240`), et le
+moteur réel entre à 47 s et vend 240 s après, donc **à 287 s**. Même fenêtre des deux côtés : la
+comparaison réel/théorique ne contient aucun décalage de sortie. Vérifié dans le code, pas supposé.
+
+**Vérification n°2, le coût, mesuré EN EUROS** sur les 92 tickets réels :
+
+```
+engagé                       1 840,00 EUR
+gain théorique (mouvement)      -72,64 EUR
+gain réel (portefeuille)       -158,85 EUR
+------------------------------------------
+COÛT TOTAL                       86,21 EUR  =  4,69 pt par ticket
+```
+
+**Le 6,55 était faux comme coût agrégé.** Il venait de la moyenne des coûts multiplicatifs
+`1 − (1+réel)/(1+brut)`, qui donne le même poids à un ticket effondré de 90 % — où un euro de frais
+pèse énormément en relatif — qu'à un ticket normal. Pour **additionner des euros**, c'est la mesure
+en euros qui vaut. Médiane multiplicative : 3,69 ; moyenne : 6,55 ; euro-pondérée : **4,69**.
+
+**Confirmation indépendante :** `calibration_live` cherche le coût plat qui fait coïncider le carnet
+réel et le carnet papier, et trouve **4,69**. Deux routes, même chiffre.
+
+**Contrôle de cohérence sur la caution :** 92 tickets, **92 comptes-jetons vides** trouvés le 19/09.
+Chaque ticket a bien payé sa caution une fois et ne l'a jamais reprise — elle est donc incluse dans
+les 4,69, et la retirer est légitime : **3,70 pt** désormais.
+
+**Ce que ça change dans la table** (mise 20 €, coût 3,70) : `RISQUE seul` passe de −1 181 € à
+**−521 €**, la forêt aléatoire de −323 à **−80 €**, le témoin de −2 476 à **−1 534 €**. Lignes
+positives : `BANDE + PAUSE` +115 € (48), `FORÊT 75s top 10 %` +31 € (32), `G+D les trois` +22 €
+(38), `G+D à 45 s` +19 € (45), `FORÊT 45s top 10 %` +19 € (27), `FORÊT 75s top 5 %` +10 € (15),
+`G foule` +8 € (102). Rien au-dessus de 200 tickets n'est positif.
+
+**Et l'objectif :** le brut nécessaire pour 50 €/jour passe de ~6,0 % à **~4,2 %** par ticket.
+
+**Règle 20 :** *un coût qu'on va multiplier par des euros se mesure en euros.* Une moyenne de ratios
+par ticket n'est pas le ratio des totaux, et l'écart est d'autant plus grand que les queues sont
+épaisses — ici, presque deux points.
