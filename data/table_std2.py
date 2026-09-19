@@ -311,6 +311,24 @@ try:
 except Exception as _ecm:
     print("   (ligne FORET MARCHE indisponible : %s)" % str(_ecm)[:90])
 
+# FORET 75s REENTRAINEE, gelee le 19/09 a 22h50. Meme idee que ci-dessus mais sur la recette a 75 s,
+# et avec une difference qui s est revelee etre l essentiel de l effet (§3.158) : ce qui se refait
+# toutes les 6 h, ce n est pas que les poids, c est aussi LE SEUIL. Le modele gele du 75s ne gardait
+# plus que 40 tickets la ou celui-ci en garde 110 -- son seuil derive avec le marche. Son critere
+# ajoute une cinquieme condition, sur le NIVEAU : c est la seule qui parle d argent.
+try:
+    _c75 = sqlite3.connect("file:/app/data/recherche/foret75_carnet/carnet.sqlite?mode=ro",
+                           uri=True, timeout=30)
+    _g75 = float(dict(_c75.execute("SELECT cle, valeur FROM gel"))["t"])
+    for _t, _r in _c75.execute("SELECT t_dec, ret_240 FROM decision"
+                               " WHERE retenu=1 AND ret_240 IS NOT NULL"):
+        ranger("FORET 75s REENTRAINEE", float(_t), min(float(_r) - COUT_MESURE, 3.0))
+    if "FORET 75s REENTRAINEE" not in res:
+        res["FORET 75s REENTRAINEE"]["_vide"] = []
+        debuts["FORET 75s REENTRAINEE"] = _g75
+except Exception as _e75:
+    print("   (ligne FORET 75s REENTRAINEE indisponible : %s)" % str(_e75)[:90])
+
 
 # AU PLUS BAS, gele le 18/09 a 08h00 UTC : le prix a 45 s EST son plus bas depuis la naissance.
 # Meme flux que les autres lignes (papier_combo), donc directement comparable au temoin.
@@ -440,7 +458,7 @@ for _i, _j in enumerate(_passes):
     FINS[_j] = _minuit - 86400 * (len(_passes) - 1 - _i)
 ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + risque", "G+D a 45 s (gele)", "G+D a 30 s (gele)",
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
-         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET REENTRAINEE 6h", "ENTREE T+75 (gelee)*"]
+         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET REENTRAINEE 6h", "FORET 75s REENTRAINEE", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
 print("COUT : %.2f pt PARTOUT (cases et total). Mesure sur les 92 tickets reels du 18/09, transactions relues sur la"
       " chaine : 4,25 pt · moins la caution recuperee (1,06) · moins la priorite d achat divisee par 5 (0,21)."
