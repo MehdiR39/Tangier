@@ -73,7 +73,15 @@ _K[0] = 0.0262 / _st.mean(PROTO + PRIO/30 + 2*SOL_EUR*30/((q or 0)+V) + DEPOT/(S
 # On imprime donc les DEUX totaux cote a cote : l ancien garde la comparabilite avec l historique,
 # le nouveau dit ce que ca aurait coute. La surcharge est PLATE -- a 20 EUR la formule rend 2,83 pt
 # quel que soit le coffre (mediane = moyenne) -- donc l appliquer par ticket est exact.
-COUT_MESURE = float(os.environ.get("COUT_MESURE", "0.0655"))
+# 4,69 pt : le cout REEL, mesure EN EUROS sur les 92 tickets du carnet du 18/09 --
+#   engage 1 840,00 EUR · gain theorique (mouvement 47->287 s) -72,64 · gain reel -158,85
+#   -> 86,21 EUR de cout, soit 4,69 pt par ticket.
+# Le 6,55 affiche jusqu au 19/09 10h20 etait une MOYENNE MULTIPLICATIVE des couts par ticket : elle
+# donne le meme poids a un ticket qui chute de 90 % -- ou un euro de frais pese enormement en
+# relatif -- qu a un ticket normal. Pour ADDITIONNER DES EUROS, c est la mesure en euros qu il faut.
+# Confirmation independante : `calibration_live` trouve 4,69 comme cout plat qui fait coincider le
+# reel et le papier. La fenetre est la meme des deux cotes (entree 47 s, sortie 287 s), verifie.
+COUT_MESURE = float(os.environ.get("COUT_MESURE", "0.0469"))
 # Le 6,55 a ete mesure sur 92 tickets dont AUCUN ne recuperait sa caution (92 comptes vides trouves le
 # 19/09, 14,46 EUR). Depuis le 19/09 09h30 la recuperation est active : la caution revient au
 # portefeuille, donc le cout mesure baisse de sa part -- DEPOT / (SOL par EUR x MISE), soit ~1,06 pt
@@ -360,10 +368,10 @@ ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + 
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
          "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
-print("COUT : %.2f pt PARTOUT (cases et total) = le cout REEL mesure sur les 92 tickets du 18/09 (6,55, IC95 3,52-10,03)%s."
-      % (100 * COUT_MESURE, "" if CAUTION else " moins la caution, recuperee depuis le 19/09 09h30"))
-print("  (l ancienne colonne a 2,62 pt est retiree : elle annoncait -2,14 %/ticket la ou le carnet reel faisait -8,63 %.)")
-print("  2,62 est HORS de cet intervalle : sur la meme fenetre la table dit -2,14 %/ticket, le reel -8,63 %.")
+print("COUT : %.2f pt PARTOUT (cases et total) = 4,69 pt mesures EN EUROS sur les 92 tickets reels du 18/09"
+      " (1 840 EUR engages, 86,21 EUR de cout)%s."
+      % (100 * COUT_MESURE, "" if CAUTION else " moins 0,99 pt de caution, recuperee depuis le 19/09 09h30"))
+print("")
 print("* ENTREE T+75 : AUTRE population -- les jetons Telegram (ceux de la production), pas le flux papier_combo.")
 print("x = la strategie n existait pas · 0 = elle existait et n a rien pris (ou resultat pas encore connu)")
 ENTETES = _passes + [DERNIER + " -> " + COUPE_H, COUPE_H + " -> maintenant", DERNIER + " TOTAL"]
