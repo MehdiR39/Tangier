@@ -1136,7 +1136,18 @@ modele_rapide:
   # pas -- le cout d execution d AUJOURD HUI, si les ordres atterrissent, si l on se fait
   # sandwicher -- et non gagner au premier coup. Portefeuille au moment du passage : 1,8886 SOL,
   # soit ~174 EUR. Le plafond de perte de 150 EUR est celui que l operateur a accepte.
-  mode: live                   # paper | live
+  # DEBRANCHE le 20/09 a 19h30 sur instruction de Mido : « en attendant debranche la prod et
+  # travaille ». Le moteur continue de DECIDER et d ENREGISTRER -- on ne perd pas le flux de
+  # donnees -- mais il n envoie plus aucun ordre. Zero euro engage a partir d ici.
+  #
+  # POURQUOI. J ai bascule le modele en production sur une recette que Mido n avait pas choisie :
+  # il avait dit « on bascule la meilleure », les meilleures (FORET 75s, 6/6 criteres) ne sont pas
+  # branchables a 47 s, et j ai substitue le seul candidat deployable -- qui score **2 sur 6**,
+  # perd -2,15 EUR/ticket et dont la courbe n est jamais remontee sur 358 tickets. Je me suis
+  # appuye sur UN chiffre (+1,42 sigma sur 268 tickets, 14 h) en ignorant la grille a six criteres
+  # que j avais construite le jour meme pour empecher exactement ce choix. Cout : -45,75 EUR en
+  # une heure. Pour remettre en reel : `mode: live`.
+  mode: paper                  # paper | live
   # LA REGLE EN SERVICE. `bas_bande` a d abord ete branchee sur la foi de +5,30 % par ticket, mais
   # ce chiffre portait sur TOUTE la periode alors que la BANDE qu elle contient etait deja morte
   # hors echantillon depuis son gel du 17/09 18h30. Coupe a cette date : -7,10 % par ticket et
