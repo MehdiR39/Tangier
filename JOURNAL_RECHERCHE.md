@@ -93,7 +93,9 @@ qu'on a fait pour la fermer ? »* Réponse : rien encore.)
 
 ### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
 
-**`BANDE + PAUSE`** (§3.162-63 : ses +171 EUR sont TROIS tickets sur 80, soit 91 % du resultat ;
+**L AGE DE SORTIE** (§3.165 : six ages compares en apparie sur 3 323 tickets, aucun ne bat les
+287 s du moteur, motif sans ordre, le meilleur a +1,22 sigma avec les deux moities de signe
+oppose) · **`BANDE + PAUSE`** (§3.162-63 : ses +171 EUR sont TROIS tickets sur 80, soit 91 % du resultat ;
 sans eux il reste +16 EUR. La bande perd, la pause degrade ailleurs -- il ne reste qu un coup de
 chance. Elle continue de tourner car son critere est pre-enregistre, mais elle n est plus une
 candidate et ne doit plus etre citee en tete de tableau) · **La BANDE de risque [0,20 ; 0,35[** (§3.162 : −3,23 σ depuis son gel, pire que ne rien filtrer ;
@@ -8357,3 +8359,44 @@ tenir moins longtemps est meilleur — l'historique dit +0,22 point pour 47 s de
 part de leur avantage vient de la **sortie** et non du modèle. Les deux sont confondus, la mesure
 est directe (le rendement des mêmes tickets à plusieurs âges), et ce serait le premier levier
 d'exécution depuis que celui des commissions est mort (§3.160).
+
+### 3.165 — L'âge de sortie n'est pas un levier, 2026-09-20 20h30
+
+**Suite directe de §3.164** : nos meilleures lignes tiennent moins longtemps que le moteur, et
+l'historique donnait +0,22 point pour 47 s de moins. Sortie et modèle étaient confondus dans leur
+avantage. Mido : *« attaque »*.
+
+**LE TEST, et pourquoi il est plus sensible que tout ce qu'on a fait jusqu'ici.** Chaque ticket
+donne SIX rendements, un par âge de sortie. Comparer deux âges, c'est comparer deux colonnes sur les
+**mêmes lignes** : la variance du marché s'annule et le bruit est celui de la DIFFÉRENCE, pas du
+niveau. C'est la règle 22 prise à l'endroit — ici elle joue pour nous, et 0,2 point devient
+mesurable là où un niveau demanderait 3 000 tickets. 3 323 tickets, coût 3,71 pt, mise 20 €.
+
+```
+   âge     EUR/ticket   médiane   gagnants   deux moitiés
+    60 s     −0,686      −0,607      24 %    −0,49 / −0,88
+    90 s     −0,419      −0,490      34 %    −0,56 / −0,28
+   120 s     −0,970      −0,372      38 %    −0,71 / −1,23
+   180 s     −0,772      −0,168      48 %    −0,44 / −1,10
+   240 s     −0,549      +0,015      50 %    −0,15 / −0,95
+   287 s     −0,690      +0,074      51 %    −0,54 / −0,84
+
+   contre la sortie du moteur (287 s), apparié :
+    60 s  +0,004 (+0,02 σ) · 90 s  +0,271 (+0,59) · 120 s −0,279 (−1,46)
+   180 s  −0,082 (−0,54 σ) · 240 s +0,141 (+1,22, moitiés +0,40 / −0,11)
+```
+
+**Aucune sortie ne bat celle du moteur.** Rien n'atteint 2 σ, et le motif n'a **aucun ordre** — 90 s
+positif, 120 s négatif, 180 s négatif, 240 s positif. Une vraie décroissance donnerait une pente,
+pas une dent de scie. Les 47 secondes qui « valaient +0,22 point » valent **+0,141 à 1,22 σ, avec
+les deux moitiés de signe opposé** : c'était du bruit.
+
+**TROIS CONSÉQUENCES.**
+1. **L'âge de sortie est fermé.** Le moteur vend au bon moment, ou du moins aucun autre ne fait
+   démontrablement mieux. À ranger avec le découpage de l'ordre (§3.120) et le levier des
+   commissions (§3.160) : le côté EXÉCUTION du problème n'a plus de piste ouverte.
+2. **Le confond de §3.164 n'existe pas.** L'avantage des `FORET 75s` ne vient pas de leur sortie
+   plus courte, puisque la sortie ne vaut rien. **Il vient de leur modèle.**
+3. Le taux de gagnants monte de **24 % à 60 s jusqu'à 51 % à 287 s** pendant que la moyenne reste
+   plate : tenir plus longtemps rattrape des tickets, mais ce qu'il rattrape est petit et ce qu'il
+   encaisse en face est gros. Cohérent avec une queue gauche lourde, pas avec une piste.
