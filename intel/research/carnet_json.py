@@ -121,6 +121,14 @@ def table():
                        capture_output=True, text=True, timeout=600)
     except Exception as e:  # noqa: BLE001
         print("carnet_json: registre des couts en echec : %s" % str(e)[:200], flush=True)
+    # L ARBITRE : chaque candidate contre le MOTEUR, sur les memes tickets et en euros reels. C est
+    # la seule mesure qui puisse justifier de changer la production -- tout le reste compare a un
+    # temoin papier. Lecture seule, quelques secondes.
+    try:
+        subprocess.run([sys.executable, "-m", "intel.research.arbitre_prod"], cwd="/app",
+                       capture_output=True, text=True, timeout=300)
+    except Exception as e:  # noqa: BLE001
+        print("carnet_json: arbitre en echec : %s" % str(e)[:200], flush=True)
 
     brut = os.path.join(DATA, "carnet.brut.json")
     c = cout_mesure()

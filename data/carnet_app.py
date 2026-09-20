@@ -303,6 +303,50 @@ def bandeau_reel():
 
 # =============================================================== LA TABLE (rythme lent)
 @st.fragment(run_every=60)
+def arbitre():
+    """LA SEULE MESURE QUI PEUT JUSTIFIER DE CHANGER LA PRODUCTION.
+
+    Toutes les autres lignes de cette page comparent une stratégie à un TÉMOIN PAPIER. Celle-ci
+    demande : sur les tickets que le moteur a RÉELLEMENT achetés, qu'aurait dit la candidate ?
+    Les euros sont lus au portefeuille, pas reconstruits depuis un prix — aucun modèle de coût ne
+    s'interpose. Et comme c'est apparié (mêmes tickets, même marché), ça tranche beaucoup plus vite
+    qu'un niveau absolu : §3.165 a rendu lisible 0,14 €/ticket là où un niveau en demande 3 000.
+    """
+    A = lire(os.path.join(RACINE, "arbitre.json"))
+    if not A:
+        return
+    st.subheader("Chaque candidate contre le moteur")
+    st.caption("Sur les tickets que le moteur a **réellement achetés** — %d clôturés, %s. "
+               "Euros lus au portefeuille. C'est la seule comparaison qui porte sur de vrais euros ; "
+               "tout le reste de cette page se mesure contre un témoin papier."
+               % (A.get("n_reel", 0), age(A.get("genere"))))
+    lignes, notes_ = [], []
+    for e in A.get("lignes", []):
+        if not e.get("comparable"):
+            notes_.append("**%s** — décide à 75 s, le moteur achète à 47 s : pas les mêmes tickets "
+                          "au même instant, donc non comparable." % e["nom"])
+            continue
+        if "ecart" not in e:
+            notes_.append("**%s** — %d ticket(s) en commun, trop peu pour lire."
+                          % (e["nom"], e.get("n_commun", 0)))
+            continue
+        lignes.append({
+            "candidate": e["nom"], "tickets": e["n_commun"], "gardés": e["n_gardes"],
+            "le moteur €/tick": e["moteur_eur_ticket"], "la candidate €/tick": e["candidate_eur_ticket"],
+            "ce qu'elle écarte": e["ecarte_eur_ticket"], "écart": e["ecart"],
+            "σ": e.get("sigmas"), "€/jour gagnés": e.get("eur_jour_gagnes"),
+        })
+    if lignes:
+        st.dataframe(pd.DataFrame(lignes).sort_values("écart", ascending=False),
+                     use_container_width=True, hide_index=True)
+        st.caption("*ce qu'elle écarte* est le gain moyen des tickets qu'elle aurait refusés : "
+                   "s'il est plus bas que celui du moteur, elle jette bien. **σ est le bruit de la "
+                   "DIFFÉRENCE**, pas du niveau — un sous-ensemble du même lot, donc "
+                   "σ·√((n−k)/(n·k)) et non σ/√k. Sous 2, rien n'est démontré.")
+    for n_ in notes_:
+        st.caption("· " + n_)
+
+
 def table_complete():
     D = lire(F_TABLE)
     err = lire(F_ERR)
@@ -383,6 +427,8 @@ def table_complete():
                            "Répartition, du pire au meilleur décile : %s"
                            % (100 * l["part_top3"], " · ".join("%+.1f" % x for x in d_)))
 
+    st.divider()
+    arbitre()
     st.divider()
     st.subheader("Contre le témoin")
     st.caption("Une stratégie qui n'a tourné qu'un bon après-midi paraît brillante par accident. "
