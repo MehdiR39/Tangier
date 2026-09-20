@@ -93,7 +93,10 @@ qu'on a fait pour la fermer ? »* Réponse : rien encore.)
 
 ### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
 
-**La BANDE de risque [0,20 ; 0,35[** (§3.162 : −3,23 σ depuis son gel, pire que ne rien filtrer ;
+**`BANDE + PAUSE`** (§3.162-63 : ses +171 EUR sont TROIS tickets sur 80, soit 91 % du resultat ;
+sans eux il reste +16 EUR. La bande perd, la pause degrade ailleurs -- il ne reste qu un coup de
+chance. Elle continue de tourner car son critere est pre-enregistre, mais elle n est plus une
+candidate et ne doit plus etre citee en tete de tableau) · **La BANDE de risque [0,20 ; 0,35[** (§3.162 : −3,23 σ depuis son gel, pire que ne rien filtrer ;
 et aucune autre fenêtre ne survit hors échantillon) · **la PAUSE** (§3.162 : p = 0,060 contre des
 plages décalées, et 3 tickets sur 80 portent 91 % du gain) · **Le levier « commission variable par jeton »** (§3.160 : plat à 1,53 %, l'écart annoncé était un
 artefact de résolution) · `PISTE FOULE` (−2,60 σ, prouvée pire que le hasard) · régime+risque · le découpage de l'ordre
@@ -8252,3 +8255,57 @@ en gardant des miettes n'a pas d'edge, elle a eu trois coups. `table_std2.py` re
 net » : `FORET 75s top 10 %` (86 % de gagnants), `FORET 75s top 5 %` (89 %), `FORET 75s REENTRAINEE`
 (92 %). Elles, leur avance ne tient pas à trois tickets — c'est précisément ce que mesure un taux de
 gagnants à 86-92 % contre 41-63 % pour tout le reste du tableau.
+
+### 3.163 — `BANDE + PAUSE` : ses +200 € sont trois tickets, 2026-09-20 19h00
+
+**Mido a relevé une incohérence que j'avais livrée en trois messages séparés :** *« tu peux pas me
+dire que BANDE + PAUSE est à un P&L autour de 200 € de plus que tout le monde depuis son gel,
+ensuite dire que c'est pas la bande c'est juste la pause, et après dire que la pause dégrade. »*
+
+Les trois faits sont mesurés et justes :
+
+```
+BANDE seule, depuis le gel        815 tickets   −1,44 €/ticket   −1 176 €
+BANDE + PAUSE, depuis le gel       80 tickets   +2,14 €/ticket     +171 €
+la PAUSE sur le carnet RÉEL       559 tickets   −1,30 contre −0,36 sans elle   p = 0,97
+```
+
+Si la pause expliquait le +171 €, elle devrait aider ailleurs. **Elle dégrade partout ailleurs.**
+Il reste donc une seule explication, et elle est dans les chiffres depuis le début :
+
+```
+BANDE + PAUSE avec ses 3 meilleurs   +171 €
+BANDE + PAUSE sans ses 3 meilleurs    +16 €
+```
+
+**Trois tickets portent 155 € sur 171, soit 91 %** — environ 52 € chacun sur une mise de 25 €. Le
+« +200 € en tête du tableau » n'est ni la bande ni la pause : **ce sont trois coups**, et c'est
+exactement ce que disait la barre B à p = 0,060. Ligne sortie des candidates ; elle continue de
+tourner parce que son critère est pré-enregistré, mais elle ne doit plus être citée en tête.
+
+**LA PAUSE SUR LE CARNET RÉEL, le seul endroit où les euros sont des euros.** 559 tickets, 51,6 h,
+une chute sous −30 % toutes les 23,8 min pour une pause de 30 : elle est donc presque toujours
+active et **écarte 87 % des tickets**.
+
+```
+sans pause   559 tickets   −0,363 €/ticket   −202,65 €
+avec pause    74 tickets   −1,304 €/ticket    −96,47 €
+BARRE A p = 0,915        BARRE B p = 0,966
+```
+
+Elle **écarte 485 tickets qui valaient −0,22 €/ticket et garde les 74 qui valent −1,30** : elle jette
+les moins mauvais. Verdict : la pause dégrade le moteur réel, sur trois flux indépendants maintenant
+(tout le marché §3.111, la bande §3.162, le carnet réel ici).
+
+**ET LE RÉFLEXE QUE J'AI RATÉ, relevé par Mido :** *« tu nous racontes la merde, il y en a un autre
+que tu rates »*. J'avais écrit que la règle sélectionnait **à l'envers** et j'ai conclu « donc elle
+est mauvaise » sans tester la seule chose que cette phrase impliquait — son contraire. Mesuré :
+acheter SEULEMENT dans les 30 min suivant une chute donne **−0,219 €/ticket** (contre −0,363 pour
+tout le carnet), **p = 0,098** barre A et **0,231** barre B, deux moitiés négatives. Il n'y a rien —
+mais j'aurais pu passer à côté d'une piste parce que je l'avais formulée comme un échec.
+**Règle : quand une règle sélectionne systématiquement à l'envers, son contraire est une hypothèse
+à mesurer, pas une évidence à écarter.**
+
+Et une correction de langage au passage : j'avais annoncé « six fois meilleurs » en comparant
+l'inverse **à la pause** au lieu du point de départ. Contre le carnet entier l'écart est de
+**0,144 €/ticket**, pas d'un facteur six.
