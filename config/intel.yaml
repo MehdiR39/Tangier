@@ -1212,7 +1212,46 @@ modele_rapide:
   # L original du 15/09 est conserve : `foret_vidage_fige_15-09.json`. Y revenir = remettre les
   # deux lignes ci-dessous a leur valeur d avant.
   # ================================================================================================
-  modele: /app/data/recherche/balayage/foret_vidage_reentraine.json
+  # ================================================================================================
+  # DECISION A 75 s SUR LA FORET `FORET 75s top 10 %`, branchee le 20/09 au soir.
+  #
+  # POURQUOI ELLE. C est la seule famille qui gagne : 6 criteres sur 6, 86 a 91 % de gagnants, et
+  # son avance ne tient pas a trois tickets (elle garde 81 % de son avance sans ses 3 meilleurs,
+  # quand `G+D les trois` en garde 0 %). Le top 10 % plutot que le top 5 % : sur periode commune
+  # (20/09 02h15) +0,462 EUR/ticket sur 92 tickets contre -0,164 sur 24 -- meme modele fige, seul
+  # le curseur differe, et c est le troisieme signe du jour que le cinquieme le plus confiant est
+  # mauvais. Valide par Mido.
+  #
+  # LES QUATRE REGLAGES, et ce que chacun evite :
+  #   age_decision: 75     a 45 s l index ne montre que 88 % des transactions, a 75 s il les montre
+  #                        toutes (retard mesure 10-15 s). C est toute la raison d attendre.
+  #   tenue_secondes: 163  le modele predit le rendement de 77 s a 240 s. Tenir 240 s ferait sortir
+  #                        a 317 s : on deploierait un modele entraine sur une sortie qu on ne fait
+  #                        pas -- l erreur corrigee le matin meme sur FORET GAGNANT.
+  #   traits_75: true      fait produire au moteur les 15 variables de FLUX dont ce modele tire
+  #                        71 % de son information. Appel Helius mesure a 0,70 s median (96 % des
+  #                        pools sous les 5 s disponibles), puis `v1_traits.traits()` -- LA MEME
+  #                        fonction que la recherche. Verifie : 8 pools sur 8 identiques.
+  #   modele_risque:       la foret 75s utilise `risque` (la probabilite de vidage) comme une de
+  #                        ses 25 variables. Il faut donc DEUX modeles : celui qui produit cette
+  #                        variable, et celui qui decide.
+  #
+  # CE QUI RESTE ABSENT, et c est mesure : les 3 variables d IMAGE. Il faudrait chercher l image sur
+  # IPFS a 75 s, et elles n apportent rien -- 0 % d importance par permutation, +0,97 sigma en euros
+  # (18 tickets d ecart sur 2 675, dont ZERO pris seulement avec elles). Le modele recevra sa
+  # mediane d apprentissage, comme le pipeline le fait deja pour 49 % des tickets d entrainement.
+  # Le carnet `FORET 75s ISO-MOTEUR`, gele le 20/09 20h25, mesure en marche avant ce que cette
+  # absence coute vraiment.
+  #
+  # POUR REVENIR EN ARRIERE : remettre `modele` sur foret_vidage_fige_15-09.json, `age_decision: 45`,
+  # `tenue_secondes: 240`, `traits_75: false`.
+  # ================================================================================================
+  age_decision: 75
+  tenue_secondes: 163
+  traits_75: true
+  age_v1: 60                  # jusqu ou le flux est lu -- 60 s pour ce modele, 45 pour celui a 45 s
+  modele_risque: /app/data/recherche/balayage/foret_vidage_fige_15-09.json
+  modele: /app/data/recherche/balayage/foret_75s_top10.json
   # `auto` : le seuil vient du FICHIER, recalcule a chaque entrainement. Un seuil fige ici
   # garderait une proportion de tickets differente a chaque reentrainement, et deriverait en
   # silence -- la derive exacte mesuree sur les gels (§3.158 : 40 tickets gardes contre 110).

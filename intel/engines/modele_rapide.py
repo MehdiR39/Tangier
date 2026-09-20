@@ -52,9 +52,19 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-A = 45                    # l age de la decision
+A = 45                    # l age de la decision PAR DEFAUT (`age_decision` dans la config)
 EXEC_S = 2                # le delai entre la decision et l entree, comme dans la recherche
-TENUE_S = 240             # duree de detention : NI stop, NI prise de gain (ils coutent 6,6 pts)
+TENUE_S = 240             # duree de detention PAR DEFAUT : NI stop, NI prise de gain (6,6 pts)
+
+# DECIDER A 75 s AU LIEU DE 45. La famille `FORET 75s` est la seule qui gagne (6/6 criteres,
+# 86-91 % de gagnants), et elle decide a 75 s : a 45 s l index ne montre que 88 % des transactions,
+# a 75 s il les montre toutes (retard mesure 10-15 s). Deux reglages suffisent a l y amener --
+# `age_decision: 75` et `tenue_secondes: 163` -- et un troisieme, `traits_75: true`, fait produire
+# au moteur les 15 variables de flux dont ce modele tire 71 % de son information.
+#
+# POURQUOI 163 ET NON 240. Le modele 75s predit le rendement de 77 s a 240 s, soit 163 secondes de
+# detention. Tenir 240 s ferait sortir a 317 s : on deploierait un modele entraine sur une sortie
+# qu on ne fait pas -- l erreur corrigee le 20/09 sur FORET GAGNANT.
 BANDE = (0.20, 0.35)
 MODELE = os.environ.get("MODELE_VIDAGE", "/app/data/recherche/balayage/modele_vidage.json")
 
@@ -96,6 +106,34 @@ class ModeleRapide:
 
     def _cfg(self, cle: str, defaut: Any) -> Any:
         return self.ctx.config.get("modele_rapide.%s" % cle, defaut)
+
+    def _traits75(self):
+        """L objet qui fabrique les variables de flux. Cree une seule fois : il porte l historique
+        des portefeuilles, dont la lecture prend quelques secondes."""
+        if getattr(self, "_t75", None) is None:
+            from intel.engines.traits_75 import Traits75  # noqa: PLC0415
+            self._t75 = Traits75(age_max=int(self._cfg("age_v1", 60)))
+        return self._t75
+
+    def _charge_risque(self):
+        """LE MODELE DE VIDAGE, charge en SECOND quand le decideur a besoin de `risque` en entree.
+
+        La foret 75s utilise `risque` -- la probabilite de vidage -- comme une de ses 25 variables.
+        Il faut donc deux modeles : celui qui produit cette variable, et celui qui decide. Les
+        confondre donnerait au decideur sa propre sortie en entree.
+        """
+        if getattr(self, "_mr", None) is None:
+            import sys
+            d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "research")
+            if d not in sys.path:
+                sys.path.insert(0, d)
+            from ensemble import Ensemble  # noqa: PLC0415
+            chemin = self._cfg("modele_risque",
+                               "/app/data/recherche/balayage/foret_vidage_fige_15-09.json")
+            self._mr = Ensemble(chemin)
+            log.info("modele_rapide: modele de RISQUE charge depuis %s (seuil %.4f)",
+                     os.path.basename(chemin), self._mr.seuil_p80)
+        return self._mr
 
     def _charge_modele(self):
         """Charge le modele de vidage, quel que soit son FORMAT.
@@ -141,12 +179,13 @@ class ModeleRapide:
 
     # ---------------------------------------------------------------- decision
 
-    def _variables(self, pts, naissance, lancements):
+    def _variables(self, pts, naissance, lancements, age_entree=None):
         """Les memes variables que la recherche, calculees sur les memes lectures.
 
         `pts` : [(age, prix, reserve_sol, reserve_base, reserve_virtuelle)] tries par age.
         Rend None des qu une condition d eligibilite manque -- on ne devine jamais une variable.
         """
+        age_entree = A + EXEC_S if age_entree is None else age_entree
         ages = [p[0] for p in pts]
         prix = [p[1] for p in pts]
         qs = [p[2] for p in pts]
@@ -157,7 +196,13 @@ class ModeleRapide:
         # EXIGER UNE LECTURE PRES DE L INSTANT D ENTREE, comme la recherche. Sans ce controle le
         # moteur accepterait des pools que `papier_combo` ecarte : mesure sur 510 pools, exactement
         # 3 basculaient. Un prix d entree extrapole n est pas un prix qu on peut payer.
-        if _a_age(ages, A + EXEC_S, 6) is None:
+        # L INSTANT D ENTREE SUIT L AGE DE DECISION, pas les variables. Les variables de prix
+        # restent calculees a 45 s -- c est ainsi que le modele 75s a ete entraine : `px_*` vient
+        # des variables enregistrees par `papier_combo` a 45 s, seul le FLUX passe a 60 s et le
+        # rendement a 77 -> 240 s. Mais on achete a l age de decision + 2 s, donc c est LA qu il
+        # faut une lecture de prix. Exiger 47 s quand on entre a 77 refuserait des pools valides
+        # et en accepterait d autres sans prix payable.
+        if _a_age(ages, age_entree, 6) is None:
             return None
         if qs[k - 1] + v <= 0 or MISE_SOL_MODELE / (qs[k - 1] + v) > 0.15:
             return None                      # ordre trop gros pour le pool : on n y va pas
@@ -182,6 +227,15 @@ class ModeleRapide:
         t_dec = naissance + A
         f["lancements_10min"] = bisect_right(lancements, t_dec) - bisect_right(lancements, t_dec - 600)
         return f
+
+    def _age(self) -> int:
+        """L age auquel on decide. 45 par defaut, 75 pour la foret a 75 s."""
+        return int(self._cfg("age_decision", A))
+
+    def _tenue(self) -> float:
+        """Combien de temps on tient. Doit correspondre a la SORTIE sur laquelle le modele a ete
+        entraine, pas a une habitude : 240 s pour le modele a 45 s, 163 s pour celui a 75 s."""
+        return float(self._cfg("tenue_secondes", TENUE_S))
 
     def _seuil(self) -> float:
         """Le seuil de decision, qu il soit ecrit dans la config ou porte par le modele.
@@ -302,7 +356,7 @@ class ModeleRapide:
                 " WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL AND d.risque IS NOT NULL"
                 " AND d.risque <= ? AND d.t_dec + ? <= ?"
                 " ORDER BY d.t_dec DESC LIMIT ?",
-                (self._seuil(), TENUE_S, now, fen)).fetchall()
+                (self._seuil(), self._tenue(), now, fen)).fetchall()
             cn.close()
         except Exception as exc:  # noqa: BLE001
             log.warning("modele_rapide: frein illisible (%s) — on laisse passer", str(exc)[:80])
@@ -362,6 +416,8 @@ class ModeleRapide:
                      n_jour, perte_jour)
 
         modele = self._charge_modele()
+        age_dec = self._age()
+        traits75 = bool(self._cfg("traits_75", False))
         fenetre = int(self._cfg("fenetre_minutes", 15))
         lancements = sorted(float(r["ts"]) for r in self.ctx.db.query(
             "SELECT ts FROM solana_stream_launches WHERE ts > ?", (now - 3600,)))
@@ -374,9 +430,9 @@ class ModeleRapide:
         decides = achetes = 0
         for p in pools:
             mint = str(p["mint"] or "")
-            if not mint or mint in deja or (p["age"] or 0) < A + EXEC_S:
+            if not mint or mint in deja or (p["age"] or 0) < age_dec + EXEC_S:
                 continue
-            if (p["age"] or 0) > A + EXEC_S + 120:
+            if (p["age"] or 0) > age_dec + EXEC_S + 120:
                 continue                     # trop tard : la fenetre d entree est passee
             lect = self.ctx.db.query(
                 "SELECT age_s, prix_sol, reserve_sol, reserve_base, reserve_virtuelle"
@@ -386,9 +442,20 @@ class ModeleRapide:
                    for r in lect if (r["prix_sol"] or 0) > 0]
             if len(pts) < 3:
                 continue
-            f = self._variables(pts, float(p["naissance"] or 0), lancements)
+            f = self._variables(pts, float(p["naissance"] or 0), lancements,
+                                age_entree=age_dec + EXEC_S)
             if f is None:
                 continue
+            if traits75:
+                # LE MODELE 75s ATTEND 25 VARIABLES, dont `risque` -- la sortie du modele de
+                # vidage -- et 15 de flux d ordres qu il faut aller chercher sur la chaine.
+                # `variables()` rend None si le flux est illisible : on ne decide alors PAS,
+                # plutot que de decider sur des medianes en croyant suivre un modele.
+                f = self._traits75().variables(
+                    f, float(self._charge_risque().probabilite(f)), str(p["pair_id"]), mint,
+                    float(p["naissance"] or 0), float(pts[-1][4] or 0))
+                if f is None:
+                    continue
             risque = float(modele.probabilite(f))
             decides += 1
             garde = self.retenu(f, risque)
@@ -573,7 +640,7 @@ class ModeleRapide:
         rpc, proprio = sol.rpc_url(), sol.signer_address(cle)
         for l in self.ctx.db.query(
                 "SELECT mint, ts_entree FROM mr_lignes WHERE mode='live' AND statut='OUVERTE'"
-                " AND tx_achat IS NOT NULL AND ts_entree <= ?", (now - TENUE_S,)):
+                " AND tx_achat IS NOT NULL AND ts_entree <= ?", (now - self._tenue(),)):
             mint = str(l["mint"])
             try:
                 solde = await sol.token_balance(self.client, rpc, proprio, mint)
@@ -595,7 +662,7 @@ class ModeleRapide:
                 h = await sol.send(self.client, rpc, sol.sign(tx["tx"], cle))
                 self.ctx.db.execute(
                     "UPDATE mr_lignes SET statut='FERMEE', ts_sortie=?, tx_vente=?, motif=?"
-                    " WHERE mint=?", (now, h, "sortie a %d s" % TENUE_S, l["mint"]))
+                    " WHERE mint=?", (now, h, "sortie a %d s" % self._tenue(), l["mint"]))
                 log.info("modele_rapide: VENTE %s — %s", str(l["mint"])[:10], h[:16])
                 self._echecs.pop(mint, None)
                 # PAS D ALERTE ICI. La vente vient de partir, son resultat n est pas encore lu sur
