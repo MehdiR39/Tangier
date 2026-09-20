@@ -60,6 +60,12 @@ TABLE = "/app/data/recherche/tout/table.pkl"
 COUT = float(os.environ.get("COUT_MESURE", "0.0371"))
 MISE = 20.0
 GARDE = 0.20
+# Seuils NOTES A COTE : ils ne decident RIEN, la recette gelee decide a 20 %. MIDO,
+# 20/09 : « pourquoi t as pas mis en mode reentraine aussi toutes les strats qui
+# fonctionnent ? ». Les versions a poids figes qui gagnent sont a 5 % et 10 % ; je
+# n avais mis en reentraine que le 20 %. Les noter coute zero et ne change aucune
+# decision. Meme dispositif que `foret_gel` depuis le 18/09.
+LECTURES = (0.10, 0.05)
 PAS_H = 6.0
 N_ECHEANCE_1, N_ECHEANCE_2, JOURS_MAX = 400, 2000, 21
 TZ = dt.timezone(dt.timedelta(hours=2))
@@ -72,6 +78,11 @@ def schema(c: sqlite3.Connection) -> None:
     c.execute("CREATE TABLE IF NOT EXISTS decision("
               "  pair TEXT PRIMARY KEY, t_dec REAL, p REAL, seuil REAL, retenu INTEGER,"
               "  ret_240 REAL, n_entrainement INTEGER, t_modele REAL)")
+    for col in ("seuil10 REAL", "retenu10 INTEGER", "seuil05 REAL", "retenu05 INTEGER"):
+        try:
+            c.execute("ALTER TABLE decision ADD COLUMN %s" % col)
+        except Exception:  # noqa: BLE001
+            pass
     c.execute("CREATE TABLE IF NOT EXISTS gel(cle TEXT PRIMARY KEY, valeur TEXT)")
     c.commit()
 
@@ -129,12 +140,17 @@ def noter() -> None:
                                     random_state=0).fit(XA, y[A])
         # SEUIL ABSOLU pris sur l entrainement : connu avant la fenetre, donc decidable ticket par
         # ticket. On garde les scores les plus HAUTS -- ici la classe 1 est ce qu on cherche.
-        seuil = float(np.quantile(rf.predict_proba(XA)[:, 1], 1.0 - GARDE))
+        p_tr = rf.predict_proba(XA)[:, 1]
+        seuil = float(np.quantile(p_tr, 1.0 - GARDE))
+        s10, s05 = (float(np.quantile(p_tr, 1.0 - g)) for g in LECTURES)
         p = rf.predict_proba(X.iloc[neufs].fillna(med).fillna(0.0))[:, 1]
         for k, i in enumerate(neufs):
-            c.execute("INSERT OR REPLACE INTO decision VALUES(?,?,?,?,?,?,?,?)",
+            c.execute("INSERT OR REPLACE INTO decision(pair, t_dec, p, seuil, retenu,"
+                      " ret_240, n_entrainement, t_modele, seuil10, retenu10, seuil05, retenu05)"
+                      " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                       (df.at[i, "pair"], float(t[i]), float(p[k]), seuil, int(p[k] >= seuil),
-                       float(r[i]) if connu[i] else None, int(A.sum()), c0))
+                       float(r[i]) if connu[i] else None, int(A.sum()), c0,
+                       s10, int(p[k] >= s10), s05, int(p[k] >= s05)))
             n_neufs += 1
         c.commit()
 

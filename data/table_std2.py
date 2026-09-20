@@ -320,12 +320,17 @@ try:
     _c75 = sqlite3.connect("file:/app/data/recherche/foret75_carnet/carnet.sqlite?mode=ro",
                            uri=True, timeout=30)
     _g75 = float(dict(_c75.execute("SELECT cle, valeur FROM gel"))["t"])
-    for _t, _r in _c75.execute("SELECT t_dec, ret_240 FROM decision"
-                               " WHERE retenu=1 AND ret_240 IS NOT NULL"):
-        ranger("FORET 75s REENTRAINEE 20 %", float(_t), min(float(_r) - COUT_MESURE, 3.0))
-    if "FORET 75s REENTRAINEE 20 %" not in res:
-        res["FORET 75s REENTRAINEE 20 %"]["_vide"] = []
-        debuts["FORET 75s REENTRAINEE 20 %"] = _g75
+    # La ligne qui DECIDE (20 %) et les deux qui sont notees A COTE, en lecture : elles n achetent
+    # rien, elles montrent ou le curseur aurait pu etre. Meme dispositif que `foret_gel`.
+    for _col, _nom in (("retenu", "FORET 75s REENTRAINEE 20 %"),
+                       ("retenu10", "FORET 75s REENTR. 10 % (lecture)"),
+                       ("retenu05", "FORET 75s REENTR. 5 % (lecture)")):
+        for _t, _r in _c75.execute("SELECT t_dec, ret_240 FROM decision"
+                                   " WHERE %s=1 AND ret_240 IS NOT NULL" % _col):
+            ranger(_nom, float(_t), min(float(_r) - COUT_MESURE, 3.0))
+        if _nom not in res:
+            res[_nom]["_vide"] = []
+            debuts[_nom] = _g75
 except Exception as _e75:
     print("   (ligne FORET 75s REENTRAINEE 20 % indisponible : %s)" % str(_e75)[:90])
 
@@ -337,12 +342,15 @@ try:
     _cg = sqlite3.connect("file:/app/data/recherche/foret_gagnant/carnet.sqlite?mode=ro",
                           uri=True, timeout=30)
     _gg = float(dict(_cg.execute("SELECT cle, valeur FROM gel"))["t"])
-    for _t, _r in _cg.execute("SELECT t_dec, ret_240 FROM decision"
-                              " WHERE retenu=1 AND ret_240 IS NOT NULL"):
-        ranger("FORET GAGNANT 20 %", float(_t), min(float(_r) - COUT_MESURE, 3.0))
-    if "FORET GAGNANT 20 %" not in res:
-        res["FORET GAGNANT 20 %"]["_vide"] = []
-        debuts["FORET GAGNANT 20 %"] = _gg
+    for _col, _nom in (("retenu", "FORET GAGNANT 20 %"),
+                       ("retenu10", "FORET GAGNANT 10 % (lecture)"),
+                       ("retenu05", "FORET GAGNANT 5 % (lecture)")):
+        for _t, _r in _cg.execute("SELECT t_dec, ret_240 FROM decision"
+                                  " WHERE %s=1 AND ret_240 IS NOT NULL" % _col):
+            ranger(_nom, float(_t), min(float(_r) - COUT_MESURE, 3.0))
+        if _nom not in res:
+            res[_nom]["_vide"] = []
+            debuts[_nom] = _gg
 except Exception as _eg:
     print("   (ligne FORET GAGNANT indisponible : %s)" % str(_eg)[:90])
 
@@ -475,7 +483,7 @@ for _i, _j in enumerate(_passes):
     FINS[_j] = _minuit - 86400 * (len(_passes) - 1 - _i)
 ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + risque", "G+D a 45 s (gele)", "G+D a 30 s (gele)",
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
-         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET REENTRAINEE 6h", "FORET 75s REENTRAINEE 20 %", "FORET GAGNANT 20 %", "ENTREE T+75 (gelee)*"]
+         "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET REENTRAINEE 6h", "FORET 75s REENTRAINEE 20 %", "FORET 75s REENTR. 10 % (lecture)", "FORET 75s REENTR. 5 % (lecture)", "FORET GAGNANT 20 %", "FORET GAGNANT 10 % (lecture)", "FORET GAGNANT 5 % (lecture)", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
 print("COUT : %.2f pt PARTOUT (cases et total). Mesure sur les 92 tickets reels du 18/09, transactions relues sur la"
       " chaine : 4,25 pt · moins la caution recuperee (1,06) · moins la priorite d achat divisee par 5 (0,21)."
