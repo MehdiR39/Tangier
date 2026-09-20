@@ -110,6 +110,43 @@ def cout_mesure():
     }
 
 
+def modele_en_prod():
+    """QUEL MODELE TRADE L ARGENT, EN CE MOMENT -- lu dans le fichier, jamais de memoire.
+
+    MIDO, 20/09 : « FORET REENTRAINEE 6h, ce nom on l a pas dans l app... ». Il l a : c est la
+    ligne du carnet PAPIER, 358 tickets. Ce qui manquait, c est que rien ne disait laquelle des
+    34 lignes correspond au modele qui achete reellement. On regarde donc 34 courbes sans savoir
+    laquelle est en jeu.
+
+    On lit le chemin dans la config qui TOURNE, puis l en-tete du fichier lui-meme : sa recette,
+    son seuil, et la date de son dernier reentrainement. Si ce dernier vieillit, c est que
+    `prod_reentraine` est mort -- le moteur ne s arrete pas pour autant, il vieillit en silence,
+    et la page doit pouvoir le montrer.
+    """
+    import yaml
+    out = {}
+    try:
+        with open("/app/config/intel.yaml", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        mr = (cfg.get("modele_rapide") or {})
+        chemin = mr.get("modele")
+        out = {"fichier": os.path.basename(chemin or ""), "chemin": chemin,
+               "seuil_config": mr.get("seuil_risque"), "mode": mr.get("mode"),
+               "actif": bool(mr.get("enabled"))}
+        with open(chemin, encoding="utf-8") as f:
+            m = json.load(f)
+        out.update({"recette": m.get("recette"), "seuil": m.get("seuil_p80"),
+                    "reentraine_le": m.get("reentraine_le"),
+                    "entraine_sur": m.get("entraine_sur"),
+                    "n_variables": len(m.get("feature_names") or [])})
+        # le nom de la LIGNE de la page qui porte la meme recette, pour pouvoir la marquer
+        if "foret_marche" in (m.get("recette") or ""):
+            out["ligne"] = "FORET REENTRAINEE 6h"
+    except Exception as e:  # noqa: BLE001
+        out["erreur"] = str(e)[:150]
+    return out
+
+
 def table():
     """Relance `table_std2.py` avec sa sortie JSON, et recopie le texte pour l onglet brut."""
     # Nom distinct du « .tmp » d `ecrire`, sinon les deux se marchent dessus : le script ecrit son
@@ -143,6 +180,7 @@ def table():
         d = json.load(f)
     d["texte"] = r.stdout
     d["cout_detail"] = c
+    d["prod"] = modele_en_prod()
     ecrire("carnet.json", d)
     os.remove(brut)
     return len(d.get("lignes") or [])

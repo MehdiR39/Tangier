@@ -377,6 +377,31 @@ def table_complete():
     # RÉSULTATS mais jamais ce qui va les TRANCHER, et elle laissait trier à l'œil — c'est
     # comme ça que BANDE + PAUSE est restée en tête trois jours alors que 91 % de son gain
     # tenait à trois tickets (§3.163).
+    # CE QUI TRADE L ARGENT, EN HAUT ET AVANT TOUT LE RESTE. Mido, 20/09 : « FORET REENTRAINEE 6h,
+    # ce nom on l a pas dans l app... ». Il y etait -- mais rien ne disait laquelle des 34 lignes
+    # correspond au modele qui achete REELLEMENT. On regardait 34 courbes sans savoir laquelle
+    # etait en jeu.
+    P = D.get("prod") or {}
+    if P and not P.get("erreur"):
+        vieux = ""
+        if P.get("reentraine_le"):
+            try:
+                t_ = dt.datetime.fromisoformat(P["reentraine_le"])
+                h_ = (dt.datetime.now(t_.tzinfo) - t_).total_seconds() / 3600.0
+                vieux = " · réentraîné il y a **%.1f h**%s" % (
+                    h_, "  ⚠️ il devrait l'être toutes les 6 h" if h_ > 8 else "")
+            except ValueError:
+                pass
+        st.success(
+            "**EN PRODUCTION : %s**  \n"
+            "Recette : %s  \nSeuil %s · %d variables · entraîné sur %s tickets%s  \n"
+            "La ligne de cette page qui porte la même recette est **%s** — mais c'est son carnet "
+            "PAPIER : mêmes règles, tickets différents."
+            % (P.get("fichier") or "?", P.get("recette") or "?",
+               ("%.4f" % P["seuil"]) if P.get("seuil") else "?", P.get("n_variables") or 0,
+               P.get("entraine_sur") or "?", vieux, P.get("ligne") or "aucune"),
+            icon="💰")
+
     st.subheader("Les candidates")
     CRIT = [
         ("gagne de l'argent", lambda l: (l.get("niveau") or 0) > 0),
