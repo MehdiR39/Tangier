@@ -39,23 +39,31 @@ Si une information n'y est pas, elle n'existe pas pour la prochaine séance.
 | Ce que l'exécution prend | **3,88 %** (10 €, 404 tickets) | registre, 20/09 |
 | Composition du péage | 3 prélèvements **1,21 %/jambe** + pool 0,20 % | §3.156 |
 | Ce que le péage n'est PAS | ni glissement, ni latence, ni notre modèle | §3.156 |
-| Le taux varie **selon le jeton** | **0,90 % à 3,54 %**, par paliers nets | §3.156 |
+| Commission + impact, par jambe | **1,53 %**, PLAT (80 % entre 1,4 et 1,7) | §3.160 |
+| Le péage est **entièrement décomposé** | 3,06 + 0,59 réseau + 0,205 caution = 3,855 vs 3,878 mesuré | §3.160 |
+| Effet de la taille du pool sur le taux | 1,687 % (petits) → 1,503 % (gros) = **0,18 pt** | §3.160 |
 | Réserve virtuelle | **V = 17,99** (résolue, pas supposée) | §3.156 |
 | Seuil pour 50 €/jour | **+2,27 %/ticket** à 220 tickets/jour | §3.159 |
 | La cible « vidage » sélectionne l'immobilité | 3,1 % de mouvement pour 3,71 % de péage | §3.159 |
 | Bruit par ticket | σ = **10,4 à 13,8 €** selon la fenêtre | §3.159 |
 | Seuil de détection | +0,87 €/ticket à 1 000 tickets, +0,50 à 3 000 | §3.159 |
 
-### 0.2 LA PISTE OUVERTE QUI VAUT LE PLUS — et elle n'est pas un modèle
+### 0.2 LA PRIORITÉ — et elle a changé le 20/09
 
-**Où est écrit le taux de commission par jeton ?** Il varie de 0,90 % à 3,54 % par jambe. L'écart
-entre un jeton bon marché et un jeton cher vaut **3 points** quand il n'en manque que **1,20**.
-S'il est lisible AVANT d'acheter, c'est un filtre d'entrée et le projet redevient viable — plus que
-n'importe quel modèle testé jusqu'ici (le meilleur vaut +0,97 point).
+**Ce qui est fermé.** §3.156 pensait que le taux de commission variait de 0,90 à 3,54 % selon le
+jeton et en faisait « la première piste depuis une semaine qui vaut plus que ce qu'il manque ».
+Mesuré sur **1 212 cotations réelles, avant achat** : il est **plat à 1,53 %**, 80 % des jetons
+entre 1,4 et 1,7 %. §3.156 le résolvait à deux équations/deux inconnues sur des échanges exécutés,
+ce qui fabrique de la dispersion. **Le levier n'existe pas.** (§3.160)
 
-Déjà exclu : le compte du pool (301 octets comparés sur 20 pools, aucune corrélation au-delà de
-r = 0,46). Restent : la configuration de Jupiter, un compte attaché au créateur, le programme de
-frais `pfeeUxB6…`. Les destinataires ne sont PAS les créateurs enregistrés (0/8).
+**Ce que ça impose.** Le péage est incompressible à 3,06 % pour un aller-retour. Les seules
+réductions restantes valent ~0,6 point au total (gros pools 0,18 · cautions 0,20 · frais de réseau
+≤ 0,59, mais ils paient l'atterrissage). **Il en manque 1,20.**
+
+**Donc la réponse ne viendra pas du coût — elle doit venir de la SÉLECTION.** Le marché donne
++2,68 % bruts en moyenne ; il faut des tickets au-dessus de **3,88 %**. C'est exactement ce que
+`FORET GAGNANT 20 %` teste (mesuré +0,470 €/ticket net, soit ~6,1 % bruts, mais p = 0,115).
+**La priorité est d'amener ce carnet à ses échéances sans rien casser, pas d'ouvrir une piste neuve.**
 
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
@@ -70,7 +78,8 @@ frais `pfeeUxB6…`. Les destinataires ne sont PAS les créateurs enregistrés (
 
 ### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
 
-`PISTE FOULE` (−2,60 σ, prouvée pire que le hasard) · régime+risque · le découpage de l'ordre
+**Le levier « commission variable par jeton »** (§3.160 : plat à 1,53 %, l'écart annoncé était un
+artefact de résolution) · `PISTE FOULE` (−2,60 σ, prouvée pire que le hasard) · régime+risque · le découpage de l'ordre
 (§3.120 : gain 0,036 % pour 3,17 points à rembourser) · la copie de bons traders · le frein de
 marché (§3.125) · la variable de coût dans le modèle (dégrade : +0,281 contre +0,363, §3.157).
 
@@ -8049,3 +8058,60 @@ le 18/09. **Un signal faux la moitié du temps n'est pas un signal, c'est du bru
 ignorer.** Corrigés tous les deux. Ajouté aussi : l'ordonnanceur **revérifie** le gardien toutes les
 120 s au lieu de ne le lancer qu'au démarrage — s'il mourait la nuit, plus rien ne relançait les
 collecteurs et les gels cessaient de collecter en silence.
+
+### 3.160 — Le levier de la commission n'existe pas, et le coût est enfin entièrement expliqué, 2026-09-20 15h00
+
+**Ce qui a déclenché ça.** Mido, après m'avoir vu refaire §3.156 sans le relire : *« tu notes tout
+dans le journal, et si oui tu le lis ? »* — puis, sur la consigne elle-même : *« c'est la dernière
+fois que je dis ça »*. D'où `CLAUDE.md` et la section 0. Et en relisant §3.156 au lieu de le
+refaire, sa dernière ligne donnait la vraie tâche : **où est écrit le taux de commission par
+jeton ?**
+
+**LA RÉPONSE EST « NULLE PART », PARCE QUE LE TAUX NE VARIE PAS.** §3.156 annonçait 0,90 % à 3,54 %
+par jeton, « par paliers nets », et en faisait le levier du projet : 3 points d'écart quand il en
+manque 1,20. Mesuré autrement — non pas en résolvant la commission à partir d'échanges exécutés,
+mais en comparant ce que **le routeur cote** à ce que **le prix du pool** donnerait, sur
+**1 212 décisions déjà collectées depuis le 17/09** par `papier_gd_direct` (`jetons_cotes`) :
+
+```
+min −76,2 │ d1 1,481 │ q1 1,505 │ méd 1,530 │ q3 1,627 │ d9 1,873 │ max 18,3
+80 % des jetons entre 1,4 et 1,7 %          4,3 % au-dessus de 2,5 %
+```
+
+**Plat à 1,53 %.** La dispersion de §3.156 était un artefact : deux équations à deux inconnues sur
+des transactions bruitées fabriquent de l'écart là où il n'y en a pas. Leçon de méthode, la même
+qu'au §3.153 (rule 16) : **une grandeur obtenue par résolution doit être re-mesurée par un chemin
+direct avant d'en faire un levier.** Ici le chemin direct existait depuis trois jours et personne
+ne l'avait regardé — la donnée était déjà collectée.
+
+**LE CHEMIN DIRECT EXISTAIT AUSSI POUR LA QUESTION DE DÉPART.** Le `routePlan` de Jupiter ne porte
+aucun `feeAmount` dans cette version de l'API (champs de `swapInfo` : `ammKey`, `inAmount`,
+`inputMint`, `label`, `outAmount`, `outputMint`, `updateContextSlot`). Mais `outAmount` suffit :
+comparé au prix du pool, il DONNE le taux effectif, avant l'achat, sans lire un seul octet de
+compte. Et nous ne fixons **aucun** frais de plateforme ni compte de parrainage (`intel/execution/
+solana.py` n'envoie que `inputMint`, `outputMint`, `amount`, `slippageBps`) : les 1,21 % de §3.156
+ne viennent pas de nous.
+
+**LE COÛT EST DÉSORMAIS FERMÉ, au centième :**
+
+```
+commission + impact, 1,53 % × 2 jambes        3,060 %
+frais de réseau                               0,590 %
+cautions non récupérées                       0,205 %
+                                            ─────────
+                                              3,855 %
+mesuré au portefeuille (404 tickets, 10 €)    3,878 %
+```
+
+Il n'y a plus de poste « inexpliqué » — et il n'y en avait déjà plus depuis §3.156, mon registre
+n'avait simplement pas de ligne pour les prélèvements. **2,444 % d'« inexpliqué » = 1,21 % × 2
+jambes.** Je l'ai cherché une seconde fois le 20/09 avant que Mido me le fasse remarquer.
+
+**CE QUE ÇA IMPOSE, ET C'EST LE VRAI RÉSULTAT.** Le péage est incompressible à 3,06 % par
+aller-retour. Ce qui reste à gratter : gros pools **0,18 pt**, cautions **0,20 pt**, frais de réseau
+≤ 0,59 pt mais ils paient l'atterrissage (§3.36). **Au mieux 0,6 point quand il en manque 1,20.**
+La réponse ne viendra donc pas du coût. Elle doit venir de la **sélection** : trouver des tickets
+au-dessus de **3,88 % bruts** là où le marché en donne 2,68. C'est ce que teste `FORET GAGNANT 20 %`
+(+0,470 €/ticket mesuré, soit ~6,1 % bruts, mais p = 0,115 : non prouvé).
+
+**La priorité n'est plus d'ouvrir une piste, c'est d'amener ce carnet à ses échéances.**
