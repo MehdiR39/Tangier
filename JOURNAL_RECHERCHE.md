@@ -7894,3 +7894,85 @@ encourageant, non prouvé, et c'est le niveau qui paie (règle 4).
 **CE QUI NE L'EST PAS** : que cette recette gagne de l'argent. Seuls des tickets jamais regardés
 peuvent le dire — d'où la proposition d'un carnet papier `FORET 75s RÉENTRAÎNÉE` à critère écrit
 d'avance.
+
+### 3.159 — LA CIBLE ÉTAIT LE DÉFAUT : « ne pas s'effondrer » sélectionne l'immobilité, 2026-09-20 11h00
+
+**Mido, devant la courbe de `FORET REENTRAINEE 6h` sur la page :** *« bizarre que la forêt non
+réentraînée fasse mieux et que l'entraînée crache en continu, c'est une pente libre, il y a un truc
+qui est faux dans tout ça. »* Il avait raison, et le défaut n'est pas statistique : il est
+arithmétique.
+
+**CE QUI EST MESURÉ**, sur les 185 tickets jugés du carnet papier, par cinquième de probabilité :
+
+```
+cinquième            |mouvement| méd.   rendement méd.   % vidages   EUR/ticket
+1 · le plus SÛR            3,1 %            +2,2 %          9 %       −1,310
+2                         19,2 %           +19,0 %          4 %       +1,711
+3                         33,8 %           −18,4 %         24 %       −3,763
+5 · le plus RISQUÉ        47,2 %            −3,0 %         31 %       −2,353
+       (ensemble : |mouvement| 20,7 %, vidages 18 %, −1,506 EUR/ticket)
+```
+
+**Le modèle fait parfaitement son travail** — 9 % de vidages dans son cinquième le plus sûr contre
+18 % partout — **et perd de l'argent**, parce que ces jetons bougent de **3,1 %** quand le péage est
+de **3,71 %**. Il monte de 2,2 %, on paie 3,71 %, on perd. Le moyen le plus sûr de ne pas
+s'effondrer, c'est de ne pas bouger : en demandant « évite la catastrophe », on a demandé
+l'immobilité, et l'immobilité paie le coût et rien d'autre.
+
+**L'ASYMÉTRIE, qui est tout le sujet.** `gagnant net` = ça monte plus que le coût ET ça ne
+s'effondre pas — un jeton effondré n'est jamais un gagnant, la protection est comprise dedans.
+`pas de vidage` ne dit rien sur la hausse. La première question est PLUS exigeante, pas moins
+prudente. **On demandait moins que ce qu'on voulait.** Vérifié sur les carnets : la cible
+« gagnant » retire **4 vidages sur 10** (15 % → 9 %), la cible « vidage » n'en retire que 2 sur 10
+(18 % → 14 %).
+
+**`foret_cible.py`, 3 210 tickets, trois cibles × trois sélectivités, tout le reste identique :**
+
+```
+                     n    EUR/ticket   vs témoin   sig(vs)   sig(niveau)
+TÉMOIN            2633      −0,496       +0,000        —       −2,44
+VIDAGE    5 %       95      −1,231       −0,735    −0,70       −1,15
+VIDAGE   20 %      471      −0,459       +0,037    +0,08       −0,96
+VIDAGE   80 %     2157      −0,204       +0,292    +3,06       −0,91
+GAGNANT   5 %      105      −0,011       +0,485    +0,49       −0,01
+GAGNANT  20 %      578      +0,470       +0,966    +2,52       +1,08
+GAGNANT  80 %     2148      −0,331       +0,165    +1,70       −1,47
+FRANC     5 %       83      +0,973       +1,469    +1,30       +0,85
+```
+
+Trois lectures. (1) `VIDAGE 5 %` est **la pire des neuf cases** : plus le modèle est sûr qu'un jeton
+ne s'effondrera pas, plus on perd — le diagnostic tient sur 3 210 tickets. (2) `GAGNANT 20 %` est la
+seule case positive en argent avec un échantillon décent. (3) **`VIDAGE 80 %` a le meilleur écart du
+tableau (+3,06 σ) et perd de l'argent** — c'est exactement ce que font `FORET REENTRAINEE 6h` et le
+modèle en production, et c'est la démonstration en une ligne que **trier n'est pas gagner**.
+
+**LES 29 STRATÉGIES, RELUES D'UN COUP** (Mido : *« on a une dizaine de strat qui tourne et c'est pas
+pour rien, il faut les analyser aussi »*). **Aucune n'est prouvée.** La meilleure, `BANDE + PAUSE`,
+est à +1,66 σ sur 85 tickets. Les cinq positives ont toutes moins de 170 tickets ; les trois qui
+dépassent 1 000 tickets sont toutes négatives. La raison est le seuil de détection : à σ = 13,79 €,
+il faut **+2,76 €/ticket à 100 tickets, +0,87 à 1 000, +0,50 à 3 000**. Seule `PISTE FOULE` a un
+négatif **prouvé** (−2,60 σ contre son témoin) : fil fermé, elle est pire que prendre au hasard.
+
+**LE SEUIL DE L'OBJECTIF A CHANGÉ, et personne ne l'avait refait depuis §3.120.** Ce calcul disait
+« à 40 tickets/jour, pour 50 €/jour net il faudrait que le marché donne 76 ». Le moteur en est à
+**220 tickets/jour** (92 le 18/09, 189 le 19/09), et examine ~630 candidats dont il garde **71,4 %**
+(mesuré : 105 examinés, 75 retenus en 4 h). À 220 tickets et 10 € la mise, 50 €/jour demande
+**+0,227 €/ticket, soit +2,27 %** — et le 20/09 a fait **+2,39 % (+52,60 €)**. Le volume a divisé
+l'exigence par cinq et demi. Une journée ne prouve rien (bruit ±82 €), mais le seuil, lui, est
+arithmétique. Par jour : `GAGNANT 20 %` +64 €, `VIDAGE 80 %` −103 €, témoin −307 € (mise 20 €) :
+**trier bat le volume, et largement**.
+
+**UN ÉCART NON EXPLIQUÉ, À FERMER AVANT TOUT PASSAGE EN PRODUCTION.** Le papier donne −52 €/jour au
+bras « 80 % » à 10 € la mise ; le moteur réel, qui fait à peu près ça, a gagné +52,60 € le 20/09.
+Cent euros d'écart. Le coût (3,71 pt au papier contre 2,57 réels) en explique ~26 € ; le reste vient
+probablement des deux garde-fous et du budget quotidien, absents du papier. **Un modèle papier qui
+se trompe de 100 €/jour sur le moteur ne peut pas servir à décider de le remplacer.**
+
+**DEUX VOYANTS QUI MENTAIENT, trouvés le même matin.** (a) `recuperation` tourne toutes les 30 min
+mais `_expected_interval` le laissait au défaut de 300 s : le conteneur passait en `unhealthy` la
+MOITIÉ de chaque cycle depuis le 19/09 09h30, alors que tout allait bien. (b)
+`test_il_surveille_tous_les_collecteurs` figeait 11 collecteurs alors qu'il y en a 16 : rouge depuis
+le 18/09. **Un signal faux la moitié du temps n'est pas un signal, c'est du bruit qu'on apprend à
+ignorer.** Corrigés tous les deux. Ajouté aussi : l'ordonnanceur **revérifie** le gardien toutes les
+120 s au lieu de ne le lancer qu'au démarrage — s'il mourait la nuit, plus rien ne relançait les
+collecteurs et les gels cessaient de collecter en silence.
