@@ -449,9 +449,36 @@ def table_complete():
     st.subheader("Registre complet")
     r = pd.DataFrame([{k: v for k, v in l.items() if k not in ("courbe", "par_jour")} for l in D["lignes"]])
     r["depuis"] = pd.to_datetime(r["debut"], unit="s", utc=True).dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M")
-    r = r[["nom", "n", "total", "par_ticket", "jour", "n_jour", "depuis"]].sort_values("total", ascending=False)
-    r.columns = ["stratégie", "tickets", "total €", "€/ticket", "aujourd'hui €", "tickets du jour", "depuis"]
+    # LES SEPT CRITERES, et pas seulement les euros. Mido, 20/09 : « j'ai l'impression que le seul
+    # élément qui te fait dire strat bonne ou mauvaise c'est ton sigma, t'es sûr de ça ? » — non :
+    # la ligne la plus significative du projet est le TÉMOIN. Une stratégie se juge sur plusieurs
+    # axes à la fois, donc ils doivent être ici, pas dans un script que je relance à la demande.
+    for c_ in ("eur_jour", "gagnants_pct", "moitie_1", "moitie_2", "sans3_part"):
+        if c_ not in r.columns:
+            r[c_] = None
+    # « GARDE SANS SES 3 » : la PART de l'avance qui survit quand on retire les trois meilleurs
+    # tickets. `sans3 > 0` était trop laxiste — BANDE + PAUSE le passait à +0,204 après avoir perdu
+    # 91 % de son avance, parce que 3 tickets sur 80 portaient tout (§3.163).
+    # Une ligne sans ticket doit afficher « — », pas « nan % » : un gel tout neuf se lit d abord
+    # dans ce tableau, et c est le moment ou l on veut verifier qu il existe, pas voir du bruit.
+    def _ok(x):
+        return x is not None and x == x        # x != x est vrai pour NaN
+
+    r["moities"] = [("%+.2f / %+.2f" % (a, b)) if _ok(a) and _ok(b) else "—"
+                    for a, b in zip(r["moitie_1"], r["moitie_2"])]
+    r["survie3"] = [("%.0f %%" % (100 * x)) if _ok(x) else "—" for x in r["sans3_part"]]
+    r["gagn"] = [("%.0f %%" % x) if _ok(x) else "—" for x in r["gagnants_pct"]]
+    r = r[["nom", "n", "par_ticket", "eur_jour", "gagn", "moities", "survie3", "total", "depuis"]]
+    r = r.sort_values("par_ticket", ascending=False)
+    r.columns = ["stratégie", "tickets", "€/ticket", "€/jour", "gagnants", "2 moitiés",
+                 "garde sans ses 3", "total €", "depuis"]
     st.dataframe(r, use_container_width=True, hide_index=True, height=min(760, 38 * len(r) + 40))
+    st.caption("**Aucun de ces critères ne suffit seul.** *€/ticket* est ce qui paie ; *€/jour* "
+               "corrige le volume (85 tickets à +2,5 n'est pas 600 à +0,3) ; *2 moitiés* dit si "
+               "elle gagne tout le temps ou a eu un bon jour ; *garde sans ses 3* est la part de "
+               "l'avance qui survit quand on retire ses trois meilleurs tickets — sous 50 %, "
+               "l'avance tient à quelques coups ; *gagnants* sépare « beaucoup de petits gains » "
+               "de « une pièce à peine biaisée ».")
 
     with st.expander("La table telle qu'elle sort du terminal"):
         st.code(D.get("texte") or "(texte non enregistré)", language=None)
@@ -461,7 +488,11 @@ def table_complete():
 F_COUT = os.path.join(RACINE, "cout_serie.json")
 POSTES = [("pool", "commission du pool", "#6b9ec9"), ("impact", "impact de notre ordre", "#b98ac7"),
           ("frais_reseau", "frais de réseau", "#5cab7a"), ("caution", "caution du compte-jeton", "#d4a03c"),
-          ("inexplique", "inexpliqué", "#c9564b")]
+          # PLUS « inexpliqué » : il l'était, il ne l'est plus. §3.156 a ouvert la transaction au
+          # lamport — ce sont TROIS prélèvements de frais exécutés dans notre transaction, 1,21 %
+          # par jambe, soit 2,42 % l'aller-retour ; le registre en mesure 2,44. Garder l'étiquette
+          # « inexpliqué » m'a fait ré-enquêter dessus le 20/09 sur une chose résolue depuis 24 h.
+          ("inexplique", "prélèvements de frais", "#c9564b")]
 
 
 @st.fragment(run_every=60)
