@@ -41,6 +41,13 @@ class HealthState:
             "t1": int(cfg.get("t1.poll_seconds", 5)),
             "telegram": 30,
             "solana": int(cfg.get("solana.poll_seconds", 30)) * 3,                                     # 5 s between polls, each up to 20 s long
+            # `recuperation` tourne toutes les 30 min (`recuperation.pas_secondes`). Sans cette
+            # ligne il tombait sur le defaut de 300 s, donc declare perime au bout de 15 min : le
+            # conteneur passait en `unhealthy` la MOITIE de chaque cycle, alors que tout allait
+            # bien. Trouve le 20/09 au matin, actif depuis l activation du module le 19/09 09h30.
+            # Un signal de sante faux la moitie du temps n est pas un signal, c est du bruit qu on
+            # apprend a ignorer -- exactement ce qui est arrive au test du gardien reste rouge.
+            "recuperation": int(cfg.get("recuperation.pas_secondes", 1800)),
         }.get(engine, 300)
 
     def snapshot(self) -> dict[str, Any]:
