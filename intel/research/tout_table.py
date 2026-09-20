@@ -360,7 +360,17 @@ def main() -> None:
     # la separation variables / cibles est ECRITE dans le fichier, pas deduite a l analyse
     df.attrs["VARIABLES"] = variables
     df.attrs["CIBLES"] = CIBLES
-    df.to_pickle(os.path.join(DOSSIER, "table.pkl"))
+    # ECRITURE ATOMIQUE. `to_pickle` ecrit EN PLACE : un lecteur qui ouvre le fichier pendant
+    # l ecriture recoit un pickle tronque et plante. Ce n etait pas visible tant que deux ou trois
+    # carnets se partageaient la table ; le 20/09 j en ai ajoute quatre (foret75_carnet,
+    # foret_gagnant, foret75_iso, prod_reentraine) qui appellent tous `main()`, et `foret_gel75` a
+    # rate un passage sur « pickle data was truncated » -- donc un GEL a cesse de collecter en
+    # silence, exactement ce que le gardien existe pour empecher, un cran plus bas.
+    # On ecrit a cote, puis on renomme : le renommage est atomique, un lecteur voit l ancienne
+    # table ou la nouvelle, jamais une moitie.
+    tmp = os.path.join(DOSSIER, "table.pkl.tmp.%d" % os.getpid())
+    df.to_pickle(tmp)
+    os.replace(tmp, os.path.join(DOSSIER, "table.pkl"))
     print()
     print("TABLE : %d lignes · %d variables · %d cibles" % (len(df), len(variables), len(CIBLES)))
     fam = defaultdict(int)
