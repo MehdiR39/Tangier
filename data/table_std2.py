@@ -608,6 +608,48 @@ if _sortie:
             e[1] += 1
         return [{"jour": k, "gain": round(g, 2), "n": n} for k, (g, n) in sorted(par.items())]
 
+    def _criteres(v):
+        """LES SEPT CRITERES, parce que l ecart-type seul ne dit pas si une strategie est bonne.
+
+        MIDO, 20/09 : « j ai l impression que le seul element qui te fait dire strat bonne ou
+        mauvaise c est ton sigma, t es sur de ca ? ». Non, et trois contre-exemples pris dans ce
+        tableau meme : (1) la ligne la PLUS significative est le TEMOIN, a -3,14 sigma -- sigma
+        mesure surtout la taille de l echantillon ; (2) `FORET ALEATOIRE` est a +1,91 sigma contre
+        son temoin et gagne -0,060 EUR/ticket -- sigma dit « distinguable de zero », pas « ca
+        paie » ; (3) `BANDE + PAUSE` a le plus gros avantage par ticket du projet (+2,48) et n est
+        qu a +1,66 sigma. Filtrer a 2 sigma jette la meilleure ligne et garde le marche.
+        Et sur ce marche precisement, 5 % des jetons portent 315 % du rendement (§3.156) : la
+        variance n est pas un resume fidele d une loi a queue aussi lourde.
+
+        Donc on rend tout ce qu il faut pour juger sur plusieurs axes a la fois :
+          niveau      les euros par ticket -- la seule colonne qui paie (regle 4)
+          volume      les euros par JOUR : 85 tickets a +2,48 n est pas 600 tickets a +0,30
+          moities     gagne-t-elle tout le temps, ou a-t-elle eu un bon jour (le frein : +123/-81)
+          sans3       depend-elle de sa queue -- sigma est GONFLE par cette meme queue
+          gagnants    89 % de petits gains ou 30 % de gros coups : meme moyenne, autre metier
+          jours       depuis combien de temps elle tourne, pour lire le volume et les moities
+        """
+        n = len(v)
+        if not n:
+            return {}
+        v = sorted(v)
+        nets = [MISE * (r - SUP) for _, r in v]
+        tot = sum(nets)
+        jours = (v[-1][0] - v[0][0]) / 86400.0
+        mi = n // 2
+        s = sorted(nets)
+        return {
+            "niveau": round(tot / n, 4),
+            "eur_jour": round(tot / jours, 2) if jours >= 0.5 else None,
+            "tickets_jour": round(n / jours, 1) if jours >= 0.5 else None,
+            "jours": round(jours, 2),
+            "moitie_1": round(sum(nets[:mi]) / mi, 4) if mi else None,
+            "moitie_2": round(sum(nets[mi:]) / (n - mi), 4) if n - mi else None,
+            "sans3": round(sum(s[:-3]) / (n - 3), 4) if n > 3 else None,
+            "gagnants_pct": round(100.0 * sum(1 for x in nets if x > 0) / n, 1),
+            "pire": round(min(nets), 2), "meilleur": round(max(nets), 2),
+        }
+
     _lignes = []
     for nom in ORDRE:
         v = SERIE.get(nom) or []
@@ -628,6 +670,7 @@ if _sortie:
             "par_ticket": round(total / n, 4),
             "jour": round(MISE * (sum(j) - len(j) * SUP), 2), "n_jour": len(j),
             "debut": debuts.get(nom), "courbe": _courbe(v), "par_jour": _par_jour(v),
+            **_criteres(v),
         })
     # ECART-TYPE D UN TICKET, mesure sur le temoin -- toute la population, sans selection. C est lui
     # qui fixe ce qu on peut distinguer du hasard : un ecart plus petit que son propre bruit ne se

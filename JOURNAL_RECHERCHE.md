@@ -8130,3 +8130,73 @@ au-dessus de **3,88 % bruts** là où le marché en donne 2,68. C'est ce que tes
 (+0,470 €/ticket mesuré, soit ~6,1 % bruts, mais p = 0,115 : non prouvé).
 
 **La priorité n'est plus d'ouvrir une piste, c'est d'amener ce carnet à ses échéances.**
+
+### 3.161 — Les 29 stratégies jugées sur SEPT critères, et trois passent six, 2026-09-20 16h30
+
+**La question de Mido, et elle était juste :** *« j'ai l'impression que le seul élément qui te fait
+dire strat bonne ou mauvaise c'est ton sigma, t'es sûr de ça ? »* Non. Trois contre-exemples pris
+dans notre propre tableau :
+
+1. **La ligne la plus significative du projet est le TÉMOIN** (−3,14 σ). Ce n'est pas une
+   stratégie, c'est le marché. σ mesure surtout la taille de l'échantillon.
+2. **`FORET ALEATOIRE` est à +1,91 σ contre son témoin et gagne −0,192 €/ticket.** σ dit
+   « distinguable de zéro », pas « ça paie ».
+3. **`BANDE + PAUSE` a le plus gros avantage par ticket du projet et n'est qu'à +1,66 σ.** Filtrer
+   à 2 σ jette la meilleure ligne et garde le marché.
+
+Et sur ce marché précisément, **5 % des jetons portent 315 % du rendement** (§3.156) : la variance
+n'est pas un résumé fidèle d'une loi à queue aussi lourde — σ est gonflé par la queue même qui fait
+l'argent.
+
+**LES SEPT CRITÈRES, désormais calculés par `table_std2.py` et présents dans `carnet.json`** (donc
+dans la page, en permanence) : niveau €/ticket · €/JOUR · deux moitiés chronologiques · sans ses
+3 meilleurs · taux de gagnants · écart au témoin · 2 σ sur le niveau.
+
+**RÉSULTAT — trois lignes passent SIX critères sur sept, et la seule qu'elles ratent est celle qui
+demande du temps.** Ramené à la mise réelle de 10 € :
+
+```
+                            n   EUR/ticket   EUR/jour   gagnants   durée
+BANDE + PAUSE (gelée)      86     +1,033      +33,9       57 %     2,6 j
+FORET 75s top 10 %        177     +0,219      +26,0       86 %     1,5 j
+FORET 75s top 5 % (gelée)  71     +0,463      +22,4       89 %     1,5 j
+FORET 75s REENTRAINEE      74     +0,418        —         92 %     0,5 j
+```
+
+Toutes les quatre : deux moitiés positives, positives sans leurs 3 meilleurs tickets, au-dessus de
+leur témoin. **C'est la première fois que quelque chose ressemble à l'objectif** — et il faut dire
+tout de suite ce qui manque : 1,5 à 2,6 jours de données, 71 à 177 tickets, et le niveau est à
+0,5–0,8 σ. Elles sont **candidates**, pas démontrées.
+
+**LA SIGNATURE QUE σ CACHAIT COMPLÈTEMENT : le taux de gagnants.**
+
+```
+cible « gagnant net » (75s top 5/10 %, 75s réentraînée)   83 à 92 % de gagnants
+tout le reste du tableau                                   41 à 63 %
+```
+
+Ce n'est pas une différence de degré, c'est un autre métier : beaucoup de petits gains contre une
+pièce à peine biaisée. Deux lignes de même moyenne et de même σ peuvent avoir ces deux formes, et
+seule la seconde survit à une mauvaise semaine. **Aucun critère de significativité ne voit ça.**
+
+**PAR FAMILLE DE CIBLE, sur les carnets gelés en direct** (mise 20 €) — corroboration indépendante
+du test de §3.159, sur des dates de gel, des instants de décision et des périodes différentes :
+
+```
+cible GAGNANT   5 carnets, 527 tickets   +0,485 EUR/ticket     +256 EUR
+cible VIDAGE    2 carnets, 679 tickets   −1,783 EUR/ticket   −1 211 EUR   (−3,37 σ)
+écart entre les deux familles : +2,27 EUR/ticket, +2,83 σ
+```
+
+**La famille « vidage » est significativement négative.** C'est le résultat le plus solide de la
+journée — mais **cible et sélectivité restent confondues** (les « gagnant » gardent 5 à 20 %, les
+« vidage » 80 %), donc cela corrobore §3.159 sans le démontrer. Seul `FORET GAGNANT 20 %` lèvera la
+confusion.
+
+**CE QUE CETTE ANALYSE A CORRIGÉ DANS MA FAÇON DE TRAVAILLER.** Le matin même j'avais écrit
+« aucune des 29 n'est prouvée » et je n'avais parlé d'aucune des lignes gagnantes — Mido :
+*« on a certaines strat gagnantes [...] tu n'en parles pas du tout, pourquoi ? »*. Parce que j'avais
+trié par σ et jeté tout ce qui était sous 2. Chaque ligne prise seule est sous 1 σ ; **le motif
+n'apparaît qu'en les groupant**, et je ne les avais jamais groupées. Une stratégie se juge sur
+plusieurs axes à la fois ; une seule qui passe ne vaut rien — c'est ce qui a mis le frein en
+production (§3.125).
