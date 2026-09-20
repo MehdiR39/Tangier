@@ -11,7 +11,80 @@ Règle d'écriture : **un chiffre sans sa méthode ne vaut rien.** Chaque entré
 donnée, le résultat, et la conclusion qu'on en tire — y compris quand la conclusion est « on ne
 sait pas ».
 
-Dernière mise à jour : 2026-09-14.
+Dernière mise à jour : 2026-09-20. **Commencer par la section 0, ÉTAT COURANT.**
+
+---
+
+---
+
+## 0. ÉTAT COURANT — à lire AVANT toute action, et à mettre à jour APRÈS chaque résultat
+
+**Mido, 20/09 :** *« ma consigne était claire : on fait beaucoup de choses, tu dois donc tout
+écrire — les pistes, les analyses, les résultats, ce qui est en train d'être fait et ce qui est
+fait — et tu dois lire ce doc avant de faire quoi que ce soit. Toute demande de ma part, toute
+initiative de ta part doit être précédée de la lecture de ce doc. C'est la dernière fois que je
+dis ça. »*
+
+Le journal fait 8 000 lignes en ordre chronologique : le lire en entier avant chaque action est
+impossible, donc ça ne se faisait pas, et j'ai refait deux fois le même travail en deux jours
+(§3.156 refait le 20/09 après-midi ; le calcul des 50 €/jour de §3.120 jamais remis à jour).
+**Cette section est le remède : elle tient en une page et elle est la première chose à lire.**
+Si une information n'y est pas, elle n'existe pas pour la prochaine séance.
+
+### 0.1 Ce qui est ÉTABLI et ne se remesure pas
+
+| fait | valeur | où |
+|---|---|---|
+| Ce que le marché donne, brut | **+2,68 %/ticket** | §3.156 |
+| Ce que l'exécution prend | **3,88 %** (10 €, 404 tickets) | registre, 20/09 |
+| Composition du péage | 3 prélèvements **1,21 %/jambe** + pool 0,20 % | §3.156 |
+| Ce que le péage n'est PAS | ni glissement, ni latence, ni notre modèle | §3.156 |
+| Le taux varie **selon le jeton** | **0,90 % à 3,54 %**, par paliers nets | §3.156 |
+| Réserve virtuelle | **V = 17,99** (résolue, pas supposée) | §3.156 |
+| Seuil pour 50 €/jour | **+2,27 %/ticket** à 220 tickets/jour | §3.159 |
+| La cible « vidage » sélectionne l'immobilité | 3,1 % de mouvement pour 3,71 % de péage | §3.159 |
+| Bruit par ticket | σ = **10,4 à 13,8 €** selon la fenêtre | §3.159 |
+| Seuil de détection | +0,87 €/ticket à 1 000 tickets, +0,50 à 3 000 | §3.159 |
+
+### 0.2 LA PISTE OUVERTE QUI VAUT LE PLUS — et elle n'est pas un modèle
+
+**Où est écrit le taux de commission par jeton ?** Il varie de 0,90 % à 3,54 % par jambe. L'écart
+entre un jeton bon marché et un jeton cher vaut **3 points** quand il n'en manque que **1,20**.
+S'il est lisible AVANT d'acheter, c'est un filtre d'entrée et le projet redevient viable — plus que
+n'importe quel modèle testé jusqu'ici (le meilleur vaut +0,97 point).
+
+Déjà exclu : le compte du pool (301 octets comparés sur 20 pools, aucune corrélation au-delà de
+r = 0,46). Restent : la configuration de Jupiter, un compte attaché au créateur, le programme de
+frais `pfeeUxB6…`. Les destinataires ne sont PAS les créateurs enregistrés (0/8).
+
+### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
+
+| carnet | gelé | échéance | état au 20/09 |
+|---|---|---|---|
+| `FORET FLUX 30s` | 19/09 16h | 600 retenus | ~400, **négative** (−1,44 €/ticket) |
+| `FORET REENTRAINEE 6h` | 19/09 21h27 | 1 200 tickets | −1,645 €/ticket ; cible vidage → échec attendu |
+| `FORET 75s REENTRAINEE` | 19/09 22h50 | 400 retenus | +0,354 €/ticket sur 54 |
+| `FORET GAGNANT 20 %` | 20/09 12h32 | 400 puis 2 000 | 0 ticket, démarre cet après-midi |
+| `impact_annonce` | 19/09 22h | 300 valeurs | 14 au 19/09 au soir |
+| Registre des coûts | continu | — | 509 tickets |
+
+### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
+
+`PISTE FOULE` (−2,60 σ, prouvée pire que le hasard) · régime+risque · le découpage de l'ordre
+(§3.120 : gain 0,036 % pour 3,17 points à rembourser) · la copie de bons traders · le frein de
+marché (§3.125) · la variable de coût dans le modèle (dégrade : +0,281 contre +0,363, §3.157).
+
+### 0.5 Les erreurs de méthode qui ont coûté le plus, en une ligne chacune
+
+1. **Le contraste n'est pas l'argent.** `VIDAGE 80 %` a le meilleur σ du projet (+3,06) et perd
+   0,204 €/ticket. Toujours donner le NIVEAU en premier.
+2. **P&L par jour calendaire**, jamais en 24 h glissantes (le 20/09 : −10 €/jour glissant contre
+   +52,60 € le jour même).
+3. **Un maximum courant de permutation n'est pas un verdict** — seul le décompte k/N l'est.
+4. **Le bruit d'une comparaison appariée** est σ·√(m/(n·k)), pas σ/√n.
+5. **Ne jamais garder « les k % du haut d'une fenêtre »** : ça compare un ticket à des voisins pas
+   encore nés. Seuil absolu pris sur l'entraînement (§3.158).
+6. **Un voyant faux la moitié du temps n'est pas un voyant** (santé du conteneur, test du gardien).
 
 ---
 
