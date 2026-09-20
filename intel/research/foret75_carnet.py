@@ -66,6 +66,7 @@ BASE_DB = os.path.join(DOSSIER, "carnet.sqlite")
 COUT = float(os.environ.get("COUT_MESURE", "0.0371"))
 MISE = 20.0
 GARDE = 0.20                       # on retient les 20 % les plus surs, au seuil d entrainement
+GARDE_LECTURE = 0.10               # le second seuil, NOTE A COTE et qui ne decide rien (_apprendre)
 N_VARIABLES = 25
 PAS_H = 6.0
 N_CRITERE, JOURS_CRITERE = 400, 14
@@ -76,6 +77,11 @@ def schema(c: sqlite3.Connection) -> None:
     c.execute("CREATE TABLE IF NOT EXISTS decision("
               "  pair TEXT PRIMARY KEY, mint TEXT, t_dec REAL, p REAL, seuil REAL, retenu INTEGER,"
               "  ret_240 REAL, n_entrainement INTEGER, t_modele REAL)")
+    for col in ("seuil10 REAL", "retenu10 INTEGER"):
+        try:
+            c.execute("ALTER TABLE decision ADD COLUMN %s" % col)
+        except Exception:  # noqa: BLE001
+            pass        # deja la
     c.execute("CREATE TABLE IF NOT EXISTS gel(cle TEXT PRIMARY KEY, valeur TEXT)")
     c.commit()
 
@@ -96,8 +102,15 @@ def _apprendre(X: pd.DataFrame, y: np.ndarray, cols: list[str]):
     imp = foret(200).fit(XA, y).feature_importances_
     gard = [c for _, c in sorted(zip(imp, cols), key=lambda z: -z[0])[:N_VARIABLES]]
     rf = foret(300).fit(XA[gard], y)
-    seuil = float(np.quantile(rf.predict_proba(XA[gard])[:, 1], 1.0 - GARDE))
-    return rf, med[gard], gard, seuil
+    p_tr = rf.predict_proba(XA[gard])[:, 1]
+    # LE SEUIL A 10 %, NOTE A COTE, POUR LECTURE -- il ne decide RIEN. Meme dispositif que
+    # `foret_gel` depuis le 18/09 (« le seuil a 10 % est note a cote pour lecture, pas pour
+    # decision »). MIDO, 20/09 : « on a une strat 75s top 10 reentrainee ? ». Non -- et j avais
+    # choisi 20 % PARCE QU ELLE GAGNAIT parmi trois taux essayes, sur un ecart de 0,16 EUR/ticket
+    # quand le bruit de ces cases vaut 0,5. J ai donc tranche sur du bruit et ferme la porte a
+    # l autre. Noter le second seuil ne modifie aucune decision et rouvre la porte.
+    return rf, med[gard], gard, (float(np.quantile(p_tr, 1.0 - GARDE)),
+                                 float(np.quantile(p_tr, 1.0 - GARDE_LECTURE)))
 
 
 def noter() -> None:
@@ -148,13 +161,15 @@ def noter() -> None:
         neufs = [i for i in np.where(J)[0] if df.at[i, "pair"] not in deja]
         if not neufs:
             continue
-        rf, med, gard, seuil = _apprendre(X[A], y[A], cols)
+        rf, med, gard, (seuil, seuil10) = _apprendre(X[A], y[A], cols)
         p = rf.predict_proba(X.iloc[neufs][gard].fillna(med).fillna(0.0))[:, 1]
         for k, i in enumerate(neufs):
-            c.execute("INSERT OR REPLACE INTO decision VALUES(?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT OR REPLACE INTO decision(pair, mint, t_dec, p, seuil, retenu,"
+                      " ret_240, n_entrainement, t_modele, seuil10, retenu10)"
+                      " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                       (df.at[i, "pair"], df.at[i, "mint"], float(t[i]), float(p[k]), seuil,
                        int(p[k] >= seuil), None if not connu[i] else float(r[i]),
-                       int(A.sum()), c0))
+                       int(A.sum()), c0, seuil10, int(p[k] >= seuil10)))
             n_neufs += 1
         c.commit()
 
