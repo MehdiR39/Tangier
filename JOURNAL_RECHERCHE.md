@@ -8309,3 +8309,51 @@ mais j'aurais pu passer à côté d'une piste parce que je l'avais formulée com
 Et une correction de langage au passage : j'avais annoncé « six fois meilleurs » en comparant
 l'inverse **à la pause** au lieu du point de départ. Contre le carnet entier l'écart est de
 **0,144 €/ticket**, pas d'un facteur six.
+
+### 3.164 — Deux sorties différentes sur le même graphique, 2026-09-20 20h00
+
+**Mido, en regardant la page :** *« c'est bizarre que forêt réentraînée 6h se dégrade beaucoup plus
+que la figée. »* Elle ne se dégrade pas : **elle ne vend pas au même moment.**
+
+Le 20/09, seul jour où les deux se recouvrent — même marché, même cible (vidage), même taux de
+garde (80 %) :
+
+```
+témoin                   −1,04 €/ticket   417 tickets
+FORET ALEATOIRE (gelée)  +0,24            310      ← papier_combo
+FORET REENTRAINEE 6h     −1,94            270      ← tout_table
+```
+
+**LA CAUSE, après avoir éliminé les deux autres hypothèses.** L'entrée est identique (écart médian
+des prix d'entrée : **0,00 %** sur 250 tickets) et le flux de prix n'a pas changé (1er relevé
+≥ 240 s à **244 s** médian, avant comme pendant). Il ne restait que la fenêtre :
+
+```
+papier_combo   entrée 47 s → sortie 287 s      détention 240 s   (ligne 17 de papier_combo.py)
+tout_table     entrée 47 s → sortie 240 s      détention ~193 s  (cibles(), premier relevé ≥ 240 s)
+```
+
+**47 secondes de détention d'écart.** Sur les mêmes 411 tickets du 20/09 : **−0,45 %** à 287 s
+contre **−4,31 %** à 240 s, soit **3,85 points**. Sur tout l'historique l'écart est de
+**+0,22 point en sens inverse** (0,86 contre 1,08) : ce n'est donc pas un biais constant, c'est du
+bruit de marché — mais un seul jour suffit à faire croire qu'un modèle s'effondre.
+
+**CE QUI EST FAUSSÉ ET CE QUI NE L'EST PAS.** Chaque carnet est comparé à **son propre témoin,
+mesuré de la même façon** : l'écart au témoin (+0,723 pour la réentraînée, +2,300 pour la 75s) est
+propre, et ce défaut ne le gonfle pas. Ce qui est faussé, c'est de comparer les **niveaux** d'une
+famille à l'autre — exactement ce que la page invitait à faire.
+
+**CE QUI A ÉTÉ CORRIGÉ, ET CE QUI NE L'A PAS ÉTÉ.** `FORET GAGNANT` annonçait dans son en-tête
+« décision à 45 s, **comme le moteur en production** » alors que le moteur vend à 287 s : elle était
+jugée sur un produit qu'on ne trade pas. Corrigée en `ret_287` et **regelée le 20/09 à 15h56**, les
+15 tickets de l'ancienne cible archivés à part (`carnet_ret240_abandonne.sqlite`) plutôt que
+mélangés. **Les autres gels ne sont pas touchés** : leurs critères sont écrits d'avance et les
+modifier maintenant serait la faute qu'on s'interdit. La page porte désormais un avertissement qui
+dit quelle ligne est sur quelle sortie.
+
+**ET LA QUESTION QUE ÇA OUVRE, à ne pas confondre avec le défaut.** Nos meilleures lignes tiennent
+le moins longtemps : `FORET 75s` entre à 77 s et sort à 240 s (163 s), le moteur tient 240 s. Si
+tenir moins longtemps est meilleur — l'historique dit +0,22 point pour 47 s de moins — alors une
+part de leur avantage vient de la **sortie** et non du modèle. Les deux sont confondus, la mesure
+est directe (le rendement des mêmes tickets à plusieurs âges), et ce serait le premier levier
+d'exécution depuis que celui des commissions est mort (§3.160).

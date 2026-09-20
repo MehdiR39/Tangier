@@ -12,10 +12,10 @@ net » contient deja « pas d'effondrement » (un jeton effondre n'est jamais ga
 defaut : elle retire 4 vidages sur 10 la ou « vidage » n'en retire que 2.
 
 CE QUI EST GELE : UNE RECETTE, pas des poids. Ecrite avant le premier ticket juge.
-    population    decision a 45 s, comme le moteur en production
+    population    decision a 45 s ET SORTIE A 287 s -- exactement ce que fait le moteur
     variables     les 18 de prix et de liquidite, SANS aucune variable de cout (§3.157)
     modele        RandomForest, 300 arbres, min_samples_leaf = 20, random_state = 0
-    cible         GAGNANT NET : (1 + ret_240).(1 - cout) - 1 > 0
+    cible         GAGNANT NET : (1 + ret_287).(1 - cout) - 1 > 0
     cadence       reentrainement toutes les 6 h sur TOUT ce qui precede la coupe
     decision      SEUIL ABSOLU : on garde les scores >= quantile 0,80 de l'ENTRAINEMENT
     cout          3,71 pt
@@ -40,6 +40,22 @@ demandent pas le meme nombre de tickets -- sigma vaut 10,43 EUR par ticket a 20 
         k > 1 971 : c'est le prix de la preuve, et aucune echeance plus courte ne peut la donner.
   Dire « prouvee » avant l'echeance 2 serait mentir : l'echeance 1 ne juge qu'un classement, et un
   classement ne paie rien (regle 4). Voir `VIDAGE 80 %` : meilleur sigma du test, et -0,204 EUR.
+
+AMENDEMENT AVANT QUE LE CARNET SOIT UTILISABLE, 20/09 20h, 15 tickets. MIDO, en regardant la page :
+« c est bizarre que foret reentrainee 6h se degrade beaucoup plus que la figee ». Elle ne se degrade
+pas : elle est jugee sur une AUTRE SORTIE. `papier_combo` (le temoin, FORET ALEATOIRE, ENSEMBLE...)
+entre a 47 s et sort a **287 s** ; `tout_table.ret_240` sort a **240 s**. Quarante-sept secondes de
+detention d ecart. Mesure sur les 411 tickets du 20/09 : -0,45 % a 287 s contre -4,31 % a 240 s,
+soit **3,85 points** ce jour-la (et +0,22 point en sens inverse sur tout l historique : ce n est pas
+un biais constant, c est du bruit de marche -- mais un jour suffit a faire croire qu un modele
+s effondre).
+
+Consequence pour CE carnet : son en-tete annoncait « comme le moteur en production » alors que le
+moteur vend a 287 s. Il etait donc juge sur un produit qu on ne trade pas. Corrige en `ret_287`, et
+le carnet est REMIS A ZERO -- 15 tickets notes sur l ancienne cible sont effaces plutot que melanges.
+Les autres gels ne sont PAS touches : leurs criteres sont ecrits d avance et les modifier
+maintenant serait exactement la faute qu on s interdit. Ils restent comparables entre eux, pas avec
+la famille `papier_combo`, et la page doit le dire.
 
 Papier, zero euro. Base propre. Ne touche ni au moteur, ni aux collecteurs, ni aux autres gels.
 """
@@ -104,7 +120,8 @@ def noter() -> None:
         c.execute("INSERT OR REPLACE INTO gel VALUES(?,?)", ("t", g["t"]))
         c.execute("INSERT OR REPLACE INTO gel VALUES(?,?)", ("recette", json.dumps(
             {"cible": "gagnant net", "variables": cols, "arbres": 300, "feuille_min": 20,
-             "garde": GARDE, "decision": "seuil absolu, quantile 0,80 des scores d entrainement",
+             "garde": GARDE, "cible_colonne": "ret_287 (sortie 287 s, comme le moteur)",
+             "decision": "seuil absolu, quantile 0,80 des scores d entrainement",
              "pas_h": PAS_H, "cout": COUT, "echeance_1": N_ECHEANCE_1,
              "echeance_2": N_ECHEANCE_2, "jours_max": JOURS_MAX})))
         c.commit()
@@ -114,7 +131,8 @@ def noter() -> None:
     gel = float(g["t"])
 
     X = df[cols].apply(pd.to_numeric, errors="coerce").astype(float)
-    r = pd.to_numeric(df["ret_240"], errors="coerce").to_numpy(dtype=float)
+    # SORTIE A 287 s, comme le moteur. `ret_240` sortirait 47 s trop tot (voir l amendement).
+    r = pd.to_numeric(df["ret_287"], errors="coerce").to_numpy(dtype=float)
     net = (1.0 + r) * (1.0 - COUT) - 1.0
     y = (net > 0).astype(int)                     # LA CIBLE : gagnant net, et rien d autre
     connu = np.isfinite(net)

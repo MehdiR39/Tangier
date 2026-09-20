@@ -479,6 +479,17 @@ def table_complete():
                "l'avance qui survit quand on retire ses trois meilleurs tickets — sous 50 %, "
                "l'avance tient à quelques coups ; *gagnants* sépare « beaucoup de petits gains » "
                "de « une pièce à peine biaisée ».")
+    # DEUX SORTIES DIFFERENTES SUR LE MEME TABLEAU. Trouve le 20/09 parce que Mido a vu
+    # « FORET REENTRAINEE 6h se degrade beaucoup plus que la figee » : elle ne se degrade pas, elle
+    # vend 47 s plus tot. Le dire ici, sinon la comparaison est silencieusement fausse.
+    st.warning("**Deux sorties différentes cohabitent dans ce tableau.** Les lignes `FORET 75s…` "
+               "et `FORET REENTRAINEE 6h` sont mesurées sur une **sortie à 240 s** ; toutes les "
+               "autres — témoin compris — sur une **sortie à 287 s**, celle du moteur. "
+               "47 secondes de détention d'écart : +0,22 point en moyenne sur l'historique, mais "
+               "**3,85 points le 20/09**. Comparer une ligne d'une famille à une ligne de l'autre "
+               "n'est donc valable qu'à ce bruit près. À l'intérieur d'une famille, et pour "
+               "l'écart au témoin, les chiffres sont propres. `FORET GAGNANT` a été regelée le "
+               "20/09 à 15h56 sur la sortie à 287 s.", icon="⚠️")
 
     with st.expander("La table telle qu'elle sort du terminal"):
         st.code(D.get("texte") or "(texte non enregistré)", language=None)
