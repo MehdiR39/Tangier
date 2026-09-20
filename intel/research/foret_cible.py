@@ -77,8 +77,15 @@ def main() -> None:
           flush=True)
     print(flush=True)
 
-    def marche(net):
+    mi_chemin = DEBUT + (FIN - DEBUT) / 2
+
+    def marche(net, moities=False):
+        """`moities` : rend en plus, pour chaque case, ses tickets separes en deux moities
+        CHRONOLOGIQUES -- le rejeu en deux moities exige par la regle 5 du projet. Une regle qui
+        gagne sur l ensemble mais perd sur une moitie n a pas d edge, elle a eu un bon jour (le
+        frein : +123 sur une moitie, -81 sur l autre, et il est passe en prod quand meme)."""
         pris = {(c, g): [] for c in CIBLES for g in GARDES}
+        deux = {(c, g): ([], []) for c in CIBLES for g in GARDES}
         tem = []
         cur = DEBUT
         while cur < FIN:
@@ -104,8 +111,11 @@ def main() -> None:
                     # SEUIL ABSOLU, pris sur l entrainement : decidable ticket par ticket.
                     s = float(np.quantile(p_tr, g if bas else 1.0 - g))
                     garde = (p <= s) if bas else (p >= s)
-                    pris[(nom, g)].extend(net[J][garde].tolist())
-        return pris, np.array(tem)
+                    v = net[J][garde].tolist()
+                    pris[(nom, g)].extend(v)
+                    if moities:
+                        deux[(nom, g)][0 if c0 < mi_chemin.timestamp() else 1].extend(v)
+        return (pris, np.array(tem), deux) if moities else (pris, np.array(tem))
 
     def z(v, tm):
         k_, n_ = len(v), len(tm)
@@ -114,7 +124,7 @@ def main() -> None:
         s = MISE * tm.std(ddof=1)
         return MISE * (v.mean() - tm.mean()) / (s * np.sqrt((n_ - k_) / (n_ * k_)))
 
-    pris, tem = marche(net0)
+    pris, tem, moities = marche(net0, moities=True)
     sigma = MISE * tem.std(ddof=1)
     n_ = len(tem)
     print("   %-26s %6s %11s %11s %9s %11s"
@@ -146,12 +156,23 @@ def main() -> None:
             if (i + 1) % 15 == 0:
                 print("   %d/%d · meilleur du hasard %+0.2f sigma" % (i + 1, NULLS, max(maxs)),
                       flush=True)
-        m = max(zs, key=zs.get)
-        ks = sum(1 for x in maxs if x >= zs[m])
-        print("   -> meilleure case « %s %.0f %% » a %+.2f sigma (%+.3f EUR/ticket)"
-              % (m[0], 100 * m[1], zs[m], res[m]), flush=True)
-        print("      %d sur %d font aussi bien (p ~ %.3f)" % (ks, len(maxs), (ks + 1) / (len(maxs) + 1)),
-              flush=True)
+        # LE p DE CHAQUE CASE, et pas seulement de la meilleure. La meilleure par sigma est
+        # `VIDAGE 80 %` -- qui PERD de l argent. Ne donner que son p repondrait a une question qu on
+        # ne se pose pas. Chaque case est comparee au MEME maximum permute : la correction pour
+        # avoir regarde neuf fois reste entiere, et elle est conservatrice pour les autres cases.
+        print()
+        print("   %-26s %8s %9s %11s %13s" % ("", "sigma", "p", "EUR/ticket", "moities (EUR)"))
+        for k in sorted(zs, key=lambda x: -zs[x]):
+            ks = sum(1 for x in maxs if x >= zs[k])
+            a, b = moities.get(k, ([], []))
+            ma = MISE * (np.mean(a) - tem.mean()) if len(a) >= 10 else float("nan")
+            mb = MISE * (np.mean(b) - tem.mean()) if len(b) >= 10 else float("nan")
+            print("   %-26s %+8.2f %9.3f %+11.3f %+6.2f / %+6.2f"
+                  % ("%s %.0f %%" % (k[0], 100 * k[1]), zs[k], (ks + 1) / (len(maxs) + 1),
+                     MISE * np.array(pris[k]).mean(), ma, mb), flush=True)
+        print()
+        print("   Rappel : la colonne qui paie est EUR/ticket, pas sigma (regle 4). Et les DEUX")
+        print("   moities doivent etre positives, sinon la regle a eu un bon jour, pas un edge.")
 
 
 if __name__ == "__main__":
