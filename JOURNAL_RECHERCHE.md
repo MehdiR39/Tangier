@@ -44,7 +44,8 @@ Si une information n'y est pas, elle n'existe pas pour la prochaine séance.
 | Effet de la taille du pool sur le taux | 1,687 % (petits) → 1,503 % (gros) = **0,18 pt** | §3.160 |
 | Réserve virtuelle | **V = 17,99** (résolue, pas supposée) | §3.156 |
 | Seuil pour 50 €/jour | **+2,27 %/ticket** à 220 tickets/jour | §3.159 |
-| La cible « vidage » sélectionne l'immobilité | 3,1 % de mouvement pour 3,71 % de péage | §3.159 |
+| Le 5ᵉ le plus sûr du modèle vidage bouge **3,1 %** | et le péage est 3,71 % → il NE PEUT PAS payer | §3.159 |
+| Ce même 5ᵉ a bien **9 % de vidages** contre 18 % | le modèle répond juste à la question posée | §3.159 |
 | Bruit par ticket | σ = **10,4 à 13,8 €** selon la fenêtre | §3.159 |
 | Seuil de détection | +0,87 €/ticket à 1 000 tickets, +0,50 à 3 000 | §3.159 |
 
@@ -64,6 +65,20 @@ réductions restantes valent ~0,6 point au total (gros pools 0,18 · cautions 0,
 +2,68 % bruts en moyenne ; il faut des tickets au-dessus de **3,88 %**. C'est exactement ce que
 `FORET GAGNANT 20 %` teste (mesuré +0,470 €/ticket net, soit ~6,1 % bruts, mais p = 0,115).
 **La priorité est d'amener ce carnet à ses échéances sans rien casser, pas d'ouvrir une piste neuve.**
+
+### 0.2 bis — CE QUI EST UNE HYPOTHÈSE, ET QU'IL NE FAUT PAS CITER COMME ACQUIS
+
+**« La mauvaise cible est la raison pour laquelle nos modèles perdent. »** NON ÉTABLI.
+Ce qui l'est : le mécanisme (3,1 % de mouvement contre 3,71 % de péage, arithmétique, mesuré sur
+185 tickets). Ce qui ne l'est pas : que changer la cible corrige le problème. Le test sur 3 210
+tickets donne `GAGNANT 20 %` à +0,470 €/ticket **avec p = 0,115** — au-dessus de la barre qu'on
+s'était fixée AVANT de regarder. Et c'est **une** explication, pas la seule : elle n'a été mise en
+concurrence avec aucune autre.
+
+Seul `FORET GAGNANT 20 %` peut trancher, sur des tickets jamais regardés. Gelé le 20/09 12h32,
+échéance 1 à 400 retenus (~3 jours), échéance 2 à 2 000 (~16 jours). **Jusque-là, on dit
+« hypothèse mesurée », jamais « fermé ».** (Mido, 20/09 : *« tu as dit que tu as fermé ça — qu'est-ce
+qu'on a fait pour la fermer ? »* Réponse : rien encore.)
 
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
