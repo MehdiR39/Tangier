@@ -8450,3 +8450,69 @@ moteur achète à 47 s — ce ne sont pas les mêmes tickets au même instant.
    Une ligne **sans critère écrit d'avance** le dit : elle ne pourra jamais être déclarée prouvée,
    seulement observée.
 4. **L'arbitre**, ci-dessus.
+
+### 3.167 — Le moteur décide à 75 s, et il reproduit le carnet, 2026-09-20 22h15
+
+**La journée s'était terminée sur une faute.** J'avais basculé la production sur une recette que
+Mido n'avait pas choisie : il avait dit *« on bascule en prod la meilleure »*, les meilleures
+(`FORET 75s`, 6/6 critères) ne sont pas branchables à 47 s, et **j'ai substitué le seul candidat
+déployable sans le dire** — `FORET REENTRAINEE 6h`, qui score **2 sur 6**, perd −2,15 €/ticket et
+dont la courbe n'est jamais remontée sur 358 tickets. Je m'étais appuyé sur **un seul chiffre**
+(+1,42 σ sur 268 tickets, 14 h) en ignorant la grille à six critères construite le jour même pour
+empêcher ce choix. Coût : **−45,75 € en une heure**. Mido : *« sur quoi tu t'es basé ? »*.
+Débranchée à 19h30 (`mode: paper`).
+
+**LES TROIS VERROUS DU 75 s, MESURÉS AVANT D'ÉCRIRE UNE LIGNE.**
+- **Latence** : l'appel Helius met **0,70 s** en médiane (q3 1,07, d9 1,76) pour 5 s de budget entre
+  la donnée (70 s) et la décision (75 s) — **96 %** des pools tiennent. *(Espoir abandonné : faire
+  LIRE le fichier de `v1_enregistreur` — il écrit vers 97 s, trop tard.)*
+- **Quota** : `max(10, n_tx/10)` crédits, ~47 par pool, ~540 pools/jour = **~25 000 sur un plafond
+  de 150 000**. Doubler reste à un tiers.
+- **Sortie** : le modèle prédit 77 s → 240 s. Tenir 240 s ferait sortir à 317 s. `tenue_secondes: 163`.
+
+**CE QUI A ÉTÉ CONSTRUIT.** `v1_traits` — le calcul des 15 variables de flux **sorti de
+`tout_table` et partagé avec le moteur** : une fonction, deux appelants, donc plus rien à vérifier
+(Mido : *« comment ça c'est le CODE, à quoi tu sers ? »*). Vérifié après extraction : aucune
+différence sur 16 colonnes et 3 428 paires. Puis `traits_75`, qui fabrique les 20 variables
+manquantes en direct.
+
+**LA VÉRIFICATION A ATTRAPÉ DEUX DIVERGENCES QUI N'AURAIENT RIEN AFFICHÉ** (règle 10) :
+1. la **fenêtre de collecte** confondue avec l'**âge de décision** — 8 pools sur 8 faux ;
+2. l'historique des portefeuilles **sans filtre d'âge**, qui comptait des acheteurs de la 46ᵉ à la
+   60ᵉ seconde — `v1_robots` faux sur 6 pools sur 8.
+Après correction : **8 pools sur 8 identiques** à la recherche.
+
+**ET UN PIÈGE QUI AURAIT TOUT INVERSÉ.** Le moteur décide `risque <= seuil` (bas = bon) ; la forêt
+75s prédit `P(gagnant)` (haut = bon). Branchée telle quelle **elle aurait acheté exactement ce qu'il
+faut éviter**. Exportée en `1 − p`, seuil 0,2004. Vérifié sur la première décision réelle : un jeton
+jugé très improbable gagnant reçoit **0,9994**, donc écarté.
+
+**LES DEUX COMPARAISONS QUI VALIDENT LA CHAÎNE.**
+
+```
+ISO (sans images) contre COMPLET, 30 décisions communes
+   100 % d'accord · écart des scores médian 0,0000 · max 0,0000
+
+MOTEUR contre CARNET, 24 en commun
+   23 d'accord (96 %) · moteur seul 0 · carnet seul 1
+   écart des scores : médian 0,0027 · q3 0,0131 · max 0,0913
+   le seul désaccord est à moins de 0,05 du seuil
+```
+
+**Les images ne déplacent le score d'aucun millième** — plus fort que le rejeu à +0,97 σ, et Mido
+avait raison de séparer « mesurée inutile » (les images) de « retirée par confort » (robots et
+régime, tous deux faisables et donc repris). **Et le moteur reproduit le carnet** : le
++0,462 €/ticket le concerne.
+
+**DEUX PANNES SILENCIEUSES TROUVÉES EN CHEMIN, toutes deux de mon fait.**
+- `table.pkl` s'écrivait **en place** : un carnet qui la lisait pendant qu'un autre l'écrivait
+  recevait un pickle tronqué. Invisible tant que deux ou trois carnets se la partageaient — j'en ai
+  ajouté **quatre** le 20/09. **Trois gels avaient cessé de collecter** (`foret_gel` 1 passage,
+  `foret_gel75` 2, `prod_reentraine` 1), processus vivants, travail en échec. Écriture atomique.
+- Et la correction ne prenait pas : les sept carnets tournaient avec **l'ancien module en mémoire**.
+  Relancés. `foret_gel75` est passé de 974 décisions figées (2,9 h de retard) à 1 033, retard 0,2 h.
+
+**CE QUI RESTE.** 24 tickets de comparaison, c'est peu : laisser le taux d'accord se confirmer sur
+une centaine. Et le rapport de gel du **top 5 %** est sorti au passage — 89 retenus, net −1,87 %,
+échoue (a), (b) et (c) : cela confirme le choix du **top 10 %** validé par Mido sur période commune
+(+0,462 contre −0,164).
