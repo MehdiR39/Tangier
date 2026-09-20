@@ -25,7 +25,7 @@ def test_il_surveille_tous_les_collecteurs():
     critiques = {"papier_combo", "social_collecte", "prix_rapide", "stock_collecte",
                  "foret_gel", "foret_gel75", "v1_enregistreur", "papier_gd45", "papier_gd30",
                  "papier_large", "veille_table", "carnet_json", "foret_flux", "foret_marche",
-                 "foret75_carnet", "foret_gagnant", "prod_reentraine"}
+                 "foret75_carnet", "foret_gagnant", "prod_reentraine", "foret75_iso"}
     manquants = critiques - set(gardien.COLLECTEURS)
     assert not manquants, "collecteurs non surveilles : %s" % sorted(manquants)
     assert len(gardien.COLLECTEURS) == len(set(gardien.COLLECTEURS)), "doublon dans COLLECTEURS"

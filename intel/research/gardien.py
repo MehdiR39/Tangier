@@ -55,7 +55,11 @@ COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte
                # le moteur continue de tourner sur le dernier fichier ecrit -- il ne s arrete pas,
                # il vieillit. C est precisement le genre de panne silencieuse que ce gardien existe
                # pour empecher : ici elle coute de l argent reel, pas des tickets de recherche.
-               "prod_reentraine")
+               "prod_reentraine",
+               # le MEME modele 75s gele, prive des six variables que le moteur ne saura pas
+               # produire a 75 s (images, robots, regime). Il mesure en marche avant ce que la
+               # production fera VRAIMENT, a cote du carnet complet qui continue de tourner.
+               "foret75_iso")
 PAS = 60.0
 JOURNAL = "/app/logs"
 

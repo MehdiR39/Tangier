@@ -71,6 +71,8 @@ SOURCES = [
      "FORET 75s REENTRAINEE 20 % et ses deux lignes de lecture"),
     ("foret_gagnant", "/app/data/recherche/foret_gagnant/carnet.sqlite", "decision", "t_dec", 450,
      "FORET GAGNANT 20 % et ses deux lignes de lecture"),
+    ("foret75_iso", "/app/data/recherche/foret75_iso/carnet.sqlite", "decision", "t_dec", 450,
+     "FORET 75s ISO-MOTEUR (le modele prive de ce que le moteur ne peut pas calculer)"),
 ]
 
 
@@ -81,6 +83,7 @@ _compteurs: dict[str, tuple[int, float]] = {}       # table sans horodatage -> (
 # tests/intel_tests/test_veille_table.py, qui lit ORDRE dans table_std2.py et echoue si UNE ligne
 # n est pas ici. Ajouter une ligne a la table sans la surveiller devient donc impossible en silence.
 LIGNES = {
+    "FORET 75s ISO-MOTEUR": "foret75_iso",
     "FORET FLUX 30s (gelee)": "foret_flux",
     "FORET REENTRAINEE 6h": "foret_marche",
     "FORET 75s REENTRAINEE 20 %": "foret75_carnet",

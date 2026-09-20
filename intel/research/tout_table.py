@@ -312,63 +312,14 @@ def transactions(df: pd.DataFrame) -> pd.DataFrame:
                     continue
                 pools.append((float(d.get("naissance") or 0), d))
     pools.sort(key=lambda x: x[0])
+    # LE CALCUL EST DANS `v1_traits`, PARTAGE AVEC LE MOTEUR. Il etait ici ; le moteur doit
+    # produire les memes variables en direct a 75 s, et les ecrire deux fois garantirait qu elles
+    # finissent par differer d un filtre d age ou d un signe. Une fonction, deux appelants.
+    from v1_traits import traits
     for naiss, d in pools:
         pair = d.get("pair")
-        achats, ventes = [], []
-        acheteurs, vendeurs = set(), set()
-        premier = None
-        robots, sol_robots = 0, 0.0
-        sol_par_wallet: defaultdict[str, float] = defaultdict(float)
-        jet_par_wallet: defaultdict[str, float] = defaultdict(float)
-        for tx in d.get("tx") or []:
-            try:
-                age, parts = int(tx[0]), tx[2]
-            except Exception:  # noqa: BLE001
-                continue
-            if age > AGE_V1:
-                continue
-            for p in parts or []:
-                try:
-                    q, dj, ds = str(p[0]), float(p[1]), float(p[2])
-                except Exception:  # noqa: BLE001
-                    continue
-                sol_par_wallet[q] += ds
-                jet_par_wallet[q] += dj
-                if dj > 0 and ds < 0:
-                    achats.append(-ds)
-                    acheteurs.add(q)
-                    if premier is None:
-                        premier = age
-                    if len(vus[q]) >= RECURRENT:          # recurrent AVANT ce jeton
-                        robots += 1
-                        sol_robots += -ds
-                elif dj < 0 and ds > 0:
-                    ventes.append(ds)
-                    vendeurs.add(q)
-        sans_achat = [v for q, v in sol_par_wallet.items() if v > 0 and q not in acheteurs]
-        sa, sv = sum(achats), sum(ventes)
-        gini = None
-        if len(achats) >= 2:
-            a = sorted(achats)
-            n = len(a)
-            gini = (2 * sum((i + 1) * x for i, x in enumerate(a)) / (n * sum(a)) - (n + 1) / n) if sum(a) > 0 else None
-        feats[pair] = {
-            "v1_n_achats": len(achats), "v1_n_ventes": len(ventes),
-            "v1_acheteurs": len(acheteurs), "v1_vendeurs": len(vendeurs),
-            "v1_sol_achats": sa, "v1_sol_ventes": sv,
-            "v1_ratio_ventes": (sv / sa) if sa > 0 else None,
-            "v1_premier_achat": premier,
-            "v1_achat_median": st.median(achats) if achats else None,
-            "v1_achat_max": max(achats) if achats else None,
-            "v1_gini_achats": gini,
-            "v1_robots": robots,
-            "v1_part_robots": (sol_robots / sa) if sa > 0 else None,
-            "v1_vendeurs_sans_achat": len(sans_achat),
-            "v1_sol_sans_achat": sum(sans_achat),
-            "v1_part_sans_achat": (sum(sans_achat) / sv) if sv > 0 else None,
-        }
-        for q in acheteurs:
-            vus[q].add(pair)
+        feats[pair] = traits(d.get("tx"), AGE_V1, vus=vus, pair=pair)
+
     x = pd.DataFrame.from_dict(feats, orient="index")
     out = df.merge(x, left_on="pair", right_index=True, how="left")
     print("L  transactions <= %d s : %d/%d" % (AGE_V1, out["v1_n_achats"].notna().sum(), len(out)), flush=True)
