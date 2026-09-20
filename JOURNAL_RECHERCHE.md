@@ -80,6 +80,14 @@ Seul `FORET GAGNANT 20 %` peut trancher, sur des tickets jamais regardés. Gelé
 « hypothèse mesurée », jamais « fermé ».** (Mido, 20/09 : *« tu as dit que tu as fermé ça — qu'est-ce
 qu'on a fait pour la fermer ? »* Réponse : rien encore.)
 
+### 0.2 ter — L OUTIL QUI TRANCHE : l ARBITRE (§3.166)
+
+`data/arbitre.json`, refait a chaque passe, visible en tete de l onglet Strategies. Pour chaque
+candidate : sur les tickets que le MOTEUR a reellement achetes, qu aurait-elle dit ? Euros lus au
+portefeuille, comparaison APPARIEE (donc bruit de la difference, pas du niveau). **C est la seule
+mesure qui puisse justifier de changer la production** -- tout le reste compare a un temoin papier.
+Une candidate qui decide a 75 s y est marquee NON COMPARABLE : le moteur achete a 47 s.
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
@@ -8400,3 +8408,45 @@ les deux moitiés de signe opposé** : c'était du bruit.
 3. Le taux de gagnants monte de **24 % à 60 s jusqu'à 51 % à 287 s** pendant que la moyenne reste
    plate : tenir plus longtemps rattrape des tickets, mais ce qu'il rattrape est petit et ce qu'il
    encaisse en face est gros. Cohérent avec une queue gauche lourde, pas avec une piste.
+
+### 3.166 — L'ARBITRE : chaque candidate contre le moteur, en euros réels, 2026-09-20 21h00
+
+**Mido :** *« je trouve qu'il manque des indicateurs d'analyse pour les strats ; on sélectionne les
+gagnantes automatiquement et on les analyse »*, puis *« feel free de faire ce que tu veux de l'app »*.
+
+**LE TROU.** Toutes les lignes de la page comparaient une stratégie à un **témoin papier**. Aucune
+ne demandait : *sur les tickets que le moteur a RÉELLEMENT achetés, qu'aurait dit la candidate ?*
+C'est pourtant la seule mesure qui porte sur de vrais euros — `gain_eur` est lu au portefeuille,
+aucun modèle de coût ne s'interpose — et la seule qui réponde à la question qu'on se pose vraiment.
+Et elle est **appariée**, donc beaucoup plus rapide : §3.165 a rendu lisible 0,14 €/ticket là où un
+niveau absolu en demande 3 000.
+
+```
+ARBITRE — 591 tickets réels clôturés
+                              communs  gardés   le moteur   la candidate    σ      €/jour
+FORET REENTRAINEE 6h              268     244    −0,1248      +0,0276     +1,42     +63
+FORET 45s top 5 % (gelée)         326      33    +0,2053      +0,3016     +0,09      +3
+FORET 45s top 10 % (lecture)      326      89    +0,2053      +0,0941     −0,20     −10
+```
+
+**ET LE PREMIER RÉSULTAT CONTREDIT CE QUE J'AVAIS ÉCRIT LE MATIN MÊME.** J'avais enterré
+`FORET REENTRAINEE 6h` sur son **niveau papier** (−1,9 €/ticket, cible vidage, §3.159). Sur les
+**euros réels du moteur** elle améliore : elle n'écarte que 24 tickets sur 268, mais ces 24 coûtaient
+cher. Les deux sont vrais et ne se contredisent pas : **elle est mauvaise pour choisir quoi acheter
+dans l'absolu, et utile pour écarter le pire de ce que le moteur prend déjà.** C'était invisible
+tant qu'on ne comparait qu'à un témoin papier. +1,42 σ : non prouvé, et elle ne rentre pas dans les
+candidates pour autant.
+
+**Les candidates à 75 s sont marquées NON COMPARABLES et exclues** : elles décident à 75 s quand le
+moteur achète à 47 s — ce ne sont pas les mêmes tickets au même instant.
+
+**CE QUE LA PAGE A GAGNÉ AVEC (§3.161 et ici).**
+1. **Les candidates se choisissent seules** : six critères, sélection automatique, et ce qui manque
+   aux recalées est affiché. Plus de tri à l'œil — c'est comme ça que `BANDE + PAUSE` est restée en
+   tête trois jours (§3.163).
+2. **La part du gain portée par les 3 meilleurs tickets.** `G+D les trois` : **109 %** — négative
+   sans eux. `G+D à 45 s` : **171 %**. `BANDE + PAUSE` : **68 %**. Les trois candidates : **16-20 %**.
+3. **L'échéance de chaque gel**, en barre de progression avec les jours restants au rythme observé.
+   Une ligne **sans critère écrit d'avance** le dit : elle ne pourra jamais être déclarée prouvée,
+   seulement observée.
+4. **L'arbitre**, ci-dessus.
