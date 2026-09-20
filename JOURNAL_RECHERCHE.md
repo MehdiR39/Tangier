@@ -93,7 +93,9 @@ qu'on a fait pour la fermer ? »* Réponse : rien encore.)
 
 ### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
 
-**Le levier « commission variable par jeton »** (§3.160 : plat à 1,53 %, l'écart annoncé était un
+**La BANDE de risque [0,20 ; 0,35[** (§3.162 : −3,23 σ depuis son gel, pire que ne rien filtrer ;
+et aucune autre fenêtre ne survit hors échantillon) · **la PAUSE** (§3.162 : p = 0,060 contre des
+plages décalées, et 3 tickets sur 80 portent 91 % du gain) · **Le levier « commission variable par jeton »** (§3.160 : plat à 1,53 %, l'écart annoncé était un
 artefact de résolution) · `PISTE FOULE` (−2,60 σ, prouvée pire que le hasard) · régime+risque · le découpage de l'ordre
 (§3.120 : gain 0,036 % pour 3,17 points à rembourser) · la copie de bons traders · le frein de
 marché (§3.125) · la variable de coût dans le modèle (dégrade : +0,281 contre +0,363, §3.157).
@@ -8200,3 +8202,53 @@ trié par σ et jeté tout ce qui était sous 2. Chaque ligne prise seule est so
 n'apparaît qu'en les groupant**, et je ne les avais jamais groupées. Une stratégie se juge sur
 plusieurs axes à la fois ; une seule qui passe ne vaut rien — c'est ce qui a mis le frein en
 production (§3.125).
+
+### 3.162 — La bande est morte, la pause ne tient pas la barre dure, 2026-09-20 18h00
+
+**Mido, après que j'aie cité l'en-tête de gel de `BANDE + PAUSE` comme un argument :** *« le
+document c'est pas la bible, ça a été écrit par nous, c'est les chiffres qui parlent. Et si t'es pas
+satisfait de la façon dont la bande est déterminée, trouve mieux, c'est ton travail. »* Fait.
+
+**LA BANDE [0,20 ; 0,35[ EST MORTE, et son critère est tranché.** Depuis son propre gel
+(1 933 tickets) : **−1,157 €/ticket, −1 039 €, −3,23 σ** — et **pire que ne rien filtrer**
+(−0,799 €/ticket). Elle ne franchit aucune de ses conditions pré-enregistrées.
+
+**ET IL N'Y A PAS DE MEILLEURE BANDE.** `bande_refaite.py` balaie toutes les fenêtres de 0 à 0,70
+par pas de 0,025 sur la **première moitié** chronologique, puis juge sur la **seconde**, jamais
+regardée. La meilleure trouvée, [0,225 ; 0,275[, fait **+0,699** là où elle a été choisie et
+**−0,772** sur la moitié suivante. Effondrement complet. Par tranche, sur 3 292 tickets, une seule
+n'est pas perdante : **[0,05 ; 0,10[ à +0,067 €/ticket, 75 % de gagnants** — c'est-à-dire la zone
+« trop sûre » que la bande excluait exprès. Le raisonnement d'origine (§ bande, 17/09) est donc
+contredit par l'argent, pas seulement la borne.
+
+**LA PAUSE : ELLE PASSE LA BARRE FAIBLE, PAS LA DURE.** `pause_verdict.py`, sur les 815 tickets de
+la bande depuis le gel de `BANDE + PAUSE` :
+
+```
+BANDE seule          815 tickets   −1,443 €/ticket   −1 176 €
+BANDE + PAUSE         80 tickets   +2,141 €/ticket     +171 €
+
+BARRE A  sous-ensembles au hasard de même taille (le test de §3.111)   p = 0,016   passe
+BARRE B  MÊMES plages de pause, décalées dans le temps                 p = 0,060   NON
+```
+
+**Pourquoi la barre B et pas seulement A.** §3.111 tirait des tickets au hasard — un adversaire trop
+faible, parce que la pause ne choisit pas des tickets mais **des plages d'heures**. La barre B garde
+la forme exacte des plages (mêmes durées, même nombre) et les fait glisser circulairement dans le
+temps : elle ne perd que le lien avec les **vraies** chutes. **6 % des décalages font aussi bien.**
+L'essentiel du gain vient donc de « prendre des paquets d'heures », pas de « réagir aux chutes ».
+
+**Et le contrôle de §3.111 tient toujours** : avec ses 3 meilleurs **+2,141 €/ticket**, sans eux
+**+0,204**. **Trois tickets sur 80 portent 91 % du gain.** La conclusion du 18/09 n'a pas bougé,
+elle s'est affinée : de p = 0,070 à p = 0,060 sur le test dur, avec six fois plus de tickets.
+
+**CORRECTION DE LA GRILLE DE §3.161.** Le critère `sans3 > 0` était trop laxiste : `BANDE + PAUSE`
+le passait à +0,204 après avoir perdu 91 % de son avance. Une ligne qui survit à ses trois meilleurs
+en gardant des miettes n'a pas d'edge, elle a eu trois coups. `table_std2.py` rend désormais
+`sans3_part`, **la part de l'avance qui survit** ; le seuil est la moitié. Avec ce critère
+`BANDE + PAUSE` passe de 6/7 à **5/7** et quitte la tête du tableau.
+
+**CE QUE ÇA LAISSE DEBOUT.** Les trois lignes de tête deviennent les carnets à cible « gagnant
+net » : `FORET 75s top 10 %` (86 % de gagnants), `FORET 75s top 5 %` (89 %), `FORET 75s REENTRAINEE`
+(92 %). Elles, leur avance ne tient pas à trois tickets — c'est précisément ce que mesure un taux de
+gagnants à 86-92 % contre 41-63 % pour tout le reste du tableau.

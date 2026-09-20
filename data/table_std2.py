@@ -646,6 +646,12 @@ if _sortie:
             "moitie_1": round(sum(nets[:mi]) / mi, 4) if mi else None,
             "moitie_2": round(sum(nets[mi:]) / (n - mi), 4) if n - mi else None,
             "sans3": round(sum(s[:-3]) / (n - 3), 4) if n > 3 else None,
+            # `sans3 > 0` etait TROP LAXISTE : `BANDE + PAUSE` le passait a +0,204 apres avoir perdu
+            # 91 % de son avance (+2,141 -> +0,204, 3 tickets sur 80 portaient tout). Une ligne qui
+            # survit a ses trois meilleurs en gardant des miettes n a pas d edge, elle a eu trois
+            # coups. On rend donc la PART de l avance qui survit : c est elle qu il faut lire.
+            "sans3_part": (round(max(0.0, sum(s[:-3]) / (n - 3)) / (tot / n), 3)
+                           if n > 3 and tot > 0 else None),
             "gagnants_pct": round(100.0 * sum(1 for x in nets if x > 0) / n, 1),
             "pire": round(min(nets), 2), "meilleur": round(max(nets), 2),
         }
