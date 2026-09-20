@@ -45,7 +45,12 @@ COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte
                # rechoisies a chaque coupe, SEUIL ABSOLU a 20 %. Ce qui se refait toutes les 6 h,
                # c est aussi le seuil -- c est la l essentiel de l effet mesure (§3.158). Papier,
                # zero euro, critere a 400 retenus, dont une condition sur le NIVEAU.
-               "foret75_carnet")
+               "foret75_carnet",
+               # la BONNE QUESTION, gelee le 20/09 : cible « gagnant net » au lieu de « pas de
+               # vidage », seuil absolu a 20 %, reentrainee toutes les 6 h. §3.159 : demander
+               # « ne t effondre pas » selectionne l immobilite, et l immobilite paie le peage.
+               # Papier, zero euro, deux echeances : 400 retenus puis 2 000.
+               "foret_gagnant")
 PAS = 60.0
 JOURNAL = "/app/logs"
 
