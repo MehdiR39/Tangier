@@ -88,6 +88,25 @@ portefeuille, comparaison APPARIEE (donc bruit de la difference, pas du niveau).
 mesure qui puisse justifier de changer la production** -- tout le reste compare a un temoin papier.
 Une candidate qui decide a 75 s y est marquee NON COMPARABLE : le moteur achete a 47 s.
 
+### 0.2 quater — LE FIL OUVERT DU 20/09 AU SOIR : le compteur de couts s arrete
+
+Mido, 20/09 23h : « le probleme si on met rien en prod maintenant, on aura plus le suivi des frais
+qui aide a evaluer les strats qu on teste, non ? ». Il a raison, et c est le prix de la mise en
+papier : le registre des couts se nourrit des tickets REELS. Il est fige a **648 tickets, 19h13**.
+
+CE QUE CA COUTE, chiffre : le cout varie fort d une heure a l autre (2,20 % a 7,81 % sur des heures
+a ~20 tickets), donc c est la MOYENNE sur 648 tickets qui vaut, pas une heure de plus. Une nuit
+d interruption ne deplace pas ce chiffre. **Mais rester en papier plusieurs jours le laisse
+vieillir**, et c est lui qui evalue TOUTES les lignes de la page.
+
+CE QUE COUTERAIT DE REBRANCHER pour mesurer : il faudrait le faire a 10 EUR et pas moins -- a 5 EUR
+les frais fixes pesent deux fois plus et la mesure ne serait plus representative (4,04 % a 10 EUR
+contre 3,88 % a 20). A ~450 tickets la nuit et ~0,4 EUR de perte par ticket, **~180 EUR par nuit**
+pour racheter une information deja disponible a 648 exemplaires.
+
+**A ROUVRIR si le 75 s n est pas valide sous quelques jours** -- en connaissance de cause, avec ce
+chiffre en face, pas par oubli.
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
