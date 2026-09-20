@@ -107,12 +107,20 @@ class ModeleRapide:
         On choisit d apres le CONTENU du fichier, pas d apres son nom : brancher la foret ne doit
         pas demander de se souvenir de quel loader va avec quel fichier.
         """
-        if self._modele is None:
+        # RECHARGER QUAND LE FICHIER CHANGE. Le modele etait charge UNE FOIS et garde en memoire :
+        # un modele reentraine toutes les 6 h n aurait jamais ete pris en compte avant un
+        # redemarrage, et on aurait cru tourner dessus. On compare donc la date du fichier a
+        # chaque cycle -- une lecture de metadonnee, negligeable a cote d un cycle de decision.
+        chemin = self._cfg("modele", MODELE)
+        try:
+            horodate = os.path.getmtime(chemin)
+        except OSError:
+            horodate = None
+        if self._modele is None or (chemin, horodate) != getattr(self, "_modele_source", None):
             import sys
             d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "research")
             if d not in sys.path:
                 sys.path.insert(0, d)
-            chemin = self._cfg("modele", MODELE)
             with open(chemin, encoding="utf-8") as f:
                 forme = json.load(f)
             if "tree_info" in forme:
@@ -126,6 +134,7 @@ class ModeleRapide:
             else:
                 raise ValueError("modele_rapide: format inconnu pour %s (ni tree_info ni modeles)"
                                  % chemin)
+            self._modele_source = (chemin, horodate)
             log.info("modele_rapide: modele charge depuis %s (%d arbres, seuil %.4f)",
                      os.path.basename(chemin), n, self._modele.seuil_p80)
         return self._modele
@@ -174,6 +183,25 @@ class ModeleRapide:
         f["lancements_10min"] = bisect_right(lancements, t_dec) - bisect_right(lancements, t_dec - 600)
         return f
 
+    def _seuil(self) -> float:
+        """Le seuil de decision, qu il soit ecrit dans la config ou porte par le modele.
+
+        `seuil_risque: auto` le prend dans le FICHIER du modele. C est indispensable des lors que
+        le modele se reentraine : ses scores se redistribuent a chaque entrainement, et un nombre
+        fige dans la config ne garderait plus la meme proportion de tickets -- il deriverait en
+        silence, exactement comme le seuil des gels (§3.158 : 40 tickets gardes la ou il en
+        fallait 110).
+
+        UN SEUL ENDROIT POUR CETTE LECTURE, et c est le but de cette methode : `seuil_risque` etait
+        lu a DEUX endroits, et le second faisait `float(...)` directement. Avec `auto` il aurait
+        lance une exception a chaque cycle -- rattrapee par un `except` qui fait « laisser passer »
+        le frein, donc sans rien casser de visible et sans que personne ne le sache.
+        """
+        brut = self._cfg("seuil_risque", 0.2694)
+        if isinstance(brut, str) and brut.strip().lower() == "auto":
+            return float(self._charge_modele().seuil_p80)
+        return float(brut)
+
     def retenu(self, f: dict, risque: float, regle: str | None = None) -> bool:
         """La regle en service. NaN ecarte AVANT toute comparaison.
 
@@ -198,8 +226,12 @@ class ModeleRapide:
         """
         r = (regle or self._cfg("regle", "risque")).lower()
         if r == "risque":
-            seuil = float(self._cfg("seuil_risque", 0.2694))
-            return risque <= seuil
+            # `seuil_risque: auto` -> le seuil vient du FICHIER du modele, pas de la config.
+            # Indispensable des lors que le modele se reentraine : ses scores se redistribuent a
+            # chaque entrainement, et un seuil fige dans la config ne garderait plus la meme
+            # proportion de tickets -- il deriverait en silence. C est exactement la derive
+            # mesuree sur les gels (40 tickets gardes la ou il en fallait 110, §3.158).
+            return risque <= self._seuil()
         if r == "bas_bande":
             x = f.get("depuis_min")
             if x is None or x != x:
@@ -270,7 +302,7 @@ class ModeleRapide:
                 " WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL AND d.risque IS NOT NULL"
                 " AND d.risque <= ? AND d.t_dec + ? <= ?"
                 " ORDER BY d.t_dec DESC LIMIT ?",
-                (float(self._cfg("seuil_risque", 0.2694)), TENUE_S, now, fen)).fetchall()
+                (self._seuil(), TENUE_S, now, fen)).fetchall()
             cn.close()
         except Exception as exc:  # noqa: BLE001
             log.warning("modele_rapide: frein illisible (%s) — on laisse passer", str(exc)[:80])

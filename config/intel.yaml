@@ -1176,8 +1176,36 @@ modele_rapide:
   #   - on reevalue a 500 tickets dans tous les cas.
   # Rien de tout cela ne se renegocie apres coup.
   # ================================================================================================
-  modele: /app/data/recherche/balayage/foret_vidage.json
-  seuil_risque: 0.2764636667438582   # le seuil p80 de la FORET, calcule sur ses donnees d apprentissage
+  # ================================================================================================
+  # BASCULE DU 20/09 au soir : LE MODELE SE REENTRAINE TOUTES LES 6 H.
+  #
+  # CE QUI A ETE MESURE, et c est la seule mesure en EUROS REELS du projet (§3.166, `arbitre_prod`).
+  # Sur les 268 tickets que le moteur a REELLEMENT achetes, la recette reentrainee en garde 244 et
+  # fait passer le carnet de -0,1248 a +0,0276 EUR/ticket. Ecart +0,1525 ; intervalle 95 % de
+  # -0,062 a +0,367 ; soit **+63 EUR/jour, intervalle -26 a +153**. Les 24 tickets qu elle ecarte
+  # valent -1,675 EUR piece. C est +1,42 sigma : NON PROUVE.
+  #
+  # POURQUOI ON BASCULE QUAND MEME, et la decision est celle de Mido, pas la mienne. Le risque n est
+  # pas symetrique : elle ne remplace pas le jugement du moteur, elle ECARTE 9 % de ce qu il prend.
+  # Si c est du bruit on trade 9 % moins et on ne perd rien ; si c est reel c est +63 EUR/jour.
+  # J avais oppose a ce raisonnement que « 2 sigma » n etait pas franchi -- mais 2 sigma est un
+  # seuil de PREUVE, pas un seuil de DECISION, et pour un changement dont le pire cas est borne
+  # c est l esperance qui tranche. Mido : « on bascule en prod la meilleure et pas de critere
+  # d arret ». Puis, apres que je lui aie signale qu il en existait un ci-dessus et que je m etais
+  # trompe en disant le contraire : « je m en fous du critere d arret du modele en prod, passe ».
+  # Le critere ecrit plus haut portait sur le modele FIGE ; il ne s applique plus a ce qui suit.
+  #
+  # CE QUI EST VERIFIE AVANT CHAQUE ECRITURE DU FICHIER (`prod_reentraine.py`) : l export sklearn
+  # -> JSON est rejoue contre sklearn sur 2 000 lignes, et rien n est ecrit si une seule decision
+  # differe. Dernier controle : ecart max 8,33e-16, 100 % de decisions identiques.
+  # L original du 15/09 est conserve : `foret_vidage_fige_15-09.json`. Y revenir = remettre les
+  # deux lignes ci-dessous a leur valeur d avant.
+  # ================================================================================================
+  modele: /app/data/recherche/balayage/foret_vidage_reentraine.json
+  # `auto` : le seuil vient du FICHIER, recalcule a chaque entrainement. Un seuil fige ici
+  # garderait une proportion de tickets differente a chaque reentrainement, et deriverait en
+  # silence -- la derive exacte mesuree sur les gels (§3.158 : 40 tickets gardes contre 110).
+  seuil_risque: auto
   # LE FREIN DU MARCHE : DEBRANCHE le 18/09 a 19h30 Paris, apres 24 h en production. Mido : « mec
   # c est toi qui a dit le frein fonctionne ». Il avait raison de le demander, et la verification
   # lui donne raison sur le fond.

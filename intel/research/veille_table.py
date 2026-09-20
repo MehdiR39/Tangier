@@ -59,6 +59,18 @@ SOURCES = [
     ("prix_rapide", f"{DB}/prix_rapide.sqlite", "prix", "ts", 20, "prix a 1 s"),
     ("moteur_prix", f"{DB}/intel.sqlite", "solana_prix_chaine", "ts", 20, "LA SOURCE DE TOUT"),
     ("telegram", f"{DB}/intel.sqlite", "tg_lignes", "ts_entree", 180, "ENTREE T+75"),
+    # LES CARNETS REENTRAINES, ajoutes les 19 et 20/09. Chacun a sa propre base et sa propre
+    # cadence : ils notent par coupes de 6 h, donc une tolerance large (450 min) -- la meme que
+    # les gels de foret. Sans ces lignes, un carnet mort ne serait signale par personne : le test
+    # `test_chaque_ligne_de_la_table_a_une_source_surveillee` l a attrape le 20/09.
+    ("foret_flux", "/app/data/recherche/foret_flux/carnet.sqlite", "decision", "t_dec", 450,
+     "FORET FLUX 30s"),
+    ("foret_marche", "/app/data/recherche/foret_marche/carnet.sqlite", "decision", "t_dec", 450,
+     "FORET REENTRAINEE 6h"),
+    ("foret75_carnet", "/app/data/recherche/foret75_carnet/carnet.sqlite", "decision", "t_dec", 450,
+     "FORET 75s REENTRAINEE 20 % et ses deux lignes de lecture"),
+    ("foret_gagnant", "/app/data/recherche/foret_gagnant/carnet.sqlite", "decision", "t_dec", 450,
+     "FORET GAGNANT 20 % et ses deux lignes de lecture"),
 ]
 
 
@@ -69,6 +81,14 @@ _compteurs: dict[str, tuple[int, float]] = {}       # table sans horodatage -> (
 # tests/intel_tests/test_veille_table.py, qui lit ORDRE dans table_std2.py et echoue si UNE ligne
 # n est pas ici. Ajouter une ligne a la table sans la surveiller devient donc impossible en silence.
 LIGNES = {
+    "FORET FLUX 30s (gelee)": "foret_flux",
+    "FORET REENTRAINEE 6h": "foret_marche",
+    "FORET 75s REENTRAINEE 20 %": "foret75_carnet",
+    "FORET 75s REENTR. 10 % (lecture)": "foret75_carnet",
+    "FORET 75s REENTR. 5 % (lecture)": "foret75_carnet",
+    "FORET GAGNANT 20 %": "foret_gagnant",
+    "FORET GAGNANT 10 % (lecture)": "foret_gagnant",
+    "FORET GAGNANT 5 % (lecture)": "foret_gagnant",
     "temoin sans filtre": "papier_combo",
     "regime seul": "papier_combo",
     "RISQUE seul (modele)": "papier_combo",

@@ -50,7 +50,12 @@ COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte
                # vidage », seuil absolu a 20 %, reentrainee toutes les 6 h. §3.159 : demander
                # « ne t effondre pas » selectionne l immobilite, et l immobilite paie le peage.
                # Papier, zero euro, deux echeances : 400 retenus puis 2 000.
-               "foret_gagnant")
+               "foret_gagnant",
+               # LE REENTRAINEMENT DU MODELE EN PRODUCTION, branche le 20/09 au soir. S il meurt,
+               # le moteur continue de tourner sur le dernier fichier ecrit -- il ne s arrete pas,
+               # il vieillit. C est precisement le genre de panne silencieuse que ce gardien existe
+               # pour empecher : ici elle coute de l argent reel, pas des tickets de recherche.
+               "prod_reentraine")
 PAS = 60.0
 JOURNAL = "/app/logs"
 
