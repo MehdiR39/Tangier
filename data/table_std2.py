@@ -662,7 +662,29 @@ if _sortie:
                            if n > 3 and tot > 0 else None),
             "gagnants_pct": round(100.0 * sum(1 for x in nets if x > 0) / n, 1),
             "pire": round(min(nets), 2), "meilleur": round(max(nets), 2),
+            # D OU VIENT L ARGENT. La part du gain TOTAL portee par les 3 meilleurs tickets.
+            # `BANDE + PAUSE` en portait 91 % et figurait en tete du tableau (§3.163) : sans cette
+            # colonne, rien sur la page ne le disait.
+            "part_top3": (round(sum(s[-3:]) / tot, 3) if n > 3 and tot > 0 else None),
+            # La FORME, en dix points : une ligne qui gagne petit et souvent n a pas le meme profil
+            # qu une ligne portee par sa queue, et les deux ont la meme moyenne.
+            "deciles": [round(s[min(int(q * n), n - 1)], 2) for q in
+                        (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)],
         }
+
+    # LES ECHEANCES, pour que la page dise ce qui VA trancher et pas seulement ou on en est.
+    # Source : le critere pre-enregistre de chaque gel, lu dans son en-tete. Une strategie sans
+    # echeance ici est une regle sans critere ecrit d avance -- et c est une information en soi.
+    ECHEANCES = {
+        "FORET FLUX 30s (gelee)": ("retenus", 600),
+        "FORET REENTRAINEE 6h": ("tickets", 1200),
+        "FORET 75s REENTRAINEE 20 %": ("retenus", 400),
+        "FORET GAGNANT 20 %": ("retenus", 400),
+        "FORET 45s top 5 % (gelee)": ("retenus", 250),
+        "FORET 75s top 5 % (gelee)": ("retenus", 250),
+        "BANDE 0,20-0,35 (gelee)": ("retenus", 250),
+        "PISTE FOULE (gelee)": ("retenus", 250),
+    }
 
     _lignes = []
     for nom in ORDRE:
@@ -685,6 +707,8 @@ if _sortie:
             "jour": round(MISE * (sum(j) - len(j) * SUP), 2), "n_jour": len(j),
             "debut": debuts.get(nom), "courbe": _courbe(v), "par_jour": _par_jour(v),
             **_criteres(v),
+            "echeance": ECHEANCES.get(nom, (None, None))[1],
+            "echeance_quoi": ECHEANCES.get(nom, (None, None))[0],
         })
     # ECART-TYPE D UN TICKET, mesure sur le temoin -- toute la population, sans selection. C est lui
     # qui fixe ce qu on peut distinguer du hasard : un ecart plus petit que son propre bruit ne se

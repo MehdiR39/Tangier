@@ -327,6 +327,63 @@ def table_complete():
     c[3].metric("Mise", "%.0f €" % D["mise"], "par ticket", delta_color="off")
     st.caption("table · %s" % age(D["genere"]))
 
+    # ============================================================ LES CANDIDATES, choisies seules
+    # MIDO, 20/09 : « je trouve qu'il manque des indicateurs d'analyse pour les strats ; on
+    # sélectionne les gagnantes automatiquement et on les analyse ». La page montrait des
+    # RÉSULTATS mais jamais ce qui va les TRANCHER, et elle laissait trier à l'œil — c'est
+    # comme ça que BANDE + PAUSE est restée en tête trois jours alors que 91 % de son gain
+    # tenait à trois tickets (§3.163).
+    st.subheader("Les candidates")
+    CRIT = [
+        ("gagne de l'argent", lambda l: (l.get("niveau") or 0) > 0),
+        ("et par jour", lambda l: (l.get("eur_jour") or 0) > 0),
+        ("sur les DEUX moitiés", lambda l: (l.get("moitie_1") or 0) > 0 and (l.get("moitie_2") or 0) > 0),
+        ("garde ≥ 50 % sans ses 3 meilleurs", lambda l: (l.get("sans3_part") or 0) >= 0.5),
+        ("plus de 50 % de gagnants", lambda l: (l.get("gagnants_pct") or 0) > 50),
+        ("assez de tickets pour se lire (≥ 50)", lambda l: (l.get("n") or 0) >= 50),
+    ]
+    notes = []
+    for l in D["lignes"]:
+        if l["nom"] == "temoin sans filtre" or not (l.get("n") or 0):
+            continue
+        ok = [nom_ for nom_, f in CRIT if f(l)]
+        notes.append((len(ok), l, ok))
+    notes.sort(key=lambda z: (-z[0], -(z[1].get("niveau") or 0)))
+    retenues_auto = [z for z in notes if z[0] == len(CRIT)]
+    if not retenues_auto:
+        st.info("Aucune ligne ne passe les %d critères aujourd'hui. Les meilleures en passent %d."
+                % (len(CRIT), notes[0][0] if notes else 0))
+        retenues_auto = notes[:3]
+    for score, l, ok in retenues_auto[:5]:
+        manque = [nom_ for nom_, _ in CRIT if nom_ not in ok]
+        with st.container(border=True):
+            c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+            c1.markdown("**%s**  \n%d/%d critères" % (l["nom"], score, len(CRIT)))
+            c2.metric("€/ticket", "%+.2f" % (l.get("niveau") or 0))
+            c3.metric("€/jour", "%+.0f" % (l.get("eur_jour") or 0))
+            c4.metric("gagnants", "%.0f %%" % (l.get("gagnants_pct") or 0))
+            if manque:
+                st.caption("⚠️ ne passe pas : " + " · ".join(manque))
+            # CE QUI VA LA TRANCHER, et quand. Sans ça la page dit où on en est, jamais ce qu'on attend.
+            e, quoi = l.get("echeance"), l.get("echeance_quoi")
+            if e:
+                fait = l["n"]
+                reste = max(0, e - fait)
+                vit = (l.get("tickets_jour") or 0)
+                st.progress(min(1.0, fait / e),
+                            text="échéance : %d / %d %s%s" % (fait, e, quoi or "tickets",
+                                 (" — encore ~%.1f jour(s)" % (reste / vit)) if vit > 0 and reste else
+                                 (" — ÉCHÉANCE ATTEINTE" if not reste else "")))
+            else:
+                st.caption("Aucun critère écrit d'avance pour cette ligne — elle ne pourra jamais "
+                           "être déclarée prouvée, seulement observée.")
+            d_ = l.get("deciles")
+            if d_ and l.get("part_top3") is not None:
+                st.caption("Ses 3 meilleurs tickets portent **%.0f %%** du gain. "
+                           "Répartition, du pire au meilleur décile : %s"
+                           % (100 * l["part_top3"], " · ".join("%+.1f" % x for x in d_)))
+
+    st.divider()
     st.subheader("Contre le témoin")
     st.caption("Une stratégie qui n'a tourné qu'un bon après-midi paraît brillante par accident. "
                "Chacune est comparée à « acheter tout » **sur sa propre période** — même marché, "
