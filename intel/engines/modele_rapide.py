@@ -781,23 +781,44 @@ class ModeleRapide:
         return None
 
     def _cumul(self) -> str:
-        """Le cumul de CE carnet seulement, lu sur `mr_lignes`.
+        """Le cumul de LA METHODE EN SERVICE, lu sur `mr_lignes`.
 
         Une ligne dont le resultat n est pas encore lu sur la chaine n entre pas dans le total,
         plutot que d y entrer a zero.
+
+        LE TOTAL REPART A LA MISE EN SERVICE D UNE METHODE, il ne cumule pas depuis le 18/09.
+        Mido, 21/09 : « t as pas remis a 0 le message Telegram, on a toujours les chiffres anciens
+        256 / 658 -- remets les chiffres a partir qu on a mis en place la nouvelle strat ». Il a
+        raison et ce n est pas cosmetique : additionner `BANDE + PAUSE` avec les 650 tickets des
+        regles qui l ont precedee -- dont `FORET REENTRAINEE 6h`, qui a perdu 45,75 EUR en une
+        heure -- rend le chiffre du telephone incapable de dire si ce qui tourne AUJOURD HUI
+        gagne. C est le meme defaut de lecture que le P&L en 24 h glissantes.
+
+        `cumul_depuis` est l instant (epoch) de la mise en service. A CHANGER en meme temps que la
+        methode, jamais separement : le total doit toujours porter sur UNE regle. Zero = tout
+        l historique, comme avant.
         """
+        depuis = float(self._cfg("cumul_depuis", 0) or 0)
         try:
             r = self.ctx.db.query(
                 "SELECT COUNT(*) n, COALESCE(SUM(gain_eur),0) g, COALESCE(SUM(mise_eur),0) m,"
                 " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w FROM mr_lignes"
-                " WHERE mode='live' AND gain_eur IS NOT NULL")
+                " WHERE mode='live' AND gain_eur IS NOT NULL AND ts_entree >= ?", (depuis,))
             o = self.ctx.db.query(
                 "SELECT COUNT(*) n, COALESCE(SUM(mise_eur),0) m FROM mr_lignes"
-                " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL")
+                " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL"
+                " AND ts_entree >= ?", (depuis,))
         except Exception:  # noqa: BLE001
             return ""
         n = int(r[0]["n"] or 0) if r else 0
-        bloc = ["", "━━━━━━━━━━━━━━", "<i>carnet MODELE (depuis le 18/09)</i>"]
+        # LA DATE EST DERIVEE DE `cumul_depuis`, jamais ecrite en dur : une date figee dans le
+        # texte survivrait au changement de methode et mentirait sans que rien ne le signale.
+        # C est exactement ce qui vient d arriver avec « depuis le 18/09 ».
+        import datetime as _dt
+        quand = (_dt.datetime.fromtimestamp(depuis, _dt.timezone(_dt.timedelta(hours=2)))
+                 .strftime("depuis le %d/%m %Hh%M") if depuis else "tout l historique")
+        bloc = ["", "━━━━━━━━━━━━━━",
+                "<i>%s · %s</i>" % (str(self._cfg("regle", "?")).upper(), quand)]
         if n:
             g, m, w = float(r[0]["g"]), float(r[0]["m"]) or 1.0, int(r[0]["w"] or 0)
             bloc.append("%+.2f EUR · %d trades, %.0f %% won, %+.3f/eur"

@@ -132,14 +132,20 @@ niveau non (+1,27 σ). **Ne rien conclure avant.** Portefeuille au départ : 0,6
 
 ### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
 
+**UN VERDICT A ÉTÉ ANNULÉ ICI, et il faut savoir pourquoi.** `BANDE + PAUSE` a figuré dans cette
+liste (§3.162-63 : *« ses +171 € sont TROIS tickets sur 80, sans eux il reste +16 € »*). Elle en
+est **sortie le 21/09** et elle est **en production réelle** (§3.169). Ce n'est pas un revirement
+d'humeur : le critère qui la condamnait était **faux**. Exiger qu'une stratégie reste positive
+*sans ses trois meilleurs tickets* n'a pas de sens sur des queues lourdes, où 5 % des jetons
+portent 315 % du rendement — ce test rejette le mécanisme gagnant lui-même. Mido : *« sur des mèmes
+tu t'attends à quoi, que ta sélection fasse 100 % ? »*. Remplacé par un **test de queue
+hypergéométrique exact** : la sélection attrape-t-elle les gros gains plus qu'un tirage au sort de
+même taille ? Réponse p = 0,000 à 0,040 — oui. **Leçon générale : avant de déclarer une piste
+morte, vérifier que le critère qui la tue est valide sur la forme de la distribution.**
+
 **L AGE DE SORTIE** (§3.165 : six ages compares en apparie sur 3 323 tickets, aucun ne bat les
 287 s du moteur, motif sans ordre, le meilleur a +1,22 sigma avec les deux moities de signe
-oppose) · **`BANDE + PAUSE`** (§3.162-63 : ses +171 EUR sont TROIS tickets sur 80, soit 91 % du resultat ;
-sans eux il reste +16 EUR. La bande perd, la pause degrade ailleurs -- il ne reste qu un coup de
-chance. Elle continue de tourner car son critere est pre-enregistre, mais elle n est plus une
-candidate et ne doit plus etre citee en tete de tableau) · **La BANDE de risque [0,20 ; 0,35[** (§3.162 : −3,23 σ depuis son gel, pire que ne rien filtrer ;
-et aucune autre fenêtre ne survit hors échantillon) · **la PAUSE** (§3.162 : p = 0,060 contre des
-plages décalées, et 3 tickets sur 80 portent 91 % du gain) · **Le levier « commission variable par jeton »** (§3.160 : plat à 1,53 %, l'écart annoncé était un
+oppose) · **Le levier « commission variable par jeton »** (§3.160 : plat à 1,53 %, l'écart annoncé était un
 artefact de résolution) · `PISTE FOULE` (−2,60 σ, prouvée pire que le hasard) · régime+risque · le découpage de l'ordre
 (§3.120 : gain 0,036 % pour 3,17 points à rembourser) · la copie de bons traders · le frein de
 marché (§3.125) · la variable de coût dans le modèle (dégrade : +0,281 contre +0,363, §3.157).

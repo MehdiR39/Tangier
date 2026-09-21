@@ -1169,6 +1169,14 @@ modele_rapide:
   # impose un plafond que Mido n avait pas demande et il a arrete le carnet en pleine journee.
   # Ce chiffre lui appartient.
   mode: live                   # paper | live
+  # LE CUMUL TELEGRAM REPART D ICI. Instant de mise en service de la methode courante :
+  # 21/09/2026 09h56 (Paris). Mido, le jour meme : « remets les chiffres a partir qu on a mis en
+  # place la nouvelle strat » -- un total qui melange `BANDE + PAUSE` aux 650 tickets des regles
+  # precedentes, dont une qui a perdu 45,75 EUR en une heure, ne peut pas dire si ce qui tourne
+  # AUJOURD HUI gagne. A CHANGER EN MEME TEMPS QUE `regle` OU `modele`, jamais separement : le
+  # total doit toujours porter sur UNE seule regle. Mettre 0 pour retrouver tout l historique.
+  # L ancien carnet n est pas efface pour autant -- il reste entier dans `mr_lignes`.
+  cumul_depuis: 1789977360
   # LA REGLE EN SERVICE. `bas_bande` a d abord ete branchee sur la foi de +5,30 % par ticket, mais
   # ce chiffre portait sur TOUTE la periode alors que la BANDE qu elle contient etait deja morte
   # hors echantillon depuis son gel du 17/09 18h30. Coupe a cette date : -7,10 % par ticket et
