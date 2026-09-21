@@ -127,7 +127,31 @@ print(c.execute('SELECT COUNT(*) FROM mr_lignes WHERE t_dec >= ?', (n-1800,)).fe
       c.execute('SELECT COUNT(*) FROM solana_stream_launches WHERE ts >= ?', (n-1800,)).fetchone()[0])
 " 2>/dev/null)
   D=$(echo "$ETAT" | cut -d' ' -f1); L=$(echo "$ETAT" | cut -d' ' -f2)
-  if [ -n "$D" ] && [ "$D" -eq 0 ] 2>/dev/null && [ "$L" -ge 5 ] 2>/dev/null \
+  # DEUXIEME CAS, appris le 21/09 a 22h. Le forfait Helius s est epuise a 20h48 : le RPC a ete
+  # coupe, et au retour du service NOS PROCESSUS NE SE SONT PAS RECONNECTES -- exactement la panne
+  # du 16/09, qui avait deja demande un redemarrage a la main. Le critere ci-dessus n aurait RIEN
+  # vu : il exige des pools pour accuser le moteur, or le flux etait mort AUSSI, donc L=0 et la
+  # condition est fausse. Un moteur aveugle avait la meme signature qu un marche calme.
+  #
+  # On teste donc separement : plus AUCUN pool depuis 30 min ALORS QUE le RPC repond. La condition
+  # sur le RPC est essentielle -- s il ne repond pas (forfait epuise, panne chez eux), redemarrer
+  # ne sert a rien et ne ferait que hacher le moteur ; on attend son retour.
+  MORT=0
+  if [ -n "$L" ] && [ "$L" -eq 0 ] 2>/dev/null; then
+    if docker exec tangier-intel python -c "
+import sys, json, urllib.request
+sys.path.insert(0, '/app')
+from intel.execution import solana as sol
+r = urllib.request.Request(sol.rpc_url(), method='POST',
+    data=json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'getHealth'}).encode(),
+    headers={'Content-Type': 'application/json'})
+sys.exit(0 if 'ok' in urllib.request.urlopen(r, timeout=15).read().decode() else 1)" 2>/dev/null; then
+      MORT=1
+    else
+      echo "$(date '+%H:%M') INFO aucun pool depuis 30 min, mais le RPC ne repond pas -- on attend son retour"
+    fi
+  fi
+  if [ -n "$D" ] && { { [ "$D" -eq 0 ] 2>/dev/null && [ "$L" -ge 5 ] 2>/dev/null; } || [ "$MORT" -eq 1 ]; } \
      && [ $(( $(date +%s) - ${dernier_soin_moteur:-0} )) -gt 3600 ]; then
     # AU PLUS UN REDEMARRAGE PAR HEURE. Le moteur est en REEL depuis le 21/09 09h56 : un
     # redemarrage n est plus gratuit, il interrompt des ordres. L en-tete de cette veille promettait
