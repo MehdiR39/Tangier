@@ -1147,7 +1147,28 @@ modele_rapide:
   # appuye sur UN chiffre (+1,42 sigma sur 268 tickets, 14 h) en ignorant la grille a six criteres
   # que j avais construite le jour meme pour empecher exactement ce choix. Cout : -45,75 EUR en
   # une heure. Pour remettre en reel : `mode: live`.
-  mode: paper                  # paper | live
+  #
+  # REMIS EN REEL le 21/09 a 09h50 sur instruction de Mido (« Passe en reel »), avec la regle
+  # `bande` -- BANDE + PAUSE. CE QUI EST PROUVE ET CE QUI NE L EST PAS, pour que personne n ait a
+  # le rededuire : sa QUEUE est prouvee (test hypergeometrique exact, p = 0,000 a 0,040 : elle
+  # attrape les gros gains plus qu un tirage au sort de meme taille) et son rapport gains/pertes
+  # passe de 1,00 a 1,35 avec la bande puis a 1,80 avec la pause. Son NIVEAU ne l est PAS :
+  # +1,27 sigma sur son propre ecart-type (20,55), pas les +2 exiges ; il faudrait ~266 tickets,
+  # soit ~4,8 jours, pour trancher. On ne bascule donc pas sur une certitude, on bascule sur la
+  # seule regle qui ait montre un gain et parce que le compteur de couts d execution ne tourne
+  # qu en reel -- c etait la raison donnee par Mido : « sinon on aura plus les couts ».
+  #
+  # NETTOYAGE PREALABLE, meme jour 09h47 : deux positions REELLES etaient restees ouvertes 14 h
+  # parce que `_sortir` et `_compter` etaient conditionnes au mode courant (corrige, voir
+  # modele_rapide.py). Vendues -10,28 et -9,53 EUR ; a leur age de sortie prevu elles valaient
+  # +2,00 et +7,75 EUR brut. Cout du defaut : ~29 EUR.
+  #
+  # PORTEFEUILLE AU MOMENT DU PASSAGE : 0,65895 SOL, soit 67,88 EUR a 103,02 EUR/SOL. NOTER que
+  # `max_perte_jour_eur: 150` est alors SUPERIEUR au portefeuille : le plafond ne se declenchera
+  # jamais, c est le solde qui s epuisera d abord. Laisse tel quel volontairement -- j ai deja
+  # impose un plafond que Mido n avait pas demande et il a arrete le carnet en pleine journee.
+  # Ce chiffre lui appartient.
+  mode: live                   # paper | live
   # LA REGLE EN SERVICE. `bas_bande` a d abord ete branchee sur la foi de +5,30 % par ticket, mais
   # ce chiffre portait sur TOUTE la periode alors que la BANDE qu elle contient etait deja morte
   # hors echantillon depuis son gel du 17/09 18h30. Coupe a cette date : -7,10 % par ticket et
@@ -1159,7 +1180,7 @@ modele_rapide:
   # coute le moins cher pendant qu on mesure l EXECUTION, qui est le seul but de cette reprise.
   #
   # Valeurs : risque | bas_bande | bas
-  regle: risque
+  regle: bande
   # ================================================================================================
   # 19/09 — LA FORET ALEATOIRE REMPLACE LE MODELE LIGHTGBM, ET LA MISE PASSE DE 20 A 10 EUR.
   # Accord de Mido apres qu il ait pose la bonne question : « ce qu'on a en prod fait du gros
@@ -1213,49 +1234,51 @@ modele_rapide:
   # deux lignes ci-dessous a leur valeur d avant.
   # ================================================================================================
   # ================================================================================================
-  # DECISION A 75 s SUR LA FORET `FORET 75s top 10 %`, branchee le 20/09 au soir.
+  # BANDE + PAUSE, branchee le 21/09 sur decision de Mido.
   #
-  # POURQUOI ELLE. C est la seule famille qui gagne : 6 criteres sur 6, 86 a 91 % de gagnants, et
-  # son avance ne tient pas a trois tickets (elle garde 81 % de son avance sans ses 3 meilleurs,
-  # quand `G+D les trois` en garde 0 %). Le top 10 % plutot que le top 5 % : sur periode commune
-  # (20/09 02h15) +0,462 EUR/ticket sur 92 tickets contre -0,164 sur 24 -- meme modele fige, seul
-  # le curseur differe, et c est le troisieme signe du jour que le cinquieme le plus confiant est
-  # mauvais. Valide par Mido.
+  # POURQUOI ELLE, ET POURQUOI MAINTENANT. Mido : « on doit mettre une methode en prod, sinon on
+  # aura plus les couts, et c est la seule qui a prouve de rapporter pour le moment ». Les deux
+  # raisons sont justes. Le registre des couts se nourrit des tickets REELS -- sans production il
+  # se fige (648 tickets, 20/09 19h13) et plus aucune strategie n est evaluable, puisque toutes
+  # sont jugees avec ce cout. Et c est la seule ligne du projet qui rapporte.
   #
-  # LES QUATRE REGLAGES, et ce que chacun evite :
-  #   age_decision: 75     a 45 s l index ne montre que 88 % des transactions, a 75 s il les montre
-  #                        toutes (retard mesure 10-15 s). C est toute la raison d attendre.
-  #   tenue_secondes: 163  le modele predit le rendement de 77 s a 240 s. Tenir 240 s ferait sortir
-  #                        a 317 s : on deploierait un modele entraine sur une sortie qu on ne fait
-  #                        pas -- l erreur corrigee le matin meme sur FORET GAGNANT.
-  #   traits_75: true      fait produire au moteur les 15 variables de FLUX dont ce modele tire
-  #                        71 % de son information. Appel Helius mesure a 0,70 s median (96 % des
-  #                        pools sous les 5 s disponibles), puis `v1_traits.traits()` -- LA MEME
-  #                        fonction que la recherche. Verifie : 8 pools sur 8 identiques.
-  #   modele_risque:       la foret 75s utilise `risque` (la probabilite de vidage) comme une de
-  #                        ses 25 variables. Il faut donc DEUX modeles : celui qui produit cette
-  #                        variable, et celui qui decide.
+  # CE QUI EST PROUVE, ET CE QUI NE L EST PAS -- les deux doivent etre dits.
+  #   PROUVE   elle SELECTIONNE mieux que le hasard : 25,2 % de gros gains contre 10 % au marche,
+  #            p = 0,000 sur 5 000 tirages a nombre de tickets egal. Ce n est pas de la chance.
+  #   NON PROUVE  qu elle GAGNE de l argent : +2,52 EUR/ticket sur 107 tickets, mais sa dispersion
+  #            propre est de 20,55 EUR -- huit fois son avance. Soit +1,27 sigma, et un bootstrap
+  #            dont l intervalle 95 % va de -1,21 a +6,47 (9,8 % des tirages sous zero). Il
+  #            faudrait 266 tickets, soit ~5 jours de plus, pour trancher.
   #
-  # CE QUI RESTE ABSENT, et c est mesure : les 3 variables d IMAGE. Il faudrait chercher l image sur
-  # IPFS a 75 s, et elles n apportent rien -- 0 % d importance par permutation, +0,97 sigma en euros
-  # (18 tickets d ecart sur 2 675, dont ZERO pris seulement avec elles). Le modele recevra sa
-  # mediane d apprentissage, comme le pipeline le fait deja pour 49 % des tickets d entrainement.
-  # Le carnet `FORET 75s ISO-MOTEUR`, gele le 20/09 20h25, mesure en marche avant ce que cette
-  # absence coute vraiment.
+  # CE QUE J AI EU FAUX HIER, et qui explique pourquoi cette ligne avait ete ecartee : le critere
+  # « positive sans ses 3 meilleurs tickets ». Sur un marche ou 5 % des jetons portent 315 % du
+  # rendement (§3.156), il exige qu une strategie gagne SANS le mecanisme qui fait gagner. Mido :
+  # « sur des memecoins tu t attends a quoi, que ta selection fasse 100 % ? ». Le bon test est
+  # celui des gros coups contre le hasard, et elle le passe a p = 0,000.
   #
-  # POUR REVENIR EN ARRIERE : remettre `modele` sur foret_vidage_fige_15-09.json, `age_decision: 45`,
-  # `tenue_secondes: 240`, `traits_75: false`.
+  # LA REGLE, ET LE PIEGE QU ELLE PORTE. `risque` doit venir de `modele_vidage.json` -- l export
+  # LightGBM -- parce que c est LUI qui definit la bande dans `papier_combo`. Brancher la foret
+  # donnerait un `risque` sur une autre echelle et [0,20 ; 0,35[ designerait d autres jetons, sans
+  # qu aucune erreur ne se voie.
+  #
+  # ET LA PAUSE LIT LE CARNET PAPIER, pas nos propres tickets : la regle mesuree se declenche sur
+  # le flux ENTIER de la bande, y compris les tickets qu elle a elle-meme ecartes. Un moteur qui ne
+  # regarderait que ses achats verrait moins de clotures et prendrait plus de tickets -- ce ne
+  # serait plus la meme regle. C est aussi le blocage circulaire deja constate sur le frein.
+  #
+  # POUR REVENIR EN ARRIERE : `regle: risque` et `pause_enabled: false`.
   # ================================================================================================
-  age_decision: 75
-  tenue_secondes: 163
-  traits_75: true
-  age_v1: 60                  # jusqu ou le flux est lu -- 60 s pour ce modele, 45 pour celui a 45 s
-  modele_risque: /app/data/recherche/balayage/foret_vidage_fige_15-09.json
-  modele: /app/data/recherche/balayage/foret_75s_top10.json
+  age_decision: 45
+  tenue_secondes: 240
+  traits_75: false
+  pause_enabled: true
+  pause_secondes: 1800
+  pause_seuil: -0.30
+  modele: /app/data/recherche/balayage/modele_vidage.json
   # `auto` : le seuil vient du FICHIER, recalcule a chaque entrainement. Un seuil fige ici
   # garderait une proportion de tickets differente a chaque reentrainement, et deriverait en
   # silence -- la derive exacte mesuree sur les gels (§3.158 : 40 tickets gardes contre 110).
-  seuil_risque: auto
+  seuil_risque: auto      # lu dans le fichier ; la regle `bande` ne s en sert pas, le frein si
   # LE FREIN DU MARCHE : DEBRANCHE le 18/09 a 19h30 Paris, apres 24 h en production. Mido : « mec
   # c est toi qui a dit le frein fonctionne ». Il avait raison de le demander, et la verification
   # lui donne raison sur le fond.

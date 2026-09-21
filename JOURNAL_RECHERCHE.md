@@ -107,6 +107,11 @@ pour racheter une information deja disponible a 648 exemplaires.
 **A ROUVRIR si le 75 s n est pas valide sous quelques jours** -- en connaissance de cause, avec ce
 chiffre en face, pas par oubli.
 
+**FIL REFERME le 21/09 a 09h56** (§3.169) : Mido a tranche -- « passe en reel ». `BANDE + PAUSE`
+tourne en reel a 10 EUR, le compteur de couts repart. Le fil reste ecrit parce que l arbitrage
+qu il decrit -- payer ~180 EUR de nuit pour rafraichir une mesure deja a 648 exemplaires -- se
+representera au prochain debranchement.
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
@@ -117,6 +122,13 @@ chiffre en face, pas par oubli.
 | `FORET GAGNANT 20 %` | 20/09 12h32 | 400 puis 2 000 | 0 ticket, démarre cet après-midi |
 | `impact_annonce` | 19/09 22h | 300 valeurs | 14 au 19/09 au soir |
 | Registre des coûts | continu | — | 509 tickets |
+
+**EN PRODUCTION RÉELLE depuis le 21/09 09h56 : `BANDE + PAUSE`** (§3.169). Mise 10 €, tenue 240 s,
+décision 45 s, pause −30 %/30 min, pas de frein, `modele_vidage.json`. Échéance : **266 tickets
+(~4,8 jours)** pour que son NIVEAU soit tranché à 2 σ — sa queue et son tri le sont déjà, son
+niveau non (+1,27 σ). **Ne rien conclure avant.** Portefeuille au départ : 0,65895 SOL = 67,88 €.
+À vérifier dès qu'il y a des tickets : `DEPUIS=<epoch 21/09 09h56> python intel/research/accord_bande.py`
+— le `risque` du moteur doit désigner la même bande que le carnet papier.
 
 ### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
 
@@ -8535,3 +8547,98 @@ régime, tous deux faisables et donc repris). **Et le moteur reproduit le carnet
 une centaine. Et le rapport de gel du **top 5 %** est sorti au passage — 89 retenus, net −1,87 %,
 échoue (a), (b) et (c) : cela confirme le choix du **top 10 %** validé par Mido sur période commune
 (+0,462 contre −0,164).
+
+---
+
+### 3.168 — La vente conditionnée au mode : deux gagnants transformés en pertes, 2026-09-21 09h50
+
+**Mido, avant de repasser en réel : *« nettoie, il y a des pos encore ouvertes, ferme tout et
+remets à jour les messages Telegram »*.** Deux lignes RÉELLES, achetées la veille à 19h18 et 19h19,
+étaient encore `OUVERTE` — **868 minutes** sur une règle qui tient **240 secondes**.
+
+**LA CAUSE EST DANS MON CODE, pas dans le marché.** `modele_rapide.cycle` finissait par :
+
+```python
+if live:
+    await self._sortir(now)
+    await self._compter(now)
+```
+
+`_sortir` et `_compter` filtrent **déjà** `mode='live'` dans leur propre SQL. Les conditionner *en
+plus* au mode du moment n'ajoutait aucune sécurité et créait un piège : le 20/09 à 19h30, en
+passant `mode: paper` sur instruction de Mido (« débranche la prod »), **j'ai coupé la vente de
+deux positions réelles achetées onze minutes plus tôt**. Plus personne pour les vendre, plus
+personne pour les compter — donc ni P&L, ni plafond de perte, ni registre de coûts sur elles.
+
+**CE QUE ÇA A COÛTÉ, mesuré sur les prix du pool que nous avons nous-mêmes enregistrés** (table
+`solana_prix_chaine`, 85 et 86 points par pool) :
+
+| jeton | prix d'entrée | à 289 s — l'heure prévue | vendu à 09:47 le lendemain |
+|---|---|---|---|
+| `F3zwvid1Hht2` | 4,922e−06 | ×1,200 → **+2,00 € brut** | **−10,28 €** (−0,09982 SOL) |
+| `3uxzNhXquXNh` | 4,443e−07 | ×1,775 → **+7,75 € brut** | **−9,53 €** (−0,09255 SOL) |
+
+Net du péage (3,88 %, soit 0,39 €/ticket à 10 €), la règle rendait **≈ +9 €**. Elle a rendu
+**−19,81 €**. **Le défaut a coûté ≈ 29 €** — et les deux tickets étaient des GAGNANTS, dont un
+×1,775. C'est la démonstration la plus chère qu'on ait de §3.165 : la tenue à 240 s n'est pas un
+réglage parmi d'autres, c'est la règle elle-même.
+
+**CORRECTION.** L'entretien des lignes réelles ne dépend plus de l'affichage :
+
+```python
+reste = self.ctx.db.query(
+    "SELECT COUNT(*) n FROM mr_lignes WHERE mode='live' AND tx_achat IS NOT NULL"
+    " AND (statut='OUVERTE' OR (statut='FERMEE' AND gain_eur IS NULL AND ts_sortie >= ?))",
+    (now - 6 * 3600,))
+if live or (int(reste[0]["n"] or 0) if reste else 0):
+    await self._sortir(now)
+    await self._compter(now)
+```
+
+**RÈGLE GÉNÉRALE À RETENIR — elle vaut au-delà de ce bug.** *Un interrupteur qui arrête le moteur
+ne doit jamais abandonner l'argent déjà engagé.* Le même raisonnement avait déjà été écrit pour le
+plafond journalier (« un plafond doit arrêter les ACHATS, jamais les ventes ») et je ne l'ai pas
+appliqué au mode, qui est pourtant l'interrupteur le plus utilisé. Chercher les autres endroits où
+une condition d'arrêt englobe la sortie autant que l'entrée.
+
+**VÉRIFIÉ APRÈS NETTOYAGE :** 0 position ouverte, 0 ligne fermée non comptée. Carnet réel depuis le
+18/09 : 650 tickets, **−284,43 €**, 58 % de gagnants. Canal Telegram remis à jour avec cet état et
+la cause nommée.
+
+---
+
+### 3.169 — BANDE + PAUSE en production, 2026-09-21 09h56
+
+**Mido : *« Passe en réel »*.** Raison donnée la veille : *« on doit mettre une méthode en prod,
+sinon on aura plus les coûts, et c'est la seule qui a prouvé de rapporter pour le moment »*. Le
+compteur de coûts d'exécution — la seule mesure qui ne s'obtient pas en papier — était à l'arrêt
+depuis le 20/09 19h30 (fil 0.2 quater).
+
+**CE QUI EST PROUVÉ, ET CE QUI NE L'EST PAS.** À écrire ici pour que ça ne se redéduise pas :
+
+- **Prouvé — sa queue.** Test hypergéométrique exact : la sélection attrape les gros gains plus
+  qu'un tirage au sort de même taille, p = 0,000 à 0,040 selon l'échéance. C'est le critère qui a
+  remplacé `sans3`, lequel est faux sur des queues lourdes (5 % des jetons portent 315 % du
+  rendement — exiger la positivité sans les 3 meilleurs rejette le mécanisme gagnant lui-même).
+- **Prouvé — son tri.** Le rapport gros gains / grosses pertes passe de **1,00** (le marché, par
+  construction) à **1,35** avec la bande seule, puis à **1,80** avec la pause. La bande attrape la
+  VOLATILITÉ (les deux queues), la pause coupe la perdante.
+- **NON prouvé — son niveau.** **+1,27 σ** calculé sur son *propre* écart-type (20,55 €), pas
+  celui du témoin (13,98 €) — c'était une erreur de lecture antérieure qui l'affichait à +2,12 σ.
+  Il faut ~**266 tickets**, soit ~**4,8 jours** au rythme observé, pour trancher à 2 σ.
+
+**On ne bascule donc pas sur une certitude.** On bascule sur la seule règle ayant montré un gain,
+et parce que le registre des coûts ne tourne qu'en réel. Le niveau se jugera sur les tickets, pas
+sur une opinion — et d'ici là je donne des chiffres, pas des verdicts.
+
+**ÉTAT AU MOMENT DU PASSAGE.** Portefeuille **0,65895 SOL = 67,88 €** (103,02 EUR/SOL). Mise 10 €.
+`max_perte_jour_eur: 150` — **supérieur au portefeuille**, donc inopérant : c'est le solde qui
+s'épuiserait le premier. Laissé tel quel : ce chiffre appartient à Mido, et j'ai déjà arrêté son
+carnet une fois avec un plafond qu'il n'avait pas demandé. `max_ordres_jour: 0` (pas de plafond en
+nombre), `frein_enabled: false`, `pause_enabled: true` (−30 %, 30 min), tenue 240 s, décision 45 s,
+modèle `modele_vidage.json`.
+
+**À SUIVRE.** `DEPUIS = 09h56 le 21/09` pour `accord_bande.py` : vérifier que le `risque` calculé
+en direct par le moteur désigne la MÊME bande que le carnet papier — c'est exactement le piège qui
+a fait rater deux fois la journée du 20/09 (une fenêtre confondue avec un âge, un historique sans
+filtre d'âge : des variables au bon nom et à la mauvaise valeur).

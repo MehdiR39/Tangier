@@ -286,6 +286,14 @@ class ModeleRapide:
             # proportion de tickets -- il deriverait en silence. C est exactement la derive
             # mesuree sur les gels (40 tickets gardes la ou il en fallait 110, §3.158).
             return risque <= self._seuil()
+        if r == "bande":
+            # LA BANDE SEULE, sans la condition `depuis_min == 0` de `bas_bande`. C est la regle
+            # mesuree par `BANDE + PAUSE` : 25,2 % de gros gains contre 10 % au marche (p = 0,000),
+            # +2,52 EUR/ticket sur 107 tickets. Son NIVEAU n est pas prouve (+1,27 sigma, il faudrait
+            # 266 tickets) mais c est la seule ligne du projet qui rapporte, et elle est branchee
+            # sur decision de Mido -- qui rappelle qu il faut quelque chose en production, sinon le
+            # registre des couts ne se remplit plus et plus aucune strategie n est evaluable.
+            return BANDE[0] <= risque < BANDE[1]
         if r == "bas_bande":
             x = f.get("depuis_min")
             if x is None or x != x:
@@ -300,6 +308,51 @@ class ModeleRapide:
         return False
 
     # ---------------------------------------------------------------- frein
+
+    def pause_ouverte(self, now: float) -> bool:
+        """LA PAUSE DE `BANDE + PAUSE` : on n achete pas dans les 30 min qui suivent une cloture
+        sous -30 % DANS LA BANDE. True si l on peut acheter.
+
+        POURQUOI LA SOURCE EST LE CARNET PAPIER, et pas nos propres tickets. La regle mesuree se
+        declenche sur le flux ENTIER de la bande -- `appliquer_pause` empile TOUS les tickets de
+        bande dans sa file d attente, y compris ceux qu elle a elle-meme ecartes. Un moteur qui ne
+        regarderait que ses propres achats verrait moins de clotures, se releverait plus souvent et
+        prendrait plus de tickets que ce qui a ete mesure : ce ne serait plus la meme regle. C est
+        aussi le piege du BLOCAGE CIRCULAIRE deja constate sur le frein le 18/09 (10 jetons refuses
+        sur 12, la fenetre ne pouvant plus bouger).
+
+        CAUSALITE. Le blocage part de la CLOTURE du perdant (t_dec + 242 s), pas de son ouverture :
+        c est a ce moment-la qu on apprend la perte. Reagir a l ouverture serait lire l avenir.
+
+        EN CAS DE DOUTE ON LAISSE PASSER -- table illisible, pas d historique : la pause s ouvre.
+        Un garde-fou qui bloque quand il ne sait pas finit par tout bloquer en silence.
+        """
+        if not bool(self._cfg("pause_enabled", False)):
+            return True
+        import sqlite3 as _sq
+        duree = float(self._cfg("pause_secondes", 1800.0))
+        seuil = float(self._cfg("pause_seuil", -0.30))
+        try:
+            cn = _sq.connect("file:%s?mode=ro" % self._cfg("combo_db", COMBO_DB), uri=True, timeout=5)
+            try:
+                # les tickets de BANDE dont la sortie est tombee dans la fenetre de pause
+                lignes = cn.execute(
+                    "SELECT MIN(i.brut_240 - d.cout_reduit) FROM decision d JOIN issue i"
+                    " ON i.pair = d.pair WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL"
+                    " AND d.risque IS NOT NULL AND d.risque >= ? AND d.risque < ?"
+                    " AND d.t_dec + ? > ? AND d.t_dec + ? <= ?",
+                    (BANDE[0], BANDE[1], TENUE_S, now - duree, TENUE_S, now)).fetchone()
+            finally:
+                cn.close()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("modele_rapide: pause illisible (%s) — on laisse passer", str(exc)[:80])
+            return True
+        pire = lignes[0] if lignes else None
+        if pire is not None and float(pire) <= seuil:
+            log.info("modele_rapide: PAUSE — une cloture a %.1f %% dans les %.0f dernieres minutes",
+                     100 * float(pire), duree / 60)
+            return False
+        return True
 
     def frein_ouvert(self, now: float) -> bool:
         """Le marche autorise-t-il d acheter ? True si le frein ne s applique pas.
@@ -479,6 +532,18 @@ class ModeleRapide:
             # LE FREIN EST EVALUE ICI, pas dans `retenu` : il ne choisit pas le jeton, il suspend
             # l achat. Un ticket refuse par le frein garde donc sa trace avec son statut propre --
             # on saura combien il en a ecartes et ce qu ils auraient donne.
+            # LA PAUSE AVANT LE FREIN : elle s applique aussi en PAPIER, contrairement au frein.
+            # Le frein est un garde-fou de production ; la pause est une PARTIE DE LA REGLE -- un
+            # carnet papier qui l ignorerait ne mesurerait pas `BANDE + PAUSE` mais la bande seule,
+            # et les deux different de 755 EUR sur leur histoire.
+            if not self.pause_ouverte(now):
+                self.ctx.db.execute(
+                    "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
+                    " risque, depuis_min, q, motif, variables) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (mint, str(p["pair_id"]), "live" if live else "paper", "PAUSE",
+                     float(p["naissance"] or 0), now, risque, f.get("depuis_min"), f.get("q"),
+                     "pause apres une cloture sous -30 % dans la bande", json.dumps(f, default=str)))
+                continue
             if live and not bloque and not self.frein_ouvert(now):
                 self.ctx.db.execute(
                     "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
@@ -512,7 +577,19 @@ class ModeleRapide:
         # VENDRE ET COMPTER NE SONT JAMAIS BLOQUES. Un plafond doit arreter les ACHATS, jamais les
         # ventes : sinon atteindre 40 ordres laisserait les positions ouvertes indefiniment, sans
         # personne pour les fermer. Le plafond protege du risque, il ne doit pas en creer un.
-        if live:
+        #
+        # ET PAS DAVANTAGE PAR LE MODE. `_sortir` et `_compter` filtrent DEJA `mode='live'` dans
+        # leur propre SQL : les conditionner EN PLUS au mode du moment a laisse, le 20/09 a 19h30,
+        # deux positions REELLES achetees onze minutes plus tot sans personne pour les vendre --
+        # quatorze heures de detention sur une regle qui tient 240 s, et aucun comptage, donc ni
+        # P&L ni plafond de perte. Un basculement en papier doit arreter les ACHATS ; il ne doit
+        # jamais abandonner l argent deja engage. On entretient donc les lignes reelles tant qu il
+        # en reste, quel que soit le mode affiche.
+        reste = self.ctx.db.query(
+            "SELECT COUNT(*) n FROM mr_lignes WHERE mode='live' AND tx_achat IS NOT NULL"
+            " AND (statut='OUVERTE' OR (statut='FERMEE' AND gain_eur IS NULL AND ts_sortie >= ?))",
+            (now - 6 * 3600,))
+        if live or (int(reste[0]["n"] or 0) if reste else 0):
             await self._sortir(now)
             await self._compter(now)
         return {"status": "ok", "decides": decides, "retenus": achetes, "mode": "live" if live else "paper"}
