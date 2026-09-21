@@ -8642,3 +8642,58 @@ modèle `modele_vidage.json`.
 en direct par le moteur désigne la MÊME bande que le carnet papier — c'est exactement le piège qui
 a fait rater deux fois la journée du 20/09 (une fenêtre confondue avec un âge, un historique sans
 filtre d'âge : des variables au bon nom et à la mauvaise valeur).
+
+---
+
+### 3.170 — Une sonde qui ne sait pas dire « tout va bien » redémarre en boucle, 2026-09-21 11h00
+
+**Quatre redémarrages d'un moteur en RÉEL parfaitement sain**, entre 10h27 et 10h58, par ma propre
+veille de nuit. Elle a ensuite abandonné — « le moteur ne décide plus malgré 4 redémarrages ».
+
+**LA SONDE ÉTAIT AVEUGLE, PAS LE MOTEUR.** Son critère :
+
+```sh
+if ! docker logs --since 10m tangier-intel 2>&1 | grep -q 'modele_rapide cycle done'; then
+```
+
+Sur cette installation, `docker logs --since` **rend zéro ligne quelle que soit la forme** :
+
+| forme | lignes rendues |
+|---|---|
+| `--since 10m` | **0** |
+| `--since 600s` | **0** |
+| `--since <RFC3339>` | **0** |
+| `--tail 100` (sans `--since`) | **100** |
+
+Le test était donc **toujours vrai**. La veille concluait toujours à la panne, redémarrait
+toujours, et comptait ses réparations jusqu'à épuisement. Elle a fonctionné en apparence toute la
+nuit parce qu'elle n'avait rien d'autre à réparer — le défaut ne s'est manifesté qu'en atteignant
+ce bloc.
+
+**LE MOTEUR ALLAIT BIEN, et les chiffres le disaient déjà :**
+
+| heure | lancements | décisions |
+|---|---|---|
+| 21/09 02:00 | 48 | 35 |
+| 21/09 08:00 | 33 | 24 |
+| 21/09 10:00 | 28 | 15 |
+
+Les décisions suivent le flux. Le marché du matin est simplement **deux fois plus calme** que celui
+de la nuit. La sonde accusait le moteur de la tranquillité du marché.
+
+**CORRECTION — le principe, pas la rustine.** La sonde lit désormais un **fait en base** (dernière
+décision enregistrée) **et le compare au flux** : panne déclarée seulement si **0 décision** alors
+que **≥ 5 pools sont nés** en 30 min. Plus un plafond d'**un redémarrage par heure**, parce que le
+moteur est en réel depuis 09h56 et qu'un redémarrage n'est plus gratuit. Critère **testé contre le
+moteur sain avant d'être armé** — il répond « ne touche à rien » sur 8 décisions / 18 lancements.
+
+**LA RÈGLE À RETENIR, elle dépasse ce bug.** *Une sonde de surveillance doit être vérifiée sur le
+cas SAIN avant d'être armée, pas seulement sur le cas en panne.* Un test qui ne sait pas dire
+« tout va bien » ne surveille rien : il commande. Et une réparation automatique héritée d'un
+contexte gratuit (le papier) devient dangereuse quand le contexte change (le réel) — **quand le
+moteur passe en réel, tout automatisme qui peut le toucher doit être relu**.
+
+**CE QUE ÇA A COÛTÉ** : quatre interruptions d'environ une minute. Aucune position perdue — grâce
+au correctif de §3.168 du matin même, une ligne réelle ouverte est vendue au redémarrage suivant
+quel que soit le mode. Sans lui, ces quatre redémarrages auraient pu laisser quatre positions en
+plan. Les deux défauts du jour se répondent.
