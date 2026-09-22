@@ -519,6 +519,87 @@ def table_complete():
         st.dataframe(cl, use_container_width=True, hide_index=True,
                      height=min(700, 36 * len(cl) + 40))
 
+    # ------------------------------------------------- fonctionnement de la PROD
+    # COMMENT LA REGLE SE COMPORTE, pas ce qu elle rapporte. Mido a demande trois fois « pourquoi
+    # ca fait deux heures qu on n achete pas » -- et la reponse tient a une distinction que rien
+    # n affichait : ECARTEE = hors bande, le MODELE a dit non ; PAUSE = dans la bande, la PAUSE a
+    # dit non. Tout vient de `mr_lignes`, le carnet REEL.
+    _F = D.get("fonctionnement") or {}
+    if _F and "erreur" not in _F:
+        st.subheader("Comment la règle tourne, en production")
+        _en = _F.get("en_pause")
+        _dep = _F.get("pause_depuis")
+        c = st.columns(5)
+        c[0].metric("Décisions", "%d" % _F["decides"])
+        c[1].metric("Hors bande", "%d" % _F["hors_bande"],
+                    "%.0f %% du flux" % (100.0 * _F["hors_bande"] / max(_F["decides"], 1)))
+        c[2].metric("Bloqués par la pause", "%d" % _F["bloques"],
+                    "%.0f %% de la bande"
+                    % (100.0 * _F["bloques"] / max(_F["bloques"] + _F["achetes"] + _F["annules"], 1)))
+        c[3].metric("Achetés", "%d" % _F["achetes"],
+                    ("%d refusés à l'exécution" % _F["annules"]) if _F.get("annules") else None,
+                    delta_color="off")
+        if _en and _dep:
+            c[4].metric("En pause depuis",
+                        "%.0f min" % ((_F["maintenant"] - _dep) / 60.0), "elle bloque", delta_color="off")
+        else:
+            c[4].metric("Pause", "ouverte", "elle laisse acheter", delta_color="off")
+        _da = _F.get("dernier_achat")
+        st.caption("**%d périodes de pause** depuis la mise en production · durée médiane "
+                   "**%s min**, la plus longue **%s min**. Dernier achat : **%s**."
+                   % (_F.get("n_pauses", 0), _F.get("duree_mediane"), _F.get("duree_max"),
+                      (pd.to_datetime(_da, unit="s", utc=True).tz_convert("Europe/Paris")
+                       .strftime("%d/%m %Hh%M")) if _da else "aucun"))
+
+        # L ENTONNOIR. Une barre par etage, du flux entier a ce qui a ete achete : on voit d un
+        # coup lequel des deux filtres coupe, et de combien.
+        _et = [("décisions", _F["decides"], DOUX),
+               ("dans la bande", _F["bloques"] + _F["achetes"] + _F["annules"], ACCENT),
+               ("passent la pause", _F["achetes"] + _F["annules"], "#5cab7a"),
+               ("achetés", _F["achetes"], GAIN)]
+        fig = go.Figure(go.Bar(
+            x=[v for _, v, _c in _et], y=[n for n, _v, _c in _et], orientation="h",
+            marker_color=[cc for _n, _v, cc in _et],
+            text=["%d" % v for _, v, _c in _et], textposition="outside",
+            hovertemplate="%{y} : %{x}<extra></extra>"))
+        fig.update_layout(height=200, margin=dict(l=0, r=40, t=6, b=0),
+                          yaxis=dict(autorange="reversed"), xaxis_title=None,
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+
+        # PAR HEURE : empilees, parce que la question est « de quoi est faite cette heure »,
+        # pas « combien y en a-t-il de chaque sorte ». Un 2px de fond separe les segments.
+        if _F.get("par_heure"):
+            h = pd.DataFrame(_F["par_heure"])
+            h["quand"] = pd.to_datetime(h["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
+            fig = go.Figure()
+            for cle, nom, coul in (("hors", "hors bande (le modèle refuse)", DOUX),
+                                   ("pause", "bloqués (la pause refuse)", ACCENT),
+                                   ("achat", "achetés", GAIN)):
+                fig.add_trace(go.Bar(x=h["quand"], y=h[cle], name=nom, marker_color=coul,
+                                     marker_line=dict(width=2, color="rgba(0,0,0,0)"),
+                                     hovertemplate="%%{x|%%d/%%m %%Hh} — %%{y} %s<extra></extra>" % nom))
+            fig.update_layout(barmode="stack", height=260, margin=dict(l=0, r=0, t=6, b=0),
+                              yaxis_title="décisions", legend=dict(orientation="h", y=-.22),
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption("Une heure sans barre verte n'est pas une panne : c'est soit le modèle qui "
+                       "ne trouve rien dans la bande (gris), soit la pause qui bloque (orange).")
+
+        if _F.get("periodes"):
+            with st.expander("L'historique des pauses (%d dernières)" % len(_F["periodes"])):
+                pp = pd.DataFrame(_F["periodes"])
+                pp["début"] = (pd.to_datetime(pp["debut"], unit="s", utc=True)
+                               .dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M"))
+                pp["fin"] = (pd.to_datetime(pp["fin"], unit="s", utc=True)
+                             .dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M"))
+                pp["durée (min)"] = pp["minutes"]
+                pp["tickets refusés"] = pp["n"]
+                pp["en cours"] = pp["ouverte"].map({True: "oui", False: ""})
+                st.dataframe(pp[["début", "fin", "durée (min)", "tickets refusés", "en cours"]]
+                             .iloc[::-1], use_container_width=True, hide_index=True)
+        st.divider()
+
     # ------------------------------------------------------------- variantes
     # LES TROIS VARIANTES DE LA REGLE EN SERVICE, a depart commun.
     #

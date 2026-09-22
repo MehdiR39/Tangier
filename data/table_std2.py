@@ -3,7 +3,7 @@ en deux -- avant et depuis le dernier point -- pour voir ce que les nouveaux tic
 
 Usage : python table_std.py [heure de coupe, ex 14:44]
 """
-import sqlite3, json, sys, os, datetime as dt
+import sqlite3, json, sys, os, time, datetime as dt
 import statistics as _st
 MISE = float(os.environ.get("MISE", "25"))
 CAUTION = os.environ.get("CAUTION", "recuperee") == "payee"   # Mido, 19/09 09h30 : la table ENTIERE en caution recuperee (CAUTION=payee pour l ancien chiffre)
@@ -880,12 +880,94 @@ if _sortie:
     except Exception as _e:
         _variantes = {"erreur": str(_e)[:160]}
 
+    # --------------------------------------------------- fonctionnement de la PROD
+    # COMMENT LA REGLE SE COMPORTE EN REEL, pas ce qu elle rapporte.
+    #
+    # Mido, 22/09 : « ajoute des indicateurs et graphiques sur le fonctionnement de la strat :
+    # nombre de pauses, derniere et historique des pauses, nombre de tickets filtres, nombre
+    # passes, tout ». Et : « je parle de la prod ».
+    #
+    # Tout vient de `mr_lignes`, le carnet REEL -- jamais du papier. Chaque decision du moteur y
+    # laisse une ligne avec son statut, et c est ce qui permet de savoir POURQUOI on n a pas
+    # achete : ECARTEE = hors bande, le modele a dit non ; PAUSE = dans la bande, la pause a dit
+    # non. Sans cette distinction, un creux de deux heures est illisible -- c est la question que
+    # Mido a posee trois fois.
+    try:
+        _pi = sqlite3.connect("file:/app/db/intel.sqlite?mode=ro", uri=True, timeout=30)
+        _dep = 1789977360.0                      # mise en production, 21/09 09h56
+        _now = time.time()
+        _st = {s_: n_ for s_, n_ in _pi.execute(
+            "SELECT statut, COUNT(*) FROM mr_lignes WHERE t_dec >= ? GROUP BY statut", (_dep,))}
+        _dec = sum(_st.values())
+        _hors = _st.get("ECARTEE", 0)
+        _bloq = _st.get("PAUSE", 0)
+        _ach = _st.get("FERMEE", 0) + _st.get("OUVERTE", 0)
+        _ann = _st.get("ANNULEE", 0)
+
+        # L HISTORIQUE DES PAUSES. Une periode de blocage est une suite continue de tickets
+        # refuses : elle commence au premier PAUSE apres un achat (ou apres un trou) et finit au
+        # premier achat suivant. On la reconstruit depuis les lignes, sans rejouer la regle --
+        # c est ce que le moteur a REELLEMENT fait, pas ce qu il aurait du faire.
+        _ev = [(float(t), str(s_)) for t, s_ in _pi.execute(
+            "SELECT t_dec, statut FROM mr_lignes WHERE t_dec >= ? ORDER BY t_dec", (_dep,))]
+        _per, _cur = [], None
+        for _t, _s in _ev:
+            if _s == "PAUSE":
+                if _cur is None:
+                    _cur = {"debut": _t, "fin": _t, "n": 0}
+                _cur["fin"] = _t
+                _cur["n"] += 1
+            elif _s in ("FERMEE", "OUVERTE") and _cur is not None:
+                _cur["fin"] = _t
+                _per.append(_cur)
+                _cur = None
+        if _cur is not None:
+            _cur["ouverte"] = True
+            _per.append(_cur)
+        _dur = sorted((p_["fin"] - p_["debut"]) / 60.0 for p_ in _per)
+
+        # PAR HEURE : ce que le moteur a vu et ce qu il en a fait. Deux jours suffisent a voir
+        # le rythme sans noyer le graphique.
+        _h = {}
+        for _t, _s in _ev:
+            if _t < _now - 48 * 3600:
+                continue
+            _k = int(_t // 3600) * 3600
+            _e = _h.setdefault(_k, {"t": _k, "hors": 0, "pause": 0, "achat": 0})
+            if _s == "ECARTEE":
+                _e["hors"] += 1
+            elif _s == "PAUSE":
+                _e["pause"] += 1
+            elif _s in ("FERMEE", "OUVERTE"):
+                _e["achat"] += 1
+
+        _dern_ach = _pi.execute(
+            "SELECT MAX(ts_entree) FROM mr_lignes WHERE mode='live' AND tx_achat IS NOT NULL"
+        ).fetchone()[0]
+        _fonc = {
+            "depuis": _dep, "maintenant": _now,
+            "decides": _dec, "hors_bande": _hors, "bloques": _bloq, "achetes": _ach,
+            "annules": _ann,
+            "dernier_achat": float(_dern_ach) if _dern_ach else None,
+            "en_pause": bool(_per and _per[-1].get("ouverte")),
+            "pause_depuis": _per[-1]["debut"] if (_per and _per[-1].get("ouverte")) else None,
+            "n_pauses": len(_per),
+            "duree_mediane": round(_dur[len(_dur) // 2], 1) if _dur else None,
+            "duree_max": round(_dur[-1], 1) if _dur else None,
+            "periodes": [{"debut": int(p_["debut"]), "fin": int(p_["fin"]), "n": p_["n"],
+                          "minutes": round((p_["fin"] - p_["debut"]) / 60.0, 1),
+                          "ouverte": bool(p_.get("ouverte"))} for p_ in _per[-40:]],
+            "par_heure": [_h[k] for k in sorted(_h)],
+        }
+    except Exception as _e:
+        _fonc = {"erreur": str(_e)[:160]}
+
     json.dump({
         "genere": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "mise": MISE, "cout_pt": round(100 * COUT_MESURE, 2), "caution": not CAUTION,
         "sigma_ticket": round(_sigma, 3),
         "debut_donnees": _t0, "lignes": _lignes, "contre_temoin": _contre,
-        "variantes": _variantes,
+        "variantes": _variantes, "fonctionnement": _fonc,
     }, open(_sortie, "w"), ensure_ascii=False)
     print("\nJSON ecrit : %s" % _sortie)
 
