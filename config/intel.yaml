@@ -1177,6 +1177,24 @@ modele_rapide:
   # total doit toujours porter sur UNE seule regle. Mettre 0 pour retrouver tout l historique.
   # L ancien carnet n est pas efface pour autant -- il reste entier dans `mr_lignes`.
   cumul_depuis: 1789977360
+  # LE COUT AVEC LEQUEL LA PAUSE JUGE « -30 % », part fixe. Le moteur lisait `cout_reduit` du
+  # carnet papier, qui vaut 1,54 % en moyenne -- une hypothese optimiste (depot recupere, priorite
+  # baissee) ecrite avant qu on mesure le peage. Le peage REEL, lu sur 404 tickets d argent reel,
+  # est de 3,88 %. Un jeton ayant perdu 32 % apparaissait donc a -29,7 % et ne declenchait pas la
+  # pause : la regle deployee etait plus permissive que la regle mesuree, et les tickets accumules
+  # ne jugeaient donc pas la bonne regle. Constate le 22/09, trois achats de nuit hors regle,
+  # -15,69 EUR.
+  # 0,03705 = 3,88 % mesure MOINS 0,175 % d impact moyen du pool, celui-ci etant ajoute ticket par
+  # ticket selon le coffre. Verifie avant deploiement : accord EXACT avec la reference sur 1 259
+  # tickets (ecart max 0,00), et +3,2 % de declenchements.
+  pause_cout_fixe: 0.03705
+  # AU-DELA DE COMBIEN DE SILENCE DU CARNET PAPIER LA PAUSE BLOQUE-T-ELLE. La pause cherche les
+  # clotures des 30 dernieres minutes ; si `papier_combo` n ecrit plus, elle n en trouve aucune et
+  # l ancien code lisait ca comme « rien ne s est effondre, on peut acheter ». Le garde-fou
+  # disparaissait donc exactement pendant les pannes -- la coupure Helius du 21/09 a dure 102 min.
+  # Desormais : source muette au-dela de ce delai => on n achete pas. C est l absence
+  # d INFORMATION qui bloque, pas l absence de perte.
+  pause_fraicheur: 900
   # LA REGLE EN SERVICE. `bas_bande` a d abord ete branchee sur la foi de +5,30 % par ticket, mais
   # ce chiffre portait sur TOUTE la periode alors que la BANDE qu elle contient etait deja morte
   # hors echantillon depuis son gel du 17/09 18h30. Coupe a cette date : -7,10 % par ticket et

@@ -66,6 +66,11 @@ TENUE_S = 240             # duree de detention PAR DEFAUT : NI stop, NI prise de
 # detention. Tenir 240 s ferait sortir a 317 s : on deploierait un modele entraine sur une sortie
 # qu on ne fait pas -- l erreur corrigee le 20/09 sur FORET GAGNANT.
 BANDE = (0.20, 0.35)
+# LA RESERVE VIRTUELLE DE PUMPSWAP, en SOL. Le prix est (coffre + 17,5845) / jetons, et c est aussi
+# ce qui amortit l impact d un ordre : un pool a coffre nul n a pas une profondeur nulle. Meme
+# valeur que dans la table de reference et dans `papier_combo` -- si elle divergeait, le seuil de
+# la pause ne designerait plus les memes clotures.
+V_RESERVE = 17.5845
 MODELE = os.environ.get("MODELE_VIDAGE", "/app/data/recherche/balayage/modele_vidage.json")
 
 # LES VARIABLES DOIVENT ETRE CELLES DE L ENTRAINEMENT, PAS CELLES DE NOTRE MISE.
@@ -332,21 +337,53 @@ class ModeleRapide:
         import sqlite3 as _sq
         duree = float(self._cfg("pause_secondes", 1800.0))
         seuil = float(self._cfg("pause_seuil", -0.30))
+        # LE COUT AVEC LEQUEL ON JUGE « -30 % ». On n utilise PLUS `d.cout_reduit` : cette colonne
+        # vaut 1,54 % en moyenne alors que le peage MESURE sur l argent reel est de 3,88 % (404
+        # tickets). Un jeton qui a vraiment perdu 32 % apparaissait donc a -29,7 % et ne declenchait
+        # pas la pause. Constate le 22/09 : trois achats de nuit que la regle correctement chiffree
+        # refusait, -15,69 EUR. La pause deployee etait plus permissive que la pause mesuree -- donc
+        # les tickets qu on accumulait ne jugeaient pas la bonne regle.
+        #
+        # On recompose le cout comme le fait la table de reference : une part FIXE (frais de
+        # protocole, priorite, reseau) plus l IMPACT sur le pool, qui depend du coffre `q`. La part
+        # fixe est calee pour que la moyenne retombe sur les 3,88 % mesures a 10 EUR de mise.
+        fixe = float(self._cfg("pause_cout_fixe", 0.03705))
+        mise = float(self._cfg("mise_eur", 10.0))
+        k = 2.0 * (mise * 0.31 / 30.0)          # coefficient d impact, en SOL par unite de coffre
         try:
             cn = _sq.connect("file:%s?mode=ro" % self._cfg("combo_db", COMBO_DB), uri=True, timeout=5)
             try:
+                # LE CARNET PAPIER EST-IL VIVANT ? Si `papier_combo` n ecrit plus, la fenetre se vide
+                # et la requete ci-dessous ne trouve AUCUNE cloture -- ce que l ancien code lisait
+                # comme « rien ne s est effondre, on peut acheter ». La pause disparaissait donc
+                # exactement pendant les pannes. Le 21/09 la coupure Helius a dure 102 minutes.
+                # On distingue les deux cas : une source MUETTE bloque, une source VIVANTE sans
+                # cloture autorise. C est l absence d information qui bloque, pas l absence de perte.
+                dernier = cn.execute("SELECT MAX(t_dec) FROM decision").fetchone()[0]
+                if dernier is None or now - float(dernier) > float(self._cfg("pause_fraicheur", 900.0)):
+                    log.warning("modele_rapide: PAUSE — le carnet papier n a rien ecrit depuis "
+                                "%.0f min, on ne sait pas : on n achete pas",
+                                (now - float(dernier)) / 60 if dernier is not None else -1)
+                    return False
                 # les tickets de BANDE dont la sortie est tombee dans la fenetre de pause
                 lignes = cn.execute(
-                    "SELECT MIN(i.brut_240 - d.cout_reduit) FROM decision d JOIN issue i"
+                    "SELECT MIN(i.brut_240 - (? + ? / (COALESCE(d.q, 0) + ?)))"
+                    " FROM decision d JOIN issue i"
                     " ON i.pair = d.pair WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL"
                     " AND d.risque IS NOT NULL AND d.risque >= ? AND d.risque < ?"
                     " AND d.t_dec + ? > ? AND d.t_dec + ? <= ?",
-                    (BANDE[0], BANDE[1], TENUE_S, now - duree, TENUE_S, now)).fetchone()
+                    (fixe, k, V_RESERVE, BANDE[0], BANDE[1],
+                     TENUE_S, now - duree, TENUE_S, now)).fetchone()
             finally:
                 cn.close()
         except Exception as exc:  # noqa: BLE001
-            log.warning("modele_rapide: pause illisible (%s) — on laisse passer", str(exc)[:80])
-            return True
+            # UNE SOURCE ILLISIBLE BLOQUE, ELLE N AUTORISE PLUS. Meme raison que ci-dessus : ne pas
+            # savoir n est pas une raison d acheter. Le risque inverse -- tout bloquer en silence --
+            # est couvert par l alerte : cette ligne est en WARNING et le compteur de tickets
+            # s arrete, ce qui se voit.
+            log.warning("modele_rapide: PAUSE — carnet papier illisible (%s), on n achete pas",
+                        str(exc)[:80])
+            return False
         pire = lignes[0] if lignes else None
         if pire is not None and float(pire) <= seuil:
             log.info("modele_rapide: PAUSE — une cloture a %.1f %% dans les %.0f dernieres minutes",
