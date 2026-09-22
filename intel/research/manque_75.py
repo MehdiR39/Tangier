@@ -54,21 +54,39 @@ def main() -> None:
     print("%d tickets · seuil top 10 %% = %.4f · retenus de reference : %d"
           % (len(X), seuil, int(ref.sum())), flush=True)
     print()
-    print("   %-28s %12s %14s %12s" % ("groupe remplace", "decisions", "retenus", "variables"))
+    # CE QU IL FALLAIT MESURER : LES EUROS, pas le nombre de decisions qui basculent.
+    # MIDO : « il me semble que tu disais que l image n apporte rien dans ce modele ? ». Il a
+    # raison, et ca demolit le chiffre precedent. Si une variable n apporte RIEN a la prediction
+    # -- l importance par permutation des images est de 0 % -- alors les decisions qu elle fait
+    # basculer changent AU HASARD, et un basculement aleatoire ne coute rien en esperance.
+    # « combien de decisions changent » et « combien ca coute » sont deux grandeurs differentes,
+    # et je mesurais la premiere en parlant de la seconde.
+    COUT, MISE = 0.0371, 20.0
+    r = pd.to_numeric(df["ret_240"], errors="coerce").to_numpy(dtype=float)
+    net = MISE * ((1.0 + r) * (1.0 - COUT) - 1.0)
+    ok = pd.notna(pd.Series(net))
+    base = float(net[ref & ok.to_numpy()].mean())
+    print("   reference : %+0.3f EUR/ticket sur %d retenus"
+          % (base, int((ref & ok.to_numpy()).sum())))
+    print()
+    print("   %-28s %11s %10s %12s %9s"
+          % ("groupe remplace", "decisions", "retenus", "EUR/ticket", "ecart"))
     for nom, cols in GROUPES.items():
         cols = [c for c in cols if c in garde]
         if not cols:
-            print("   %-28s  aucune de ces variables n est utilisee par le modele" % nom)
             continue
         Z = X.copy()
         for c in cols:
             Z[c] = float(med[c])
         d = rf.predict_proba(Z)[:, 1] >= seuil
-        print("   %-28s %11.2f %% %13d %12d"
-              % (nom, 100 * (d != ref).mean(), int(d.sum()), len(cols)), flush=True)
+        sel = d & ok.to_numpy()
+        e = float(net[sel].mean()) if sel.sum() else float("nan")
+        print("   %-28s %10.2f %% %10d %+12.3f %+9.3f"
+              % (nom, 100 * (d != ref).mean(), int(d.sum()), e, e - base), flush=True)
     print()
-    print("   « decisions » = part des tickets ou l achat bascule. « retenus » = combien il en")
-    print("   garderait (reference ci-dessus). Un groupe sous ~1 %% peut etre abandonne.")
+    print("   « decisions » = part des achats qui basculent. « EUR/ticket » = ce que la selection")
+    print("   RAPPORTE alors. C est la derniere colonne qui decide, pas la premiere : une variable")
+    print("   sans pouvoir predictif fait basculer des decisions sans changer le resultat.")
 
 
 if __name__ == "__main__":

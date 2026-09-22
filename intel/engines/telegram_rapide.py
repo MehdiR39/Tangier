@@ -97,6 +97,7 @@ pour 60 EUR de capital immobilise au pire, puisque chaque ligne ne dure que quat
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -139,6 +140,12 @@ class TelegramRapide:
     def __init__(self, ctx, client) -> None:
         self.ctx, self.client = ctx, client
         self._sans_meta: dict[str, int] = {}      # mint -> nombre d essais rates
+        # Jetons dont une vente est EN COURS. Deux chemins vendent desormais : la sortie a 240 s et
+        # la vente sur cascade (vente_cascade.py), qui tourne a la seconde. Sans ce verrou, un crash
+        # a T+239 s enverrait deux ventes du meme solde.
+        self._en_vente: set[str] = set()
+        self._guet = None
+        self._guet_tache: asyncio.Task | None = None
 
     def _cfg(self, cle: str, defaut):
         return self.ctx.config.get("telegram_rapide." + cle, defaut)
@@ -353,6 +360,26 @@ class TelegramRapide:
         return fiche
 
     # ----------------------------------------------------------------- vendre
+    def _guetter(self) -> None:
+        """Demarre -- ou redemarre s il est tombe -- le guetteur de cascades (vente_cascade.py).
+
+        Il ne passe pas par le planificateur, qui impose au moins 5 s entre deux cycles : la mesure
+        du 15/09 dit qu entre 1,6 s et 10 s de delai, un vidage passe de -46 % a -68 %.
+        """
+        mode = str(self.ctx.config.get("telegram_rapide.vente_cascade.mode", "off") or "off").lower()
+        if mode not in ("papier", "live"):
+            return
+        if self._guet is None:
+            from intel.engines.vente_cascade import GuetCascade
+            self._guet = GuetCascade(self)
+            log.info("cascade: guetteur demarre en mode %s", mode)
+        t = self._guet_tache
+        if t is not None and not t.done():
+            return
+        if t is not None and not t.cancelled() and t.exception() is not None:
+            log.warning("cascade: guetteur tombe (%s), redemarrage", str(t.exception())[:120])
+        self._guet_tache = asyncio.get_running_loop().create_task(self._guet.boucle())
+
     async def _vendre(self, now: int) -> int:
         """Sortir toute ligne qui a quatre minutes. Vendre passe AVANT acheter, toujours."""
         mures = self.ctx.db.query(
@@ -363,22 +390,43 @@ class TelegramRapide:
             p = self._prix(mint, now, fraicheur=10_000, pair=l["pair_id"])
             fin = p[0] if p else None
             if l["mode"] != "live":
-                gain = None
-                if fin and float(l["prix_entree"] or 0) > 0:
-                    peage = float(self._cfg("peage_pct", 2.0)) / 100.0
-                    gain = float(l["mise_eur"]) * ((fin / float(l["prix_entree"])) * (1 - peage) - 1)
-                self.ctx.db.execute(
-                    "UPDATE tg_lignes SET statut='FERMEE', ts_sortie=?, prix_sortie=?, gain_eur=?,"
-                    " motif=? WHERE mint=?",
-                    (now, fin, gain, "tenue de %d s ecoulee" % TENUE_S, mint))
-                vendus += 1
-                log.info("tg: %s ferme a blanc apres %d s - %s", l["symbole"], now - int(l["ts_entree"]),
-                         ("%+.2f EUR" % gain) if gain is not None else "prix de sortie inconnu")
+                vendus += self._fermer_papier(l, now, fin, "tenue de %d s ecoulee" % TENUE_S)
                 continue
             vendus += await self._vendre_reel(l, now, fin)
         return vendus
 
-    async def _vendre_reel(self, l, now: int, fin) -> int:
+    def _fermer_papier(self, l, now: int, fin, motif: str) -> int:
+        gain = None
+        if fin and float(l["prix_entree"] or 0) > 0:
+            peage = float(self._cfg("peage_pct", 2.0)) / 100.0
+            gain = float(l["mise_eur"]) * ((fin / float(l["prix_entree"])) * (1 - peage) - 1)
+        # `AND statut='OUVERTE'` : la sortie a 240 s et la vente sur cascade peuvent viser la meme
+        # ligne ; la seconde ecriture ne doit pas ecraser la premiere.
+        self.ctx.db.execute(
+            "UPDATE tg_lignes SET statut='FERMEE', ts_sortie=?, prix_sortie=?, gain_eur=?,"
+            " motif=? WHERE mint=? AND statut='OUVERTE'", (now, fin, gain, motif, l["mint"]))
+        log.info("tg: %s ferme a blanc apres %d s (%s) - %s", l["symbole"], now - int(l["ts_entree"]),
+                 motif, ("%+.2f EUR" % gain) if gain is not None else "prix de sortie inconnu")
+        return 1
+
+    async def _vendre_reel(self, l, now: int, fin, motif: str | None = None,
+                           cascade: bool = False) -> int:
+        mint = l["mint"]
+        if mint in self._en_vente:
+            return 0
+        # La ligne passee en argument peut dater d une seconde : relire le statut. Une ligne deja
+        # vendue par l autre chemin donnerait un solde nul, et l ecriture « solde nul » ecraserait
+        # alors l heure et le motif de la vraie vente.
+        statut = self.ctx.db.scalar("SELECT statut FROM tg_lignes WHERE mint=?", (mint,), None)
+        if statut is not None and statut != "OUVERTE":
+            return 0
+        self._en_vente.add(mint)
+        try:
+            return await self._vendre_reel_verrou(l, now, fin, motif, cascade)
+        finally:
+            self._en_vente.discard(mint)
+
+    async def _vendre_reel_verrou(self, l, now: int, fin, motif, cascade: bool) -> int:
         from intel.execution import solana as sol
         rpc = sol.rpc_url()
         cle = self._cfg("cle_fichier", None)
@@ -392,16 +440,31 @@ class TelegramRapide:
             log.warning("tg: solde illisible pour %s (%s)", l["symbole"], str(exc)[:60])
             return 0
         if solde <= 0:
+            # Un crash peut arriver dans les secondes qui suivent l achat, avant que le noeud ait
+            # indexe nos jetons (§5.3). Fermer la ligne sur ce zero la rendrait invendable : la
+            # sortie a 240 s ne la verrait plus. On laisse la ligne ouverte, on reessaiera.
+            if cascade and now - int(l["ts_entree"] or now) < 90:
+                log.info("tg: %s solde encore nul a T+%d s, vente sur cascade reportee",
+                         l["symbole"], now - int(l["ts_entree"] or now))
+                return 0
             self.ctx.db.execute(
-                "UPDATE tg_lignes SET statut='FERMEE', ts_sortie=?, motif=? WHERE mint=?",
-                (now, "solde nul sur la chaine", l["mint"]))
+                "UPDATE tg_lignes SET statut='FERMEE', ts_sortie=?, motif=? WHERE mint=?"
+                " AND statut='OUVERTE'", (now, "solde nul sur la chaine", l["mint"]))
             return 0
+        glissement = float(self._cfg("slippage_vente_pct", 25.0))
+        priorite = int(self.ctx.config.get("solana.priority_fee_lamports", 0) or 0)
+        if cascade:
+            # Pendant une cascade le prix tombe de dizaines de pourcents par seconde : un
+            # glissement serre fait echouer la vente et laisse tout perdre. Sortir a -40 % vaut
+            # mieux que rester a -90 %. Et la priorite achete les blocs qui comptent.
+            glissement = max(glissement, float(self._cfg("vente_cascade.slippage_pct", 40.0)))
+            priorite = max(priorite, int(self._cfg("vente_cascade.priorite_lamports", 200_000)))
         try:
             tx = await sol.prepare_sell(
                 self.client, mint=l["mint"], amount=solde,
-                slippage_pct=float(self._cfg("slippage_vente_pct", 25.0)),
+                slippage_pct=glissement,
                 proprietaire=proprio,
-                priorite_lamports=int(self.ctx.config.get("solana.priority_fee_lamports", 0) or 0))
+                priorite_lamports=priorite)
             if tx.get("status") != "BUILT" or not tx.get("tx"):
                 raise RuntimeError(tx.get("refused_reason") or "transaction non assemblee")
             h = await sol.send(self.client, rpc, sol.sign(tx["tx"], cle))
@@ -430,8 +493,9 @@ class TelegramRapide:
             return 0
         self.ctx.db.execute(
             "UPDATE tg_lignes SET statut='FERMEE', ts_sortie=?, prix_sortie=?, tx_vente=?, motif=?"
-            " WHERE mint=?", (now, fin, h, "tenue de %d s ecoulee" % TENUE_S, l["mint"]))
-        log.info("tg: %s VENDU pour de vrai apres %d s, tx %s", l["symbole"], now - int(l["ts_entree"]), h[:20])
+            " WHERE mint=?", (now, fin, h, motif or "tenue de %d s ecoulee" % TENUE_S, l["mint"]))
+        log.info("tg: %s VENDU pour de vrai apres %d s (%s), tx %s", l["symbole"],
+                 now - int(l["ts_entree"]), motif or "tenue", h[:20])
         return 1
 
     # ----------------------------------------------------------- faire les comptes
@@ -448,7 +512,7 @@ class TelegramRapide:
         rejoue a chaque cycle tant que le compte manque, au lieu de bloquer la vente dessus.
         """
         a_compter = self.ctx.db.query(
-            "SELECT mint, symbole, tx_achat, tx_vente FROM tg_lignes WHERE mode='live'"
+            "SELECT mint, symbole, tx_achat, tx_vente, motif FROM tg_lignes WHERE mode='live'"
             " AND statut='FERMEE' AND gain_eur IS NULL AND tx_achat IS NOT NULL"
             " AND tx_vente IS NOT NULL AND ts_sortie >= ?", (now - 6 * 3600,))
         if not a_compter:
@@ -469,14 +533,22 @@ class TelegramRapide:
             except Exception:  # noqa: BLE001
                 continue
             gain = (da + dv) * taux
+            # Le motif de la VENTE est garde devant le compte : sans lui on ne saurait plus, apres
+            # coup, quelles lignes la vente sur cascade a fermees -- la seule mesure qui la juge.
+            avant = str(l["motif"] or "")
+            cascade = avant.startswith("cascade")
             self.ctx.db.execute("UPDATE tg_lignes SET gain_eur=?, motif=? WHERE mint=?",
-                                (gain, "compte sur la chaine : %+.5f SOL" % (da + dv), l["mint"]))
+                                (gain, ("%s · " % avant if cascade else "")
+                                 + "compte sur la chaine : %+.5f SOL" % (da + dv), l["mint"]))
             faits += 1
             log.info("tg: %s compte sur la chaine — %+.5f SOL soit %+.2f EUR",
                      l["symbole"], da + dv, gain)
-            await self._prevenir("%s <b>%s</b> closed after 4 min: <b>%+.2f EUR</b>\n"
+            quand = ("on a CRASH, sold within seconds (%s)" % avant.split(":", 1)[-1].strip()
+                     if cascade else "after 4 min")
+            await self._prevenir("%s <b>%s</b> closed %s: <b>%+.2f EUR</b>\n"
                                  "<i>read from the wallet, not from a quote</i>\n%s"
-                                 % ("✅" if gain > 0 else "🔻", l["symbole"], gain, self._cumul()))
+                                 % ("🚨" if cascade else ("✅" if gain > 0 else "🔻"),
+                                    l["symbole"], quand, gain, self._cumul()))
         return faits
 
     # ---------------------------------------------------------------- acheter
@@ -976,6 +1048,7 @@ class TelegramRapide:
             return {"status": "disabled"}
         self._table()
         now = int(time.time())
+        self._guetter()
         vendus = await self._vendre(now)
         comptes = await self._compter(now)
         achetes = await self._acheter(now)
