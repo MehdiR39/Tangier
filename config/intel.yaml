@@ -1184,10 +1184,16 @@ modele_rapide:
   # pause : la regle deployee etait plus permissive que la regle mesuree, et les tickets accumules
   # ne jugeaient donc pas la bonne regle. Constate le 22/09, trois achats de nuit hors regle,
   # -15,69 EUR.
-  # 0,03705 = 3,88 % mesure MOINS 0,175 % d impact moyen du pool, celui-ci etant ajoute ticket par
-  # ticket selon le coffre. Verifie avant deploiement : accord EXACT avec la reference sur 1 259
-  # tickets (ecart max 0,00), et +3,2 % de declenchements.
-  pause_cout_fixe: 0.03705
+  # A RECALIBRER A CHAQUE CHANGEMENT DE MISE, ce n est pas une constante universelle. Le terme
+  # d impact du pool est PROPORTIONNEL a la mise, donc la part fixe doit baisser quand la mise
+  # monte, sinon le peage total est surestime et la pause se declenche trop souvent.
+  #   mise 10 EUR : peage mesure 4,04 % - impact 0,178 % -> part fixe 0,03862
+  #   mise 20 EUR : peage mesure 3,88 % - impact 0,356 % -> part fixe 0,03524   <-- en service
+  # Les deux peages viennent du registre des couts, pas d une hypothese (le fixe pese deux fois
+  # plus a 10 EUR, d ou les 4,04 % contre 3,88 %).
+  # Verifie au deploiement a 10 EUR : accord EXACT avec la reference sur 1 259 tickets
+  # (ecart max 0,00) et +3,2 % de declenchements.
+  pause_cout_fixe: 0.03524
   # AU-DELA DE COMBIEN DE SILENCE DU CARNET PAPIER LA PAUSE BLOQUE-T-ELLE. La pause cherche les
   # clotures des 30 dernieres minutes ; si `papier_combo` n ecrit plus, elle n en trouve aucune et
   # l ancien code lisait ca comme « rien ne s est effondre, on peut acheter ». Le garde-fou
@@ -1337,7 +1343,16 @@ modele_rapide:
   frein_seuil: 0.50            # frontiere NATURELLE : plus de perdants que de gagnants         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
   pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
   fenetre_minutes: 15
-  mise_eur: 10.0               # 19/09 : 20 -> 10 EUR. Voir le pave au-dessus de `modele`.
+  # 19/09 : 20 -> 10 EUR. 22/09 : 10 -> 20 EUR sur decision de Mido (« augmente la mise en prod
+  # a 20 »). Ce qui l autorisait ce jour-la et pas la veille : le portefeuille est passe de 67,88
+  # a 186,68 EUR. L engagement maximal observe -- 3 positions simultanees sur 37 tickets -- passe
+  # de 30 a 60 EUR, soit 32 % du solde au lieu de 76 %. Et `max_perte_jour_eur: 150` redevient
+  # OPERANT, alors qu il etait au-dessus du portefeuille et donc inutile jusqu ici.
+  # NOTER : monter la mise n achete AUCUNE information. Les 266 tickets qui trancheront la regle
+  # n arrivent pas plus vite ; seul double ce qu on perd si la reponse est non. C est un choix
+  # d exposition, assume comme tel, pas un choix de mesure.
+  # PENSER A `pause_cout_fixe` : le seuil de la pause depend de la mise (voir son commentaire).
+  mise_eur: 20.0
   # Le taux SOL/EUR est LU SUR LE MARCHE a chaque achat (sol.sol_eur), jamais fige : le 08/09 un
   # taux en dur de 180 EUR alors que le SOL valait 96 engageait 2,67 EUR pour un ticket annonce a 5.
   # Si le taux est illisible, l achat est REPORTE plutot que mal dimensionne.

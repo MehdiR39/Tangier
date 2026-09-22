@@ -123,12 +123,28 @@ representera au prochain debranchement.
 | `impact_annonce` | 19/09 22h | 300 valeurs | 14 au 19/09 au soir |
 | Registre des coûts | continu | — | 509 tickets |
 
-**EN PRODUCTION RÉELLE depuis le 21/09 09h56 : `BANDE + PAUSE`** (§3.169). Mise 10 €, tenue 240 s,
-décision 45 s, pause −30 %/30 min, pas de frein, `modele_vidage.json`. Échéance : **266 tickets
-(~4,8 jours)** pour que son NIVEAU soit tranché à 2 σ — sa queue et son tri le sont déjà, son
-niveau non (+1,27 σ). **Ne rien conclure avant.** Portefeuille au départ : 0,65895 SOL = 67,88 €.
-À vérifier dès qu'il y a des tickets : `DEPUIS=<epoch 21/09 09h56> python intel/research/accord_bande.py`
-— le `risque` du moteur doit désigner la même bande que le carnet papier.
+**EN PRODUCTION RÉELLE depuis le 21/09 09h56 : `BANDE + PAUSE`** (§3.169). **Mise 20 €** depuis le
+22/09 15h (§3.172), tenue 240 s, décision 45 s, pause −30 %/30 min, pas de frein,
+`modele_vidage.json`. Le moteur reproduit la bande du carnet papier : **258/258, écart de score
+0,00000** (`accord_bande.py`, §3.169).
+
+**CE QU'IL FAUT SAVOIR AVANT DE JUGER CETTE LIGNE — lire §3.171 en entier.**
+
+- **Le juge est le nul par DÉCALAGE CIRCULAIRE, jamais le tirage au sort.** Une pause appliquée à
+  des rendements mélangés rapporte déjà **+0,384 €/ticket** : c'est le biais mécanique de la
+  règle. **Comparer à +0,384, pas à zéro.** Le test hypergéométrique qui l'avait « prouvée » et
+  qui a justifié sa mise en production utilisait le mauvais nul.
+- **État au 22/09 : +1,330 €/ticket sur 138 tickets, p = 0,040** contre le bon nul. Et ça oscille
+  (p = 0,080 deux heures plus tôt, à n=127). **Non tranché.**
+- **Aucun mécanisme n'a survécu** : les effondrements ne sont pas groupés (z = +0,34), et le
+  filtre d'activité auquel elle se réduit (−13,4 σ) ne rapporte rien seul.
+- **On la garde quand même** parce que sans elle la stratégie est mesurément perdante (−0,132 sur
+  1 309 tickets) et que la modifier détruirait le critère pré-enregistré.
+- **Échéance : 266 tickets.** Abandon si le gain retombe sous +0,384, ou si p > 0,05 à l'échéance.
+- **La bande adaptative a été testée et n'apporte rien** (§3.171) — ne pas la refaire.
+
+Portefeuille : 186,68 € au 22/09 (67,88 € au départ). `pause_cout_fixe` **dépend de la mise** et
+doit être recalibré à chaque changement (§3.172).
 
 ### 0.4 Ce qui est MORT — ne pas y revenir sans raison neuve
 
@@ -8703,3 +8719,131 @@ moteur passe en réel, tout automatisme qui peut le toucher doit être relu**.
 au correctif de §3.168 du matin même, une ligne réelle ouverte est vendue au redémarrage suivant
 quel que soit le mode. Sans lui, ces quatre redémarrages auraient pu laisser quatre positions en
 plan. Les deux défauts du jour se répondent.
+
+---
+
+### 3.171 — L'ÉTUDE DE `BANDE + PAUSE` : trois mécanismes testés, trois rejets, et un nul qui était faux, 2026-09-22
+
+**Mido, la veille :** *« cette strat m'intrigue, on a combiné 3 critères par pur hasard et tu m'as
+dit que les 3 séparément ne donnent rien. Je veux une étude proba et stat très poussée. »* Puis :
+*« j'ai pas dit teste beaucoup de combinaisons, il faut choisir la bande de façon plus
+intelligente, probablement un truc qui s'adapte. »*
+
+**PRÉALABLE — TOUT A ÉTÉ REFAIT AU COÛT RÉEL.** Le moteur et mes scripts jugeaient avec
+`cout_reduit` = **1,54 %**, quand le péage mesuré sur 404 tickets réels est de **3,88 %**. Tous
+les chiffres antérieurs étaient trop favorables de **2,3 points** (~0,23 €/ticket). Au coût réel :
+ne rien filtrer **−0,263**, bande seule **−0,187**, `BANDE + PAUSE` **+1,125**. Fait notable : la
+méthode ne perd que 0,076 € en passant à la comptabilité honnête là où le marché en perd 0,233 —
+**elle est peu sensible au coût**, logique pour une sélection de gros mouvements.
+
+#### 1. Les effondrements sont-ils groupés ? NON.
+
+Hypothèse **fondatrice** de la pause, répétée pendant deux jours.
+
+```
+taux de base : 38,4 % des tickets de bande cloturent sous -30 %
+apres un effondrement dans les 30 min : 38,6 %  (n=1138)
+apres 30 min calmes                   : 37,0 %  (n=127)
+ecart +1,6 point · z = +0,34
+```
+
+**Un krach n'annonce rien sur le suivant.** Le mécanisme raconté n'existe pas.
+
+#### 2. Est-ce un filtre d'activité déguisé ? CORRÉLÉ, MAIS STÉRILE.
+
+Pour que la pause s'ouvre il faut 30 min sans clôture sous −30 %. À 38 % de taux de base, une
+telle fenêtre est surtout probable quand il y a **peu de tickets**.
+
+```
+pause OUVERTE  : 3,9 clotures dans les 30 min precedentes
+pause FERMEE   : 6,7                          -13,4 sigma
+```
+
+Corrélation écrasante. **Mais filtrer directement sur l'activité ne rapporte rien** : ≤3 clôtures
+→ −0,615 · ≤5 → −0,089 · ≤8 → −0,020 · aucun seuil positif. Deuxième mécanisme éliminé.
+
+#### 3. LE NUL QUE J'UTILISAIS ÉTAIT FAUX — le résultat le plus important.
+
+Le test de queue hypergéométrique qui a **réhabilité la méthode et justifié sa mise en
+production** compare la sélection à un **tirage au sort de même taille**. Or la pause ne tire pas
+au sort : elle choisit **les tickets qui suivent une période sans mauvais résultat**, et cette
+règle biaise vers le haut *toute seule*.
+
+Nul correct — **décalage circulaire** des rendements (horaires conservés, résultats permutés,
+autocorrélation préservée, 4 000 tirages) :
+
+```
+nul par tirage au sort      : moyenne -0,128  -> p = 0,0097
+nul par decalage circulaire : moyenne +0,384  -> p = 0,040
+```
+
+**Une pause appliquée à des rendements mélangés rapporte +0,384 €/ticket.** Le vrai +1,330 se
+compare donc à **+0,384**, pas à zéro.
+
+**ET LE RÉSULTAT OSCILLE** : p = 0,080 à 11h (n=127), p = 0,040 à 12h (n=138). Onze tickets ont
+fait traverser le seuil. **Ce n'est pas tranché.**
+
+Contrôle cohérent — même règle à d'autres seuils : −0,20 → +1,431 · −0,30 → +1,330 · −0,45 →
++0,596 · **−0,60 → +0,269, soit SOUS le +0,384 du hasard**. La famille glisse vers le biais quand
+on relâche : signature d'un effet largement structurel.
+
+#### 4. La bande adaptative n'apporte rien.
+
+Fondement réel : la bande fixe attrape **41 % à 52 %** des tickets selon le jour (médiane du score
+de 0,234 à 0,199 entre le 18 et le 21/09). Paramètres **fixés d'avance** — la bande `[0,20 ;
+0,35[` occupe les quantiles **[0,47 ; 0,92]** — calculés sur les **400 tickets strictement
+antérieurs** (la fuite de §3.158 avait déjà inversé un résultat entier).
+
+| | n | €/ticket |
+|---|---|---|
+| bande fixe | 1 309 | −0,132 |
+| bande fixe + pause | 138 | **+1,330** |
+| adaptative [0,47 ; 0,92] | 1 323 | −0,203 |
+| adaptative + pause | 131 | +1,200 |
+
+**Pas mieux, et pire sans la pause.** La dérive est réelle mais trop faible pour compter.
+
+#### CE QUE L'ÉTUDE ÉTABLIT
+
+1. **Aucun mécanisme n'a survécu.** Il reste un gain sans explication.
+2. **Le juge a changé** : aux 266 tickets, comparer à **+0,384 €/ticket**, jamais à zéro.
+3. **On garde la pause** — non parce qu'elle est prouvée, mais parce que sans elle la stratégie
+   est mesurément perdante (−0,132 sur 1 309 tickets, bien mieux établi que son gain), et parce
+   que la modifier en cours de route détruirait le seul critère capable de trancher.
+4. **Ce qui la ferait abandonner** : gain retombant sous +0,384, ou p > 0,05 à 266 tickets contre
+   le nul correct.
+
+**LEÇON DE MÉTHODE, la plus chère de la semaine.** *Un test de significativité doit comparer à un
+nul qui reproduit la MÉCANIQUE de la règle, pas seulement la taille de sa sélection.* Une règle
+qui choisit ses tickets selon le passé récent est favorisée par construction ; la comparer à un
+tirage au sort mesure cette faveur et l'appelle « signal ». **J'ai déployé en production sur cette
+erreur.**
+
+**PISTE OUVERTE, mieux fondée que tout le reste : le régime horaire.** Le marché entier varie de
+**0,59 €/ticket** entre son meilleur créneau (08h-12h, +0,010) et son pire (20h-24h, −0,582), sur
+357 à 598 tickets par tranche — sans commune mesure avec les 138 de la pause. Et `heure` est déjà
+la 4ᵉ variable du modèle. **À démêler avant d'y croire** : est-ce l'heure, ou la composition des
+pools qui naissent à cette heure-là ?
+
+---
+
+### 3.172 — La mise passe à 20 €, et le seuil de la pause en dépend, 2026-09-22 15h00
+
+**Mido : *« augmente la mise en prod à 20 »*.** Refusé la veille pour une raison qui ne tient
+plus : le portefeuille est passé de **67,88 à 186,68 EUR**. L'engagement maximal observé —
+3 positions simultanées sur 37 tickets — passe de 30 à 60 €, soit **32 % du solde au lieu de
+76 %**. Et `max_perte_jour_eur: 150` **redevient opérant**, alors qu'il dépassait le portefeuille
+et ne pouvait jamais se déclencher.
+
+**PIÈGE ÉVITÉ DE JUSTESSE : `pause_cout_fixe` DÉPEND DE LA MISE.** Le péage est `part fixe +
+impact du pool`, et l'impact est **proportionnel à la mise**. Laisser 0,03705 en passant à 20 €
+aurait surestimé le péage et fait déclencher la pause trop souvent.
+
+| mise | péage mesuré | impact moyen | part fixe |
+|---|---|---|---|
+| 10 € | 4,04 % | 0,178 % | 0,03862 |
+| **20 €** | **3,88 %** | 0,356 % | **0,03524** |
+
+**MONTER LA MISE N'ACHÈTE AUCUNE INFORMATION.** Les 266 tickets n'arrivent pas plus vite ; seul
+double ce qu'on perd si la réponse est non. Le pire ticket passe de −9,25 € à −18,50 €. C'est un
+choix d'exposition, assumé comme tel.
