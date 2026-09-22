@@ -633,6 +633,44 @@ if _sortie:
             e[1] += 1
         return [{"jour": k, "gain": round(g, 2), "n": n} for k, (g, n) in sorted(par.items())]
 
+    def _lcomb(n, k):
+        import math as _m
+        if k < 0 or k > n:
+            return float("-inf")
+        return _m.lgamma(n + 1) - _m.lgamma(k + 1) - _m.lgamma(n - k + 1)
+
+    def _queue(v, temoin):
+        """ATTRAPE-T-ELLE LES GROS COUPS PLUS SOUVENT QUE LE HASARD ?
+
+        MIDO, 21/09 : « sur des memecoins tu t attends a quoi, que ta selection fasse 100 % ?
+        Depuis hier tu dis que c est les 3 meilleurs qui portent -- mais c est un gros P&L, non ? »
+        Il avait raison, et `sans3` est un critere FAUX sur ce marche : 5 % des jetons portent
+        315 % du rendement (§3.156), donc toute strategie qui gagne a son P&L concentre sur
+        quelques tickets. Exiger qu elle gagne SANS ses 3 meilleurs, c est exiger qu elle gagne
+        sans le mecanisme qui fait gagner. Ce critere a sorti `BANDE + PAUSE` des candidates le
+        20/09 -- alors qu elle attrape 29 gros gains la ou le hasard en donne 21 (p = 0,039).
+
+        LE BON TEST : a nombre de tickets EGAL et sur le meme vivier, en attrape-t-elle plus qu un
+        tirage au sort ? La loi est exacte -- hypergeometrique -- donc pas besoin de simuler :
+        on rend la part observee, la part attendue au hasard, et la probabilite de faire aussi
+        bien par chance.
+        """
+        import math as _m
+        if len(v) < 10 or len(temoin) < 50:
+            return {}
+        seuil = sorted(temoin)[int(0.90 * len(temoin))]      # « gros gain » = le 90e centile
+        N, G, k = len(temoin), sum(1 for x in temoin if x >= seuil), len(v)
+        x = sum(1 for y in v if y >= seuil)
+        if not G or k >= N:
+            return {}
+        att = k * G / N
+        # P(X >= x) exacte, en logarithmes pour ne pas exploser sur des milliers de tickets
+        d = _lcomb(N, k)
+        p = sum(_m.exp(_lcomb(G, i) + _lcomb(N - G, k - i) - d)
+                for i in range(x, min(G, k) + 1))
+        return {"queue_seuil": round(seuil, 2), "queue_pris": x, "queue_attendu": round(att, 1),
+                "queue_p": round(min(1.0, p), 4)}
+
     def _criteres(v):
         """LES SEPT CRITERES, parce que l ecart-type seul ne dit pas si une strategie est bonne.
 
@@ -679,6 +717,16 @@ if _sortie:
                            if n > 3 and tot > 0 else None),
             "gagnants_pct": round(100.0 * sum(1 for x in nets if x > 0) / n, 1),
             "pire": round(min(nets), 2), "meilleur": round(max(nets), 2),
+            # SA PROPRE DISPERSION, et le sigma du NIVEAU calcule avec elle.
+            # La page divisait le niveau de chaque ligne par le sigma du TEMOIN. C est juste pour
+            # un ECART apparie -- meme population, la variance s annule -- mais FAUX pour un
+            # niveau : la, c est la dispersion de la strategie qui compte. `BANDE + PAUSE`
+            # selectionne des jetons volatils, son sigma propre vaut 20,55 contre 13,98 au temoin,
+            # et elle passait de +2,12 sigma (faux) a +1,27 (vrai). Toutes les lignes volatiles
+            # etaient surevaluees de la meme facon.
+            "sigma_propre": round(_st.pstdev(nets), 2) if n > 1 else None,
+            "niveau_sigma": (round((tot / n) / (_st.pstdev(nets) / (n ** 0.5)), 2)
+                             if n > 1 and _st.pstdev(nets) > 0 else None),
             # D OU VIENT L ARGENT. La part du gain TOTAL portee par les 3 meilleurs tickets.
             # `BANDE + PAUSE` en portait 91 % et figurait en tete du tableau (§3.163) : sans cette
             # colonne, rien sur la page ne le disait.
@@ -687,6 +735,8 @@ if _sortie:
             # qu une ligne portee par sa queue, et les deux ont la meme moyenne.
             "deciles": [round(s[min(int(q * n), n - 1)], 2) for q in
                         (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)],
+            **_queue(nets, [MISE * (r - SUP) for t_, r in (SERIE.get("temoin sans filtre") or [])
+                            if v[0][0] <= t_ <= v[-1][0]]),
         }
 
     # LES ECHEANCES, pour que la page dise ce qui VA trancher et pas seulement ou on en est.
@@ -744,11 +794,98 @@ if _sortie:
                             "ecart": round(d, 4), "sur_1000": round(1000 * d, 1),
                             "bruit": round(bruit, 4) if bruit else None,
                             "sigmas": round(d / bruit, 2) if bruit else None})
+
+    # ------------------------------------------------------------------ variantes
+    # LES TROIS VARIANTES DE LA REGLE EN SERVICE, sur un depart COMMUN.
+    #
+    # Mido, 22/09 : « comme les deux strat deja en place et la nouvelle n auront pas la meme
+    # echelle, t as une idee pour les presenter sur le meme graphique ? ». Le probleme n est pas
+    # l echelle en euros, c est le DEPART : `BANDE + PAUSE` a 162 tickets d avance sur des
+    # candidates qui en ont zero. Les faire partir toutes du gel des candidates les met sur les
+    # MEMES tickets, le meme marche, aux memes instants -- seule la regle differe. C est
+    # exactement la comparaison appariee du critere (a).
+    #
+    # Et l axe Y est en EUR PAR TICKET, jamais en euros cumules : une ligne a 357 tickets/jour
+    # balaierait l ecran face a une ligne a 33, en montrant son VOLUME et pas sa qualite.
+    try:
+        _meta = json.load(open("/app/data/recherche/candidates/modele_frais_meta.json"))
+        _gel_c = float(_meta["gel"])
+        _cn = sqlite3.connect("file:/app/db/papier_combo.sqlite?mode=ro", uri=True, timeout=30)
+        _br = [(float(t), float(q), float(b), float(r)) for t, q, b, r in _cn.execute(
+            "SELECT d.t_dec, d.q, i.brut_240, d.risque FROM decision d JOIN issue i"
+            " ON i.pair=d.pair WHERE d.eligible=1 AND i.brut_240 IS NOT NULL AND d.q IS NOT NULL"
+            " AND d.risque IS NOT NULL AND d.t_dec >= ? ORDER BY d.t_dec", (_gel_c,))]
+
+        def _pause(tk, seuil, duree=1800.0):
+            pris, att, bl = [], [], 0.0
+            for x in tk:
+                att.sort(key=lambda z: z["fin"])
+                while att and att[0]["fin"] <= x["t"]:
+                    f = att.pop(0)
+                    if f["r"] <= seuil:
+                        bl = max(bl, f["fin"] + duree)
+                if x["t"] >= bl:
+                    pris.append(x)
+                att.append(x)
+            return pris
+
+        def _courbe(pris):
+            """(instant, moyenne courante, bruit sur cette moyenne) -- le bruit dit QUAND lire."""
+            out, s, s2 = [], 0.0, 0.0
+            for i, x in enumerate(pris, 1):
+                v = MISE * x["r"]
+                s += v
+                s2 += v * v
+                m = s / i
+                ec = ((s2 / i - m * m) ** 0.5) if i > 1 else 0.0
+                out.append([int(x["t"]), round(m, 3), round(ec / (i ** 0.5), 3)])
+            return out
+
+        _tk = [{"t": t, "fin": t + 242.0, "r": min(b - cout(q), 3.0)}
+               for t, q, b, r in _br if 0.20 <= r < 0.35]
+        _var = [{"nom": "BANDE + PAUSE (en service)", "seuil": -0.30,
+                 "courbe": _courbe(_pause(_tk, -0.30))},
+                {"nom": "A · PAUSE 25", "seuil": -0.25, "courbe": _courbe(_pause(_tk, -0.25))}]
+        _na, _nb = _meta["bande_frais"]
+        try:
+            import lightgbm as _lgb
+            import numpy as _np
+            _bo = _lgb.Booster(model_file="/app/data/recherche/candidates/modele_frais.json")
+            _X, _ok = [], []
+            for t, vj, q, b in _cn.execute(
+                    "SELECT d.t_dec, d.variables, d.q, i.brut_240 FROM decision d JOIN issue i"
+                    " ON i.pair=d.pair WHERE d.eligible=1 AND i.brut_240 IS NOT NULL"
+                    " AND d.q IS NOT NULL AND d.variables IS NOT NULL AND d.t_dec >= ?"
+                    " ORDER BY d.t_dec", (_gel_c,)):
+                try:
+                    _f = json.loads(vj)
+                except Exception:
+                    continue
+                _X.append([float(_f.get(k)) if _f.get(k) is not None else _np.nan
+                           for k in _meta["variables"]])
+                _ok.append((float(t), float(q), float(b)))
+            if _X:
+                _s = _bo.predict(_np.array(_X, dtype=float))
+                _tf = [{"t": _ok[i][0], "fin": _ok[i][0] + 242.0,
+                        "r": min(_ok[i][2] - cout(_ok[i][1]), 3.0)}
+                       for i in range(len(_ok)) if _na <= _s[i] < _nb]
+                _tf.sort(key=lambda z: z["t"])
+                _var.append({"nom": "B · MODELE FRAIS", "seuil": -0.30,
+                             "courbe": _courbe(_pause(_tf, -0.30))})
+        except Exception as _e:
+            _var.append({"nom": "B · MODELE FRAIS", "seuil": -0.30, "courbe": [],
+                         "erreur": str(_e)[:120]})
+        _variantes = {"gel": _gel_c, "gel_lisible": _meta["gel_lisible"],
+                      "bande_frais": _meta["bande_frais"], "nul": 0.384, "lignes": _var}
+    except Exception as _e:
+        _variantes = {"erreur": str(_e)[:160]}
+
     json.dump({
         "genere": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "mise": MISE, "cout_pt": round(100 * COUT_MESURE, 2), "caution": not CAUTION,
         "sigma_ticket": round(_sigma, 3),
         "debut_donnees": _t0, "lignes": _lignes, "contre_temoin": _contre,
+        "variantes": _variantes,
     }, open(_sortie, "w"), ensure_ascii=False)
     print("\nJSON ecrit : %s" % _sortie)
 

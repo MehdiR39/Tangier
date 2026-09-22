@@ -38,6 +38,20 @@ TZ = dt.timezone(dt.timedelta(hours=2))
 
 GAIN, PERTE, ACCENT, DOUX = "#3f9c6d", "#c9564b", "#d4a03c", "#8b9098"
 TEINTES = ["#d4a03c", "#5cab7a", "#d4695e", "#6b9ec9", "#b98ac7", "#c9a06b", "#7fb3a3", "#c78fa0"]
+# LES TROIS TEINTES DES VARIANTES, choisies par le validateur et non a l oeil : or / vert /
+# violet passent la bande de clarte, le plancher de chroma, la separation daltonienne et le
+# plancher en vision normale. Le triplet naturel (les trois premieres de TEINTES) ECHOUE --
+# #5cab7a et #6b9ec9 sont a 13,6 en vision normale, sous le plancher de 15, et #6b9ec9 est
+# sous le plancher de chroma. La paire or/vert reste a 7,3 en daltonien (cible 8), d ou les
+# ETIQUETTES DIRECTES au bout de chaque courbe : l identite ne tient jamais a la couleur seule.
+VARIANTES_T = ["#d4a03c", "#5cab7a", "#b98ac7"]
+
+
+def _alpha(hexa, a):
+    """La meme teinte, transparente -- pour les bandes d incertitude."""
+    h = hexa.lstrip("#")
+    return "rgba(%d,%d,%d,%s)" % (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), a)
+
 
 st.set_page_config(page_title="Carnet Tangier", page_icon="📓", layout="wide")
 st.markdown("""<style>
@@ -504,6 +518,78 @@ def table_complete():
         cl.columns = ["stratégie", "tickets", "écart €/ticket", "son bruit", "écarts-types"]
         st.dataframe(cl, use_container_width=True, hide_index=True,
                      height=min(700, 36 * len(cl) + 40))
+
+    # ------------------------------------------------------------- variantes
+    # LES TROIS VARIANTES DE LA REGLE EN SERVICE, a depart commun.
+    #
+    # Mido, 22/09 : « t as une idee pour les presenter sur le meme graphique ? ». Le probleme
+    # n etait pas l echelle mais le DEPART : la regle en service a 162 tickets d avance sur des
+    # candidates qui en ont zero. Toutes repartent donc du gel des candidates -- memes tickets,
+    # meme marche, memes instants, seule la regle differe.
+    #
+    # DEUX CHOIX QUI EVITENT DE SE MENTIR :
+    #   - l axe Y est en EUR PAR TICKET, pas en euros cumules. Sur la page principale, une ligne
+    #     a 357 tickets/jour ecrase une ligne a 33 en montrant son VOLUME et pas sa qualite.
+    #   - une ligne a +0,38 EUR/ticket : ce qu une pause rapporte sur des rendements MELANGES,
+    #     par pure mecanique (3.171). Au-dessus de zero mais sous cette ligne, une courbe ne
+    #     gagne rien. Sans ce repere le graphique fait croire que « positif = ca marche ».
+    _V = D.get("variantes") or {}
+    if _V.get("lignes"):
+        st.subheader("Les trois variantes de la règle en service")
+        st.caption("Toutes partent du **%s**, le gel des candidates : elles voient donc les "
+                   "**mêmes tickets**, et seule la règle diffère. L'axe est en **€ par ticket** — "
+                   "en euros cumulés, une ligne qui trade beaucoup écraserait les autres sans être "
+                   "meilleure." % _V.get("gel_lisible", "?"))
+        _vides = [l["nom"] for l in _V["lignes"] if len(l.get("courbe") or []) < 1]
+        _trac = [l for l in _V["lignes"] if len(l.get("courbe") or []) >= 1]
+        if _vides:
+            st.caption("Pas encore de ticket, donc rien à tracer : **%s**." % " · ".join(_vides))
+        if _trac:
+            fig = go.Figure()
+            for i, l in enumerate(_trac):
+                d = pd.DataFrame(l["courbe"], columns=["t", "moy", "bruit"])
+                d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
+                c = VARIANTES_T[i % len(VARIANTES_T)]
+                # LA BANDE D INCERTITUDE D ABORD, pour qu elle passe SOUS les traits.
+                fig.add_trace(go.Scatter(
+                    x=list(d["quand"]) + list(d["quand"])[::-1],
+                    y=list(d["moy"] + d["bruit"]) + list(d["moy"] - d["bruit"])[::-1],
+                    fill="toself", fillcolor=_alpha(c, .13), line=dict(width=0),
+                    hoverinfo="skip", showlegend=False))
+            for i, l in enumerate(_trac):
+                d = pd.DataFrame(l["courbe"], columns=["t", "moy", "bruit"])
+                d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
+                c = VARIANTES_T[i % len(VARIANTES_T)]
+                fig.add_trace(go.Scatter(
+                    x=d["quand"], y=d["moy"], mode="lines",
+                    name="%s — %d tickets" % (l["nom"], len(d)),
+                    line=dict(color=c, width=2),
+                    hovertemplate="<b>%s</b><br>%%{x|%%d/%%m %%Hh%%M}"
+                                  "<br>%%{y:+.2f} € / ticket<extra></extra>" % l["nom"]))
+                # ETIQUETTE DIRECTE au bout : l identite ne repose jamais sur la seule couleur
+                # (une paire de la palette est a 7,3 de separation daltonienne, sous la cible de 8).
+                fig.add_annotation(x=d["quand"].iloc[-1], y=d["moy"].iloc[-1],
+                                   text=" %s" % l["nom"].split(" · ")[0], showarrow=False,
+                                   xanchor="left", font=dict(color=c, size=11))
+            fig.add_hline(y=0, line=dict(color=DOUX, width=1, dash="dot"))
+            fig.add_hline(y=_V.get("nul", 0.384), line=dict(color=DOUX, width=1, dash="dash"),
+                          annotation_text="le hasard (+%.2f)" % _V.get("nul", 0.384),
+                          annotation_position="right",
+                          annotation_font=dict(color=DOUX, size=11))
+            fig.update_layout(height=380, margin=dict(l=0, r=110, t=6, b=0),
+                              yaxis_title="€ par ticket (moyenne courante)",
+                              legend=dict(orientation="h", y=-.18),
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(pd.DataFrame([
+                {"variante": l["nom"], "tickets": len(l["courbe"]),
+                 "€/ticket": l["courbe"][-1][1] if l["courbe"] else None,
+                 "bruit": l["courbe"][-1][2] if l["courbe"] else None}
+                for l in _trac]), use_container_width=True, hide_index=True)
+        st.caption("La **bande grise** autour de chaque courbe est le bruit sur la moyenne. Tant "
+                   "qu'elles se chevauchent, l'écart entre deux règles n'est pas lisible. "
+                   "Échéance du gel : **200 tickets retenus ou 14 jours**.")
+        st.divider()
 
     st.subheader("Gain cumulé")
     st.caption("Chaque courbe part de **zéro à son propre démarrage** — elles ne commencent pas "
