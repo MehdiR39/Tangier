@@ -34,6 +34,12 @@ from intel.utils.timeutil import now_ts
 
 log = logging.getLogger(__name__)
 MODEL_VERSION = "sol-t1-v0.1"
+# COMBIEN DE FOIS ON RETENTE DE RESOUDRE UN CREATEUR AVANT D ABANDONNER. Cinq laisse passer les
+# echecs transitoires (RPC lent, page vide au mauvais moment) et arrete les impossibles. Sans ce
+# plafond, un mint irresolvable revenait a CHAQUE cycle : 153 mints bloques au 22/09, le plus
+# ancien depuis six jours et demi, pour 30 585 tentatives par jour et 1 069 succes -- 3,5 %.
+# Le travail utile est dans les succes, jamais dans les rejeux.
+ESSAIS_CREATEUR = 5
 DISCOVERY = (
     "https://api.dexscreener.com/token-profiles/latest/v1",
     "https://api.dexscreener.com/token-boosts/latest/v1",
@@ -326,12 +332,32 @@ class SolanaWatcher:
         try:
             db.execute("CREATE TABLE IF NOT EXISTS sol_createur("
                        "  mint TEXT PRIMARY KEY, createur TEXT, ts INTEGER)")
+            # UNE MEMOIRE D ECHEC. Sans elle, un mint qui echoue n ecrit RIEN, reste dans la file
+            # et revient a chaque cycle -- pour toujours. Mesure du 22/09 : 153 mints bloques, le
+            # plus ancien depuis six jours et demi, pour 1 069 resolutions par jour. La boucle
+            # dependait entierement du hasard d un succes, et l echec etait avale en silence par
+            # un `except ... continue` muet.
+            db.execute("CREATE TABLE IF NOT EXISTS sol_createur_echec("
+                       "  mint TEXT PRIMARY KEY, essais INTEGER, dernier INTEGER)")
         except Exception:  # noqa: BLE001
             return 0
+
+        def _echec(mint: str) -> None:
+            """Compter l echec plutot que de le taire. Un mint abandonne apres ESSAIS_MAX."""
+            try:
+                db.execute(
+                    "INSERT INTO sol_createur_echec(mint, essais, dernier) VALUES(?,1,?)"
+                    " ON CONFLICT(mint) DO UPDATE SET essais = essais + 1, dernier = ?",
+                    (mint, now_ts(), now_ts()))
+            except Exception:  # noqa: BLE001
+                pass
+
         todo = db.query(
             "SELECT DISTINCT j.mint FROM solana_judgements j "
             "LEFT JOIN sol_createur c ON c.mint=j.mint "
-            "WHERE j.mint IS NOT NULL AND c.mint IS NULL ORDER BY j.ts DESC LIMIT ?", (limite,))
+            "LEFT JOIN sol_createur_echec e ON e.mint=j.mint "
+            "WHERE j.mint IS NOT NULL AND c.mint IS NULL "
+            "AND COALESCE(e.essais, 0) < ? ORDER BY j.ts DESC LIMIT ?", (ESSAIS_CREATEUR, limite))
         n = 0
         for r in todo:
             mint = r["mint"]
@@ -352,6 +378,7 @@ class SolanaWatcher:
                     if len(got) < 1000:
                         break
                 if not plus_vieux:
+                    _echec(mint)
                     continue
                 rep = await self.client.post(rpc, json={
                     "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
@@ -364,7 +391,10 @@ class SolanaWatcher:
                     db.execute("INSERT OR REPLACE INTO sol_createur VALUES(?,?,?)",
                                (mint, payeur, now_ts()))
                     n += 1
+                else:
+                    _echec(mint)
             except Exception:  # noqa: BLE001
+                _echec(mint)
                 continue
         return n
 
@@ -960,6 +990,29 @@ class SolanaWatcher:
                 except sol.SolanaRefused as exc:
                     row.update({"status": "FAILED", "error": str(exc)[:400]})
             db.insert("executions", row)
+            # UN CARNET PAPIER NE PEUT PAS RESTER BLOQUE SUR UNE COTATION. La fermeture ci-dessous
+            # exige un `BUILT` ; sur un jeton dont le pool est vide, le routeur rend `NO_ROUTES_FOUND`
+            # a tout jamais, donc la ligne restait OUVERTE indefiniment. Constate le 22/09 : quatre
+            # positions du 14-15/09 encore ouvertes sept jours plus tard, **267 214 tentatives de
+            # vente toutes refusees**, et le carnet verrouille a son plafond de quatre positions --
+            # il jugeait une cinquantaine d achats par jour sans pouvoir en ouvrir un seul depuis
+            # le 15/09 02h28.
+            #
+            # En PAPIER il n y a rien a vendre : la cotation ne sert qu a chiffrer la sortie. Ne pas
+            # pouvoir la chiffrer n est donc pas une raison de garder la ligne ouverte, c est
+            # l information que le jeton ne vaut plus rien. On la ferme a zero, ce qui est la
+            # verite comptable d un jeton sans route.
+            #
+            # EN REEL on ne touche a rien : la position porte de vrais jetons, un pool illiquide
+            # peut redevenir vendable, et `_echec_vente` alerte deja l operateur.
+            if (mode != "live" and row["status"] != "BUILT" and age >= hold):
+                db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_price=?,"
+                           " close_reason=?, realized_eur=? WHERE id=?",
+                           (now_ts(), px, "invendable : aucune route (carnet papier)",
+                            -float(p["size_eur"] or 0), p["id"]))
+                log.warning("solana: %s ferme a zero — invendable depuis %d h (carnet papier)",
+                            p["label"], age // 3600)
+                continue
             if row["status"] in ("SUBMITTED", "CONFIRMED") or (mode != "live" and row["status"] == "BUILT"):
                 realized = (float(p["size_eur"]) * (mult - 1.0)) if (mult is not None and p["size_eur"]) else None
                 db.execute("UPDATE positions SET status='CLOSED', closed_ts=?, close_price=?, close_reason=?, realized_eur=? WHERE id=?",
