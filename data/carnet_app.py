@@ -125,11 +125,28 @@ def bandeau_reel():
            eur(f["gain"]), eur(f["plafond"]), eur(f["marge"])),
         unsafe_allow_html=True)
 
+    # LE SELECTEUR DE PERIODE COMMANDE TOUTE LA PAGE, pas seulement le bas.
+    #
+    # Mido, 23/09 : « la page carnet reel est tres bruitee, il faut la mettre a partir du passage
+    # en prod du nouveau modele ». Il avait raison et le defaut etait structurel : le selecteur
+    # existait mais il etait place APRES l indicateur « depuis le debut » et APRES la courbe
+    # cumulee -- les deux melangeaient donc les 650 tickets des regles precedentes, dont
+    # `FORET REENTRAINEE 6h` qui a perdu 45,75 EUR en une heure, avec la methode en service.
+    # On choisit la periode UNE fois, en haut, et tout ce qui suit la respecte.
+    _reg = L.get("regimes") or [{"cle": "tout", "nom": "Tout le carnet réel", "depuis": None}]
+    _noms = [r["nom"] for r in _reg]
+    _choisi = _reg[_noms.index(st.radio("Période", _noms, index=len(_noms) - 1, horizontal=True,
+                                        key="regime_reel", label_visibility="collapsed"))]
+    _dep = _choisi.get("depuis")
+    _G = [x for x in (L.get("gains") or []) if not _dep or x["t"] >= _dep]
+
     c = st.columns(5)
     c[0].metric("Aujourd'hui", eur(L["jour"]["gain"]) + " €", "%d ordres" % L["jour"]["n"],
                 delta_color="off")
-    c[1].metric("Depuis le début", eur(L["total"]["gain"]) + " €",
-                "%d tickets fermés" % L["total"]["n"], delta_color="off")
+    # « Depuis le debut » devient « sur la periode choisie » : le total brut de `L["total"]`
+    # porterait toujours sur tout l historique et contredirait le graphique juste en dessous.
+    c[1].metric("Sur la période", eur(sum(x["gain"] for x in _G)) + " €",
+                "%d tickets fermés" % len(_G), delta_color="off")
     c[2].metric("Positions ouvertes", str(L["ouvertes"]))
     st_ = L.get("statuts") or {}
     c[3].metric("Achetés aujourd'hui", str(st_.get("FERMEE", 0) + L["ouvertes"]))
@@ -143,8 +160,12 @@ def bandeau_reel():
             for k, v in (L.get("motifs") or {}).items():
                 st.caption("« %s » — %d" % (str(k)[:110], v))
 
-    if L.get("courbe"):
-        d = pd.DataFrame(L["courbe"], columns=["t", "cum"])
+    if _G:
+        # RECALCULEE sur la periode : `L["courbe"]` cumule depuis le premier ticket de l histoire,
+        # donc la tronquer laisserait un point de depart a plusieurs centaines d euros et on lirait
+        # une pente sur un piedestal qui ne veut rien dire.
+        d = pd.DataFrame({"t": [x["t"] for x in _G]})
+        d["cum"] = pd.Series([x["gain"] for x in _G]).cumsum()
         d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
         fig = go.Figure(go.Scatter(x=d["quand"], y=d["cum"], mode="lines",
                                    line=dict(color=ACCENT, width=2), name="réel"))
@@ -154,18 +175,10 @@ def bandeau_reel():
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
-    G = L.get("gains") or []
-    if len(G) >= 5:
-        # LE REGIME REGARDE. Melanger les periodes avant et apres une bascule, c est moyenner deux
-        # bots differents : avant le 19/09 15h30 c est un autre modele ET une mise double.
-        reg = L.get("regimes") or [{"cle": "tout", "nom": "Tout le carnet réel", "depuis": None}]
-        noms = [r["nom"] for r in reg]
-        defaut = len(noms) - 1 if len(noms) > 1 else 0        # par defaut : le regime EN COURS
-        choisi = reg[noms.index(st.radio("Période", noms, index=defaut, horizontal=True,
-                                         key="regime_reel", label_visibility="collapsed"))]
-        g = pd.DataFrame(G)
-        if choisi["depuis"]:
-            g = g[g["t"] >= choisi["depuis"]]
+    if len(_G) >= 5:
+        # La periode est celle choisie EN HAUT : un second selecteur donnerait deux reponses
+        # differentes sur la meme page.
+        g = pd.DataFrame(_G)
         if g.empty:
             st.info("Aucun ticket fermé sur cette période pour l'instant.")
             return
@@ -210,13 +223,11 @@ def bandeau_reel():
 
     # ---- CE QU ON A ECARTE : la foret a-t-elle jete des mauvais ou des bons ? -------------------
     E = L.get("evites") or []
-    if E and len(G) >= 5:
+    if E and len(_G) >= 5:
         e = pd.DataFrame(E)
-        if choisi["depuis"]:
-            e = e[e["t"] >= choisi["depuis"]]
-        pris = pd.DataFrame(G)
-        if choisi["depuis"]:
-            pris = pris[pris["t"] >= choisi["depuis"]]
+        if _dep:
+            e = e[e["t"] >= _dep]
+        pris = pd.DataFrame(_G)
         pris = pris[pris["brut_pct"].notna()]
         if len(e) and len(pris):
             st.subheader("Ce qu'on a écarté")

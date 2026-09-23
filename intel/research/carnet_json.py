@@ -44,6 +44,14 @@ TZ = dt.timezone(dt.timedelta(hours=2))
 # 15h30, c est la foret aleatoire qui decide et la mise est a 10 EUR au lieu de 20.
 BASCULE_ECO = dt.datetime(2026, 9, 19, 10, 53, tzinfo=TZ).timestamp()
 BASCULE_FORET = dt.datetime(2026, 9, 19, 15, 30, tzinfo=TZ).timestamp()
+# LA BASCULE QUI COMPTE AUJOURD HUI : `BANDE + PAUSE`, en reel depuis le 21/09 09h56. Mido,
+# 23/09 : « la page carnet reel est tres bruitee, il faut la mettre a partir du passage en prod
+# du nouveau modele ». Les 650 tickets anterieurs viennent d AUTRES regles -- dont
+# `FORET REENTRAINEE 6h`, qui a perdu 45,75 EUR en une heure -- et les melanger a la methode en
+# service rend toute moyenne illisible. C est la meme date que `cumul_depuis` dans la config et
+# que le compteur Telegram : les trois doivent designer le meme instant, sinon la page, le
+# telephone et le journal racontent trois histoires.
+BASCULE_BANDE = dt.datetime(2026, 9, 21, 9, 56, tzinfo=TZ).timestamp()
 
 
 def ecrire(nom, obj):
@@ -272,6 +280,8 @@ def live():
             {"cle": "tout", "nom": "Tout le carnet réel", "depuis": None},
             {"cle": "economies", "nom": "Depuis les économies (19/09 10h53)", "depuis": BASCULE_ECO},
             {"cle": "foret", "nom": "Depuis la forêt + mise 10 € (19/09 15h30)", "depuis": BASCULE_FORET},
+            {"cle": "bande", "nom": "BANDE + PAUSE, la méthode en service (21/09 09h56)",
+             "depuis": BASCULE_BANDE},
         ],
     }
 
