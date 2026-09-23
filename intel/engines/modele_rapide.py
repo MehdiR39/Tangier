@@ -624,9 +624,14 @@ class ModeleRapide:
         # en reste, quel que soit le mode affiche.
         reste = self.ctx.db.query(
             "SELECT COUNT(*) n FROM mr_lignes WHERE mode='live' AND tx_achat IS NOT NULL"
-            " AND (statut='OUVERTE' OR (statut='FERMEE' AND gain_eur IS NULL AND ts_sortie >= ?))",
+            " AND (statut IN ('OUVERTE','ATTENTE')"
+            "      OR (statut='FERMEE' AND gain_eur IS NULL AND ts_sortie >= ?))",
             (now - 6 * 3600,))
         if live or (int(reste[0]["n"] or 0) if reste else 0):
+            # CONFIRMER AVANT DE VENDRE : une ligne encore en ATTENTE n est pas OUVERTE, donc
+            # `_sortir` ne la verrait pas. Si la chaine a dit oui pendant les 240 s de tenue, elle
+            # doit etre passee en OUVERTE avant que la vente ne cherche qui sortir.
+            await self._confirmer(now)
             await self._sortir(now)
             await self._compter(now)
         return {"status": "ok", "decides": decides, "retenus": achetes, "mode": "live" if live else "paper"}
@@ -737,15 +742,77 @@ class ModeleRapide:
                     (h, float(tx.get("slippage_pct") or 0.0), mint))
             except Exception:  # noqa: BLE001
                 self.ctx.db.execute("UPDATE mr_lignes SET tx_achat=? WHERE mint=?", (h, mint))
-            log.info("modele_rapide: ACHAT %s — %s", mint[:10], h[:16])
-            await self._prevenir(
-                "🟢 <b>%s…</b> acheté · <i>au plus bas + bande</i>\n"
-                "%.2f EUR · risque %.3f · coffre %.0f SOL · revente dans 4 min"
-                % (mint[:8], mise, risque, float(f.get("q", 0.0) or 0.0)))
+            # ON N ANNONCE RIEN ENCORE. Une signature dit que la transaction est PARTIE, jamais
+            # qu elle a abouti. Le 23/09 un achat est revenu avec sa signature, le carnet a ouvert
+            # une ligne de 20 EUR et le telephone a recu un « achete » vert -- alors que la chaine
+            # l avait rejetee (InstructionError Custom 6001, slippage). Les jetons sont partis a une
+            # autre adresse, la ligne n a jamais pu etre ni vendue ni comptee, et Mido a cherche un
+            # message de vente qui ne pouvait pas exister.
+            #
+            # La ligne reste donc en ATTENTE : `_confirmer` la passera en OUVERTE et previendra
+            # quand la chaine aura dit oui, ou l ecrira ECHOUEE si elle dit non. `ts_entree` garde
+            # l heure de l ACHAT, donc les 240 s de tenue courent depuis le bon instant.
+            self.ctx.db.execute("UPDATE mr_lignes SET statut='ATTENTE' WHERE mint=?", (mint,))
+            log.info("modele_rapide: achat envoye %s — %s (en attente de la chaine)",
+                     mint[:10], h[:16])
         except Exception as exc:  # noqa: BLE001
             self.ctx.db.execute("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
                                 (str(exc)[:160], mint))
             log.warning("modele_rapide: achat refuse %s (%s)", mint[:10], str(exc)[:100])
+
+    async def _confirmer(self, now: float) -> None:
+        """La chaine a-t-elle accepte nos achats ? Tant qu elle n a pas repondu, rien n est vrai.
+
+        Trois issues, et elles appellent trois gestes opposes :
+          ok      -> la ligne s ouvre pour de bon, et C EST LA qu on previent.
+          echec   -> la transaction a ete rejetee par le programme. Aucun jeton, aucun euro
+                     engage (hors frais de reseau). La ligne est ECHOUEE et sa mise remise a
+                     zero, sinon elle compterait comme un ordre dans les plafonds et dans le
+                     nombre de tickets : le 23/09 le carnet annoncait 62 achats pour 61 reels.
+          attente -> la chaine n a pas encore publie. On repasse au cycle suivant.
+
+        LE DELAI EST PLAFONNE. Une transaction dont le blockhash a expire n arrive jamais et ne
+        rend jamais d erreur non plus : sans plafond la ligne resterait ATTENTE pour toujours, et
+        `_sortir` ne la verrait pas puisqu il ne regarde que les OUVERTE.
+        """
+        from intel.execution import solana as sol
+        lignes = self.ctx.db.query(
+            "SELECT mint, ts_entree, mise_eur, risque, q, tx_achat FROM mr_lignes"
+            " WHERE mode='live' AND statut='ATTENTE' AND tx_achat IS NOT NULL")
+        if not lignes:
+            return
+        rpc = sol.rpc_url()
+        limite = float(self._cfg("confirmation_secondes", 90.0))
+        for l in lignes:
+            mint = str(l["mint"])
+            age = now - float(l["ts_entree"] or now)
+            etat = await sol.statut_tx(self.client, rpc, str(l["tx_achat"]))
+            if etat == "attente":
+                if age > limite:
+                    self.ctx.db.execute(
+                        "UPDATE mr_lignes SET statut='ECHOUEE', mise_eur=0, ts_sortie=?, motif=?"
+                        " WHERE mint=?", (now, "jamais confirmee apres %.0f s" % limite, mint))
+                    log.warning("modele_rapide: achat %s jamais confirme apres %.0f s", mint[:10], limite)
+                continue
+            if etat == "echec":
+                self.ctx.db.execute(
+                    "UPDATE mr_lignes SET statut='ECHOUEE', mise_eur=0, ts_sortie=?, motif=?"
+                    " WHERE mint=?", (now, "rejetee par la chaine", mint))
+                log.warning("modele_rapide: achat %s REJETE par la chaine", mint[:10])
+                # Une alerte breve : l operateur a vu partir un ordre, il doit savoir qu il n a
+                # pas eu lieu. Sans chiffre de cumul -- il n y a rien a cumuler.
+                await self._prevenir(
+                    "⚪ <b>%s…</b> achat <b>rejeté par la chaîne</b> — aucun jeton, aucun euro "
+                    "engagé\n<i>slippage ou pool déplacé entre la cotation et la signature</i>"
+                    % mint[:8])
+                continue
+            self.ctx.db.execute("UPDATE mr_lignes SET statut='OUVERTE' WHERE mint=?", (mint,))
+            log.info("modele_rapide: ACHAT confirme %s", mint[:10])
+            await self._prevenir(
+                "🟢 <b>%s…</b> acheté · <i>au plus bas + bande</i>\n"
+                "%.2f EUR · risque %.3f · coffre %.0f SOL · revente dans 4 min"
+                % (mint[:8], float(l["mise_eur"] or 0), float(l["risque"] or 0),
+                   float(l["q"] or 0)))
 
     async def _sortir(self, now: float) -> None:
         """Vend tout ce qui a passe TENUE_S. AUCUN seuil : ni stop, ni prise de gain."""

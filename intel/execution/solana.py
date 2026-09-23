@@ -264,6 +264,31 @@ async def token_balance(client: httpx.AsyncClient, rpc_url: str, owner: str, min
     return total
 
 
+async def statut_tx(client: httpx.AsyncClient, rpc_url: str, tx_hash: str) -> str:
+    """A transaction's fate on chain: "ok", "echec", or "attente".
+
+    `send` only broadcasts -- a signature means the transaction LEFT, never that it worked. On
+    2026-09-23 a buy came back with a signature, the book opened a 20 EUR line and the phone got a
+    green "bought", while the chain had rejected it (InstructionError Custom 6001, slippage): the
+    tokens went to another address and the line could never be sold nor counted.
+
+    `sol_delta` cannot answer this on its own -- it returns None both for "not confirmed yet" and
+    for "failed", and those two demand opposite actions: wait, or write the order off. Hence this
+    function, which separates them and nothing else.
+    """
+    try:
+        r = await client.post(rpc_url, json={
+            "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
+            "params": [tx_hash, {"maxSupportedTransactionVersion": 0, "encoding": "json"}]},
+            timeout=20)
+        res = (r.json() or {}).get("result")
+    except Exception:  # noqa: BLE001
+        return "attente"          # a network hiccup is not a verdict on the transaction
+    if not res:
+        return "attente"
+    return "echec" if (res.get("meta") or {}).get("err") else "ok"
+
+
 async def sol_delta(client: httpx.AsyncClient, rpc_url: str, tx_hash: str, owner: str) -> float | None:
     """SOL the wallet actually gained or lost in one confirmed transaction, fees included.
 
