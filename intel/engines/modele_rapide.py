@@ -836,11 +836,29 @@ class ModeleRapide:
         l historique, comme avant.
         """
         depuis = float(self._cfg("cumul_depuis", 0) or 0)
+        # LE DEBUT DU JOUR CALENDAIRE, heure de Paris. Mido, 20/09 : « t as un modele en test qui
+        # fait +50 et tu preferes garder celui qui fait +10 ? » -- le P&L en 24 H GLISSANTES
+        # masquait la tendance du jour. Depuis, tout compte rendu part du jour calendaire.
+        # ET ON LIT LE VRAI FUSEAU, pas un « +2 » en dur : fin octobre Paris passe a +1, et une
+        # journee decalee d une heure ferait compter des tickets de la veille dans le jour.
+        import datetime as _dt
+        try:
+            from zoneinfo import ZoneInfo
+            _tz = ZoneInfo("Europe/Paris")
+        except Exception:  # noqa: BLE001
+            _tz = _dt.timezone(_dt.timedelta(hours=2))
+        _minuit = _dt.datetime.now(_tz).replace(hour=0, minute=0, second=0,
+                                                microsecond=0).timestamp()
         try:
             r = self.ctx.db.query(
                 "SELECT COUNT(*) n, COALESCE(SUM(gain_eur),0) g, COALESCE(SUM(mise_eur),0) m,"
                 " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w FROM mr_lignes"
                 " WHERE mode='live' AND gain_eur IS NOT NULL AND ts_entree >= ?", (depuis,))
+            j = self.ctx.db.query(
+                "SELECT COUNT(*) n, COALESCE(SUM(gain_eur),0) g, COALESCE(SUM(mise_eur),0) m,"
+                " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w FROM mr_lignes"
+                " WHERE mode='live' AND gain_eur IS NOT NULL AND ts_entree >= ?",
+                (max(depuis, _minuit),))
             o = self.ctx.db.query(
                 "SELECT COUNT(*) n, COALESCE(SUM(mise_eur),0) m FROM mr_lignes"
                 " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL"
@@ -848,20 +866,31 @@ class ModeleRapide:
         except Exception:  # noqa: BLE001
             return ""
         n = int(r[0]["n"] or 0) if r else 0
+        nj = int(j[0]["n"] or 0) if j else 0
         # LA DATE EST DERIVEE DE `cumul_depuis`, jamais ecrite en dur : une date figee dans le
         # texte survivrait au changement de methode et mentirait sans que rien ne le signale.
         # C est exactement ce qui vient d arriver avec « depuis le 18/09 ».
-        import datetime as _dt
-        quand = (_dt.datetime.fromtimestamp(depuis, _dt.timezone(_dt.timedelta(hours=2)))
+        quand = (_dt.datetime.fromtimestamp(depuis, _tz)
                  .strftime("depuis le %d/%m %Hh%M") if depuis else "tout l historique")
         bloc = ["", "━━━━━━━━━━━━━━",
                 "<i>%s · %s</i>" % (str(self._cfg("regle", "?")).upper(), quand)]
+        # DEUX LIGNES, JAMAIS UNE. Demande de Mido le 23/09 : « separe P&L du jour et P&L total ».
+        # Un total qui grossit cache une journee qui saigne -- c est exactement ce qui s etait
+        # passe le 20/09 avec `FORET REENTRAINEE`, ou le cumul restait flatteur pendant que la
+        # journee perdait 45,75 EUR en une heure. Le jour vient EN PREMIER : c est lui qui dit ce
+        # qui se passe maintenant.
+        if nj:
+            gj, mj, wj = float(j[0]["g"]), float(j[0]["m"]) or 1.0, int(j[0]["w"] or 0)
+            bloc.append("<b>aujourd'hui</b>  %+.2f EUR · %d trades, %.0f %% won, %+.3f/eur"
+                        % (gj, nj, 100.0 * wj / nj, gj / mj))
+        else:
+            bloc.append("<b>aujourd'hui</b>  aucun ticket compte")
         if n:
             g, m, w = float(r[0]["g"]), float(r[0]["m"]) or 1.0, int(r[0]["w"] or 0)
-            bloc.append("%+.2f EUR · %d trades, %.0f %% won, %+.3f/eur"
+            bloc.append("<b>total</b>       %+.2f EUR · %d trades, %.0f %% won, %+.3f/eur"
                         % (g, n, 100.0 * w / n, g / m))
         else:
-            bloc.append("aucun ticket encore compte sur la chaine")
+            bloc.append("<b>total</b>       aucun ticket encore compte sur la chaine")
         if o and int(o[0]["n"] or 0):
             bloc.append("%d position(s) ouverte(s), %.0f EUR engages" % (int(o[0]["n"]), float(o[0]["m"])))
         return "\n".join(bloc)
