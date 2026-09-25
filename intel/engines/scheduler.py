@@ -393,6 +393,29 @@ class Runtime:
             tasks.append(asyncio.create_task(self._loop(
                 "modele_rapide", self.modele_rapide.cycle,
                 int(self.ctx.config.get("modele_rapide.pas_secondes", 5)))))
+        # SUIVEUR G+D : la MEME classe, une AUTRE table, une AUTRE regle, une AUTRE boucle.
+        #
+        # Demande par Mido le 25/09 pour faire tourner `G+D` a cote de `BANDE + PAUSE` : les deux sont
+        # decorrelees (r = -0,03 sur 9 jours communs) et leur melange a le meilleur rapport gain/risque
+        # du projet. G+D ne rapporte PAS plus -- un tiers de la prod a mise egale -- c est la
+        # decorrelation qu on achete.
+        #
+        # TABLE SEPAREE, SINON LE REGISTRE DES COUTS MELANGE LES DEUX REGLES et le 3,88 % qui evalue
+        # toutes les lignes de la page derive en silence. Boucle separee aussi : « les deux regles
+        # doivent pouvoir etre arretees separement » vaut ici comme pour le Telegram, et le suiveur
+        # repasse toutes les 2 s parce qu il doit attraper la decision du carnet papier avant que la
+        # fenetre d entree de 47-55 s ne se referme. Voir le bloc `suiveur_gd` de config/intel.yaml.
+        if self.ctx.config.get("suiveur_gd.enabled", False):
+            from intel.engines.modele_rapide import ModeleRapide as _MR
+            import httpx as _hxg
+            self.suiveur_gd = _MR(
+                self.ctx, getattr(getattr(self, "solana", None), "client", None)
+                or _hxg.AsyncClient(headers={"User-Agent": "tangier-intel/gd"}),
+                prefixe="suiveur_gd",
+                table=str(self.ctx.config.get("suiveur_gd.table", "gd_lignes")))
+            tasks.append(asyncio.create_task(self._loop(
+                "suiveur_gd", self.suiveur_gd.cycle,
+                int(self.ctx.config.get("suiveur_gd.pas_secondes", 2)))))
         # Collecte BNB Chain, LECTURE SEULE. Aucune cle, aucun ordre, tables separees. Sert a
         # constituer une donnee honnete -- liens sociaux horodates par nous a T+60 -- pour pouvoir
         # un jour tester la regle Telegram ailleurs que sur Solana. Voir bnb_collecte.py.

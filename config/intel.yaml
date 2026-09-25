@@ -1431,6 +1431,108 @@ modele_rapide:
 #
 # Comme tout ce qui signe ici, il faut DEUX actes pour qu il agisse : `enabled: true` ci-dessous ET
 # `execution.mode: live`. En papier il se contente d afficher ce qu il fermerait.
+# ==================================================================================================
+# SUIVEUR G+D — une SECONDE instance du meme moteur, sur une AUTRE table, pour une AUTRE regle.
+#
+# POURQUOI IL EXISTE. Mido, 25/09 : `BANDE + PAUSE` a perdu 125,21 EUR sur la journee (20 tickets)
+# pendant que `G+D les trois` gagnait +17,87 (32 tickets). Mesure des correlations sur 9 jours
+# communs : `G+D 45s` et `G+D les trois` sont la MEME strategie (r = +0,919), et `BANDE + PAUSE` est
+# DECORRELEE des deux (r = -0,028 et +0,150). Le melange 50/50 donne le meilleur rapport gain/risque
+# du projet (+0,623 contre +0,486 et +0,500) -- moins d euros par jour, beaucoup moins de dispersion.
+# C EST LA DECORRELATION QU ON ACHETE, PAS DU RENDEMENT. Mido : « une bonne idee je suis in ».
+#
+# CE QU IL VAUT, AU CHIFFRE HONNETE. Le rapport de `papier_gd` affiche +4,64 %/ticket, mais cette
+# colonne (`net`) retire un cout FORFAITAIRE de 2,62 points. La colonne `net_reel`, qui utilise une
+# vraie cotation du routeur a la sortie, donne **+2,948 %/ticket sur 271 tickets, a +1,10 sigma**.
+# A 10 EUR de mise (les frais fixes pesent plus qu a 30) : ~+2,7 %/ticket, soit ~+0,27 EUR x 32
+# tickets/jour = **~+9 EUR/jour**, avec un ecart-type journalier de ~25 EUR. Des journees a -25 EUR
+# seront donc courantes. A 20 EUR : ~+19 EUR/jour, ecart-type ~51.
+# CE N EST PAS MIEUX QUE LA PRODUCTION : sur les memes 9 jours, au meme peage reel et a mise egale,
+# `BANDE + PAUSE` rend +62 EUR/jour et G+D +22. G+D vaut UN TIERS de la prod. Elle n est la que pour
+# la decorrelation.
+#
+# POURQUOI IL SUIT LE CARNET PAPIER AU LIEU DE RECALCULER LA REGLE. G+D demande la foule (acheteurs
+# uniques avant 45 s <= 74), le coffre (< 100 SOL) et la tendance (> 0) ; le moteur ne calcule AUCUNE
+# des trois. La foule exige de resoudre le saut de routeur dans le bloc -- 98 % des sorties du pool
+# vont a un routeur -- et un compteur naif est FAUX. `papier_gd_direct.py` fait tout cela en direct a
+# 45 s depuis le 16/09 : on lit sa decision, donc la regle executee est la sienne par construction.
+#
+# LA PRISE DE GAIN EST ARMEE ICI, ET SEULEMENT ICI. `prise_gain_x: 1.25` fait partie de la regle
+# GELEE de G+D -- **148 de ses 294 sorties sont des prises de gain**, la moitie. La production garde
+# `prise_gain_x` absent (donc 0, desarme) : elle tient 240 s sans stop ni prise de gain, et les deux
+# reflexes y coutent 6,6 points par ticket.
+#
+# LE RECOUVREMENT AVEC LA PRODUCTION, ET QUI CEDE. **79 % des jetons de G+D sont dans la bande
+# 0,20-0,35** (218 sur 276) : les deux regles visent la meme zone, et le 25/09 elles se sont disputee
+# 4 jetons. Or le P&L se lit sur le solde du portefeuille -- un jeton, une ligne. C est le SUIVEUR
+# qui cede (statut `CEDEE`, pour pouvoir chiffrer ce que la cession coute) ; la production n a pas
+# ete modifiee d une ligne.
+#
+# CRITERE ECRIT AVANT DE BRANCHER, pour ne pas le fixer apres comme sur le frein :
+#   - on coupe si la perte cumulee depuis le branchement atteint -100 EUR ;
+#   - a 150 tickets reels, on compare son `gain_eur` lu au portefeuille a +0,27 EUR/ticket (a 10 EUR
+#     de mise) ; sous ZERO a 150 tickets, on debranche ;
+#   - on ne juge JAMAIS sur une correlation a 9 jours : elle sera re-mesuree a 20 jours communs.
+#
+# DEUX ACTES POUR QU IL ACHETE, comme partout : `enabled: true` ET `mode: live`.
+suiveur_gd:
+  enabled: false
+  mode: paper
+  # LA TABLE SEPAREE EST LA RAISON D ETRE DE CE BLOC. Le registre des couts (`cout_registre.py`,
+  # `cout_glissement.py`, `cout_reserve.py`, `calibration_live.py`) ne filtre que sur `mode='live'` :
+  # si G+D ecrivait dans `mr_lignes`, il moyennerait deux regles aux pools de tailles differentes et
+  # le 3,88 % qui evalue TOUTES les lignes de la page deriverait sans que personne ne le voie.
+  table: gd_lignes
+  regle: gd_suiveur
+  gd_db: /app/db/papier_gd.sqlite
+  # Si le carnet papier se fige, le suiveur se TAIT -- il n achete jamais a l aveugle. Meme raison
+  # que `pause_fraicheur` : les trois instances papier sont mortes le 18/09 sans que personne ne le
+  # voie pendant des heures.
+  gd_fraicheur: 900
+  mise_eur: 10.0
+  # 10 EUR LE PREMIER JOUR, PAS 20, et ce n est pas de la prudence : le suiveur doit voir la decision
+  # du carnet papier dans les secondes qui suivent les 45 s, et cette course-la ne se teste pas hors
+  # ligne. Le premier jour a 10 EUR la prouve a moitie prix. Mido a accepte 20 ensuite.
+  pas_secondes: 2
+  age_decision: 45
+  # LA FENETRE D ENTREE EST FERMEE A 8 s (donc 47 -> 55 s), et c est le reglage le plus important de
+  # ce bloc. La regle gelee de G+D entre « au plus tot 47 s, au plus tard 55 s » parce qu entrer a
+  # 65 s coute -3,65 points par ticket -- tout son avantage. On ne peut pas garantir d avoir vu la
+  # decision du carnet papier des 47 s (son `t_dec` est un age nominal, pas un instant d ecriture, et
+  # son appel RPC pour la foule ajoute un delai non stocke). Avec `pas_secondes: 2` le suiveur a
+  # quatre chances de l attraper, et au-dela de 55 s il RENONCE au ticket au lieu de l acheter tard.
+  fenetre_entree_s: 8
+  tenue_secondes: 240
+  prise_gain_x: 1.25
+  max_perte_jour_eur: 100.0
+  max_ordres_jour: 0
+  # LA PAUSE DE LA BANDE N A RIEN A FAIRE ICI : G+D a sa propre pause de 30 min, et c est le carnet
+  # papier qui l applique deja avant d ecrire `pris=1`. L ajouter reviendrait a en empiler deux.
+  pause_enabled: false
+  # LE FREIN NON PLUS. C est un garde-fou de production qui ne fait pas partie de la regle gelee de
+  # G+D ; l activer executerait une regle PLUS restrictive que celle mesuree. Le plafond de perte
+  # journaliere ci-dessus est le garde-fou de l argent.
+  frein_enabled: false
+  traits_75: false
+  cle_fichier: null
+  alertes: true
+  cumul_depuis: 0
+  # LES GARDE-FOUS D EXECUTION SONT REECRITS ICI EN CLAIR, avec les MEMES valeurs que la production,
+  # au lieu d etre laisses aux defauts du code : un garde-fou qui protege de l argent reel doit etre
+  # lisible dans le fichier, pas deduit d une signature de fonction.
+  slippage_achat_pct: 20.0
+  slippage_vente_pct: 25.0
+  max_impact_pct: 15.0
+  max_ecart_pool_pct: 20.0
+  max_aller_retour_pct: 15.0
+  modele: /app/data/recherche/balayage/modele_vidage.json
+  fenetre_minutes: 15
+  confirmation_secondes: 90
+  # Les deux instances parlent dans le MEME canal : sans etiquette un 🟢 serait inattribuable, et
+  # c est sur ces messages que l operateur suit son argent.
+  etiquette: "🅶"
+  nom_regle: "G+D · foule + coffre + tendance"
+
 recuperation:
   # ACTIVEE le 19/09 09h30 sur accord de Mido : 92 comptes vides trouves, 14,46 EUR recuperes a la main
   # (§3.148). Le module ne sait faire que CloseAccount sur un compte a solde exactement nul.

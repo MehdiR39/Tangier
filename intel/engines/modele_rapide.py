@@ -100,8 +100,26 @@ def _a_age(ages: list[float], cible: float, tol: float):
 class ModeleRapide:
     """Decide a 45 s sur le modele, achete a 47 s, revend a 287 s. Rien d autre."""
 
-    def __init__(self, ctx, client) -> None:
+    def __init__(self, ctx, client, prefixe: str = "modele_rapide",
+                 table: str = "mr_lignes") -> None:
+        """`prefixe` et `table` permettent une SECONDE instance sans toucher a la premiere.
+
+        POURQUOI CE PARAMETRAGE, et pourquoi il ne peut pas casser la production. Mido a demande
+        (25/09) de faire tourner `G+D` en reel EN PARALLELE de `BANDE + PAUSE`, « sans casser ce qui
+        tourne ». Deux instances de cette classe le permettent -- mais elles doivent ecrire dans DEUX
+        tables, sinon le registre des couts (`cout_registre.py`, `cout_glissement.py`,
+        `cout_reserve.py`, `calibration_live.py`, qui ne filtrent que sur `mode='live'`) moyennerait
+        deux regles aux pools de tailles differentes, et le 3,88 % qui evalue TOUTES les lignes de la
+        page deriverait en silence. Le cumul Telegram et la page melangeraient de meme les deux.
+
+        LA GARANTIE. Aucune des ~33 requetes SQL de ce module n a ete reecrite : elles nomment
+        toujours `mr_lignes` en clair. C est `_q` / `_x` qui substituent `self.table`, et quand
+        `self.table == "mr_lignes"` la substitution est un NON-OPERANT. La production execute donc
+        le meme SQL qu avant, par construction et non par relecture.
+        """
         self.ctx, self.client = ctx, client
+        self._base = ctx.db
+        self.prefixe, self.table = prefixe, table
         self._modele = None
         self._vus: set[str] = set()
         # mint -> (nombre d echecs de vente, instant de la derniere alerte). Une position
@@ -110,7 +128,34 @@ class ModeleRapide:
         self._echecs: dict[str, tuple[int, float]] = {}
 
     def _cfg(self, cle: str, defaut: Any) -> Any:
-        return self.ctx.config.get("modele_rapide.%s" % cle, defaut)
+        return self.ctx.config.get("%s.%s" % (self.prefixe, cle), defaut)
+
+    # --- acces a la base, avec la table de CETTE instance ---------------------
+    # Les deux seules portes par lesquelles ce module lit et ecrit. Voir `__init__`.
+
+    def _sql(self, sql: str) -> str:
+        """Le SQL de CETTE instance. Pour la production, la fonction est l IDENTITE -- au sens strict :
+        on ne passe meme pas par un `replace`, donc aucun chemin ne peut la modifier.
+
+        LE NOM D INDEX EST REECRIT AUSSI, et ce n est pas un detail : dans SQLite un nom d index est
+        GLOBAL a la base, pas attache a sa table. `CREATE INDEX IF NOT EXISTS i_mr_statut ON
+        gd_lignes(statut)` aurait donc trouve le nom deja pris par `mr_lignes` et n aurait RIEN fait
+        -- la table du suiveur serait restee sans index, en silence.
+        """
+        if self.table == "mr_lignes":
+            return sql
+        return (sql.replace("mr_lignes", self.table)
+                   .replace("i_mr_statut", "i_%s_statut" % self.table))
+
+    # `self._base` est la MEME base que `self.ctx.db` -- l alias existe pour que ces deux methodes
+    # ne s appellent pas elles-memes : partout ailleurs dans ce module, l acces direct a la base a
+    # ete remplace par `self._q(...)` / `self._x(...)`, et si les deux lignes ci-dessous passaient
+    # par le meme chemin elles boucleraient a l infini.
+    def _q(self, sql: str, params: Any = ()) -> Any:
+        return self._base.query(self._sql(sql), params)
+
+    def _x(self, sql: str, params: Any = ()) -> Any:
+        return self._base.execute(self._sql(sql), params)
 
     def _traits75(self):
         """L objet qui fabrique les variables de flux. Cree une seule fois : il porte l historique
@@ -261,7 +306,8 @@ class ModeleRapide:
             return float(self._charge_modele().seuil_p80)
         return float(brut)
 
-    def retenu(self, f: dict, risque: float, regle: str | None = None) -> bool:
+    def retenu(self, f: dict, risque: float, regle: str | None = None,
+               pair: str | None = None) -> bool:
         """La regle en service. NaN ecarte AVANT toute comparaison.
 
         Une comparaison avec NaN est toujours fausse : sans ce garde-fou un ticket dont
@@ -309,8 +355,81 @@ class ModeleRapide:
             if x is None or x != x:
                 return False
             return float(x) <= 1e-9
+        if r == "gd_suiveur":
+            return self._gd_a_dit_oui(pair)
         log.warning("modele_rapide: regle inconnue '%s' — aucun achat", r)
         return False
+
+    # ------------------------------------------------------------- suiveur G+D
+
+    def _gd_a_dit_oui(self, pair: str | None) -> bool:
+        """La regle `G+D` : on EXECUTE ce que le carnet papier `papier_gd_direct` a decide.
+
+        POURQUOI SUIVRE ET NE PAS REIMPLEMENTER. G+D demande trois conditions -- acheteurs uniques
+        avant 45 s <= 74, coffre (SOL + reserve virtuelle) < 100 SOL, tendance > 0 -- et ce moteur
+        n en calcule AUCUNE : ses variables de decision n ont ni la foule, ni le coffre en SOL, ni la
+        tendance. Les reimplementer voudrait dire refaire le compteur d acheteurs uniques, celui qui
+        est FAUX tant qu on ne resout pas le saut de routeur dans le bloc -- 98 % des sorties du pool
+        vont a un routeur. On deploierait alors une regle DIFFERENTE de celle mesuree, l erreur exacte
+        du 22/09 sur le cout de la pause (trois achats de nuit hors regle, -15,69 EUR).
+
+        `papier_gd_direct.py` fait deja tout cela EN DIRECT a 45 s -- l appel RPC compris -- et ecrit
+        sa ligne. On lit sa decision : la regle executee est la sienne par construction. C est le meme
+        procede que `pause_ouverte`, qui lit deja le carnet papier de la bande.
+
+        CE QU ON NE FAIT PAS : on ne lit QUE `pris=1`. Un ticket que son carnet a ecarte -- pour la
+        foule, le coffre, la tendance, sa propre pause ou l executabilite -- n est pas achete ici.
+
+        FRAICHEUR. Si le processus papier est mort, sa table se fige et le suiveur ne trouverait plus
+        rien -- il n acheterait donc rien, ce qui est le bon comportement par defaut. On verifie en
+        plus que sa DERNIERE ligne est recente : une table qui ne bouge plus doit faire taire le
+        suiveur, jamais le faire acheter a l aveugle (meme raison que `pause_fraicheur`).
+        """
+        if not pair:
+            return False
+        import sqlite3 as _sq  # noqa: PLC0415
+        from intel.utils.timeutil import now_ts  # noqa: PLC0415
+        chemin = str(self._cfg("gd_db", "/app/db/papier_gd.sqlite"))
+        try:
+            cn = _sq.connect("file:%s?mode=ro" % chemin, uri=True, timeout=5)
+            try:
+                dernier = cn.execute("SELECT MAX(t_dec) FROM decision").fetchone()[0]
+                if dernier is None:
+                    return False
+                if now_ts() - float(dernier) > float(self._cfg("gd_fraicheur", 900.0)):
+                    log.warning("suiveur G+D: carnet papier fige depuis %.0f s — aucun achat",
+                                now_ts() - float(dernier))
+                    return False
+                ligne = cn.execute(
+                    "SELECT 1 FROM decision WHERE pair = ? AND pris = 1 LIMIT 1",
+                    (str(pair),)).fetchone()
+                return ligne is not None
+            finally:
+                cn.close()
+        except Exception as e:  # noqa: BLE001
+            # ON N ACHETE PAS quand on ne sait pas. Un `except` qui rendrait True ferait acheter
+            # TOUT ce qui passe des que la base est illisible -- l erreur corrigee sur la pause.
+            log.warning("suiveur G+D: carnet papier illisible (%s) — aucun achat", e)
+            return False
+
+    def _mint_deja_en_prod(self, mint: str) -> bool:
+        """VRAI si la production tient deja ce jeton. Le suiveur CEDE alors le ticket.
+
+        POURQUOI. Le P&L se lit sur le SOLDE DU PORTEFEUILLE : un jeton, une ligne. Deux instances
+        qui achetent le meme mint rendent les deux comptabilites inattribuables. Et le recouvrement
+        n est pas rare : **79 % des jetons de G+D sont dans la bande 0,20-0,35** (218 sur 276 dont on
+        connait le score), soit ~4 collisions par jour a l observe du 25/09.
+
+        C EST LE SUIVEUR QUI CEDE, jamais la production : celle-ci n a pas ete modifiee d une ligne.
+        Le ticket cede est enregistre avec son propre statut, pour qu on puisse chiffrer ce qu il
+        aurait rapporte au lieu de le perdre de vue.
+        """
+        if self.table == "mr_lignes":
+            return False                      # la production, elle, ne cede a personne
+        r = self._base.query(
+            "SELECT 1 FROM mr_lignes WHERE mint = ? AND statut IN"
+            " ('OUVERTE','ATTENTE','FERMEE') AND tx_achat IS NOT NULL LIMIT 1", (str(mint),))
+        return bool(r)
 
     # ---------------------------------------------------------------- frein
 
@@ -463,19 +582,19 @@ class ModeleRapide:
     # ---------------------------------------------------------------- schema
 
     def _schema(self) -> None:
-        self.ctx.db.execute(
+        self._x(
             "CREATE TABLE IF NOT EXISTS mr_lignes("
             "  mint TEXT PRIMARY KEY, pair TEXT, symbole TEXT, mode TEXT, statut TEXT,"
             "  naissance REAL, t_dec REAL, risque REAL, depuis_min REAL, q REAL,"
             "  ts_entree INTEGER, prix_entree REAL, mise_eur REAL, tx_achat TEXT,"
             "  ts_sortie INTEGER, prix_sortie REAL, tx_vente TEXT, gain_eur REAL,"
             "  motif TEXT, variables TEXT)")
-        self.ctx.db.execute("CREATE INDEX IF NOT EXISTS i_mr_statut ON mr_lignes(statut)")
+        self._x("CREATE INDEX IF NOT EXISTS i_mr_statut ON mr_lignes(statut)")
         # `impact_annonce` : ce que le routeur annonce AVANT l achat (`priceImpactPct`). Ajoute le
         # 19/09 a 22h sur une table qui existait deja, donc par ALTER et non dans le CREATE : les
         # lignes anterieures restent a NULL, ce qui est exact -- on ne l enregistrait pas.
         try:
-            self.ctx.db.execute("ALTER TABLE mr_lignes ADD COLUMN impact_annonce REAL")
+            self._x("ALTER TABLE mr_lignes ADD COLUMN impact_annonce REAL")
         except Exception:  # noqa: BLE001
             pass                                  # la colonne existe deja
 
@@ -490,7 +609,7 @@ class ModeleRapide:
         mise = float(self._cfg("mise_eur", 20.0))
 
         # --- plafonds, verifies AVANT toute decision -------------------------
-        jour = self.ctx.db.query(
+        jour = self._q(
             "SELECT COUNT(*) n, COALESCE(SUM(gain_eur), 0) g FROM mr_lignes"
             " WHERE mode='live' AND ts_entree >= ?", (now - 86400,))
         n_jour = int(jour[0]["n"] or 0) if jour else 0
@@ -509,12 +628,12 @@ class ModeleRapide:
         age_dec = self._age()
         traits75 = bool(self._cfg("traits_75", False))
         fenetre = int(self._cfg("fenetre_minutes", 15))
-        lancements = sorted(float(r["ts"]) for r in self.ctx.db.query(
+        lancements = sorted(float(r["ts"]) for r in self._q(
             "SELECT ts FROM solana_stream_launches WHERE ts > ?", (now - 3600,)))
 
         # --- ce qui est encore decidable ------------------------------------
-        deja = {str(r["mint"]) for r in self.ctx.db.query("SELECT mint FROM mr_lignes")}
-        pools = self.ctx.db.query(
+        deja = {str(r["mint"]) for r in self._q("SELECT mint FROM mr_lignes")}
+        pools = self._q(
             "SELECT pair_id, mint, MIN(ts - age_s) AS naissance, MAX(age_s) AS age"
             " FROM solana_prix_chaine WHERE ts > ? GROUP BY pair_id", (now - fenetre * 60,))
         decides = achetes = 0
@@ -522,9 +641,17 @@ class ModeleRapide:
             mint = str(p["mint"] or "")
             if not mint or mint in deja or (p["age"] or 0) < age_dec + EXEC_S:
                 continue
-            if (p["age"] or 0) > age_dec + EXEC_S + 120:
+            # LA FIN DE LA FENETRE D ENTREE. 120 s pour la production, qui n a pas de contrainte sur
+            # l age d entree. Le SUIVEUR G+D en a une, et elle est chiffree : sa regle gelee entre
+            # « au plus tot 47 s, au plus tard 55 s », parce qu entrer a 65 s au lieu de 47 coute
+            # **-3,65 points par ticket** (mesure appariee sur 306 pools, 16/09) -- tout l avantage.
+            # Or on ne peut PAS garantir d avoir vu la decision du carnet papier a 47 s : `t_dec` y
+            # est un age NOMINAL (naissance + 45), pas un instant d ecriture, et son appel RPC pour
+            # compter la foule ajoute un delai qui n est stocke nulle part. On ne parie donc pas sur
+            # la course : on borne la fenetre, et un ticket arrive trop tard est PERDU, pas achete.
+            if (p["age"] or 0) > age_dec + EXEC_S + float(self._cfg("fenetre_entree_s", 120)):
                 continue                     # trop tard : la fenetre d entree est passee
-            lect = self.ctx.db.query(
+            lect = self._q(
                 "SELECT age_s, prix_sol, reserve_sol, reserve_base, reserve_virtuelle"
                 " FROM solana_prix_chaine WHERE pair_id = ? ORDER BY age_s", (p["pair_id"],))
             pts = [(float(r["age_s"] or 0), float(r["prix_sol"] or 0), float(r["reserve_sol"] or 0),
@@ -548,10 +675,22 @@ class ModeleRapide:
                     continue
             risque = float(modele.probabilite(f))
             decides += 1
-            garde = self.retenu(f, risque)
+            garde = self.retenu(f, risque, pair=str(p["pair_id"]))
             deja.add(mint)
+            # LE SUIVEUR CEDE LE JETON QUE LA PRODUCTION TIENT DEJA (un jeton, une ligne). Place
+            # APRES `retenu` pour que le statut distingue « la regle n en voulait pas » de « la regle
+            # en voulait mais la prod l avait deja » -- sans quoi on ne pourrait pas chiffrer le cout
+            # de la cession. Non-operant pour la production, qui ne cede a personne.
+            if garde and self._mint_deja_en_prod(mint):
+                self._x(
+                    "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
+                    " risque, depuis_min, q, motif, variables) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (mint, str(p["pair_id"]), "live" if live else "paper", "CEDEE",
+                     float(p["naissance"] or 0), now, risque, f.get("depuis_min"), f.get("q"),
+                     "jeton deja tenu par la production", json.dumps(f, default=str)))
+                continue
             if not garde:
-                self.ctx.db.execute(
+                self._x(
                     "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
                     " risque, depuis_min, q, variables) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (mint, str(p["pair_id"]), "live" if live else "paper", "ECARTEE",
@@ -574,7 +713,7 @@ class ModeleRapide:
             # carnet papier qui l ignorerait ne mesurerait pas `BANDE + PAUSE` mais la bande seule,
             # et les deux different de 755 EUR sur leur histoire.
             if not self.pause_ouverte(now):
-                self.ctx.db.execute(
+                self._x(
                     "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
                     " risque, depuis_min, q, motif, variables) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (mint, str(p["pair_id"]), "live" if live else "paper", "PAUSE",
@@ -582,7 +721,7 @@ class ModeleRapide:
                      "pause apres une cloture sous -30 % dans la bande", json.dumps(f, default=str)))
                 continue
             if live and not bloque and not self.frein_ouvert(now):
-                self.ctx.db.execute(
+                self._x(
                     "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
                     " risque, depuis_min, q, motif, variables) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (mint, str(p["pair_id"]), "live", "FREIN",
@@ -590,7 +729,7 @@ class ModeleRapide:
                      "frein du marche ferme", json.dumps(f, default=str)))
                 continue
             if live and bloque:
-                self.ctx.db.execute(
+                self._x(
                     "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
                     " risque, depuis_min, q, motif, variables) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (mint, str(p["pair_id"]), "live", "BLOQUEE",
@@ -599,7 +738,7 @@ class ModeleRapide:
                 continue
             e = _a_age([x[0] for x in pts], A + EXEC_S, 6)
             prix_e = pts[e][1] if e is not None else pts[-1][1]
-            self.ctx.db.execute(
+            self._x(
                 "INSERT OR IGNORE INTO mr_lignes(mint, pair, mode, statut, naissance, t_dec,"
                 " risque, depuis_min, q, ts_entree, prix_entree, mise_eur, variables)"
                 " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -622,7 +761,7 @@ class ModeleRapide:
         # P&L ni plafond de perte. Un basculement en papier doit arreter les ACHATS ; il ne doit
         # jamais abandonner l argent deja engage. On entretient donc les lignes reelles tant qu il
         # en reste, quel que soit le mode affiche.
-        reste = self.ctx.db.query(
+        reste = self._q(
             "SELECT COUNT(*) n FROM mr_lignes WHERE mode='live' AND tx_achat IS NOT NULL"
             " AND (statut IN ('OUVERTE','ATTENTE')"
             "      OR (statut='FERMEE' AND gain_eur IS NULL AND ts_sortie >= ?))",
@@ -646,7 +785,7 @@ class ModeleRapide:
         donc on prefere la valeur ENREGISTREE quand elle existe.
         """
         try:
-            r = self.ctx.db.query("SELECT decimales FROM mint_offre WHERE mint = ? LIMIT 1", (mint,))
+            r = self._q("SELECT decimales FROM mint_offre WHERE mint = ? LIMIT 1", (mint,))
             if r and r[0]["decimales"] is not None:
                 return int(r[0]["decimales"])
         except Exception:  # noqa: BLE001
@@ -661,7 +800,7 @@ class ModeleRapide:
         rpc, proprio = sol.rpc_url(), sol.signer_address(cle)
         if not rpc or not proprio:
             log.warning("modele_rapide: mode live mais aucune cle — aucun ordre envoye")
-            self.ctx.db.execute("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
+            self._x("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
                                 ("aucune cle", mint))
             return
         # LE TAUX SE LIT SUR LE MARCHE, JAMAIS EN DUR. Le 08/09 le carnet supposait 180 EUR/SOL
@@ -671,7 +810,7 @@ class ModeleRapide:
             taux = await sol.sol_eur(self.client)
         except Exception:  # noqa: BLE001
             log.warning("modele_rapide: taux SOL illisible — achat reporte plutot que mal dimensionne")
-            self.ctx.db.execute("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
+            self._x("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
                                 ("taux SOL illisible", mint))
             return
         try:
@@ -737,11 +876,11 @@ class ModeleRapide:
             # deviner -- et il deviendra une variable de modele, probablement meilleure que la
             # formule qu il remplacerait.
             try:
-                self.ctx.db.execute(
+                self._x(
                     "UPDATE mr_lignes SET tx_achat=?, impact_annonce=? WHERE mint=?",
                     (h, float(tx.get("slippage_pct") or 0.0), mint))
             except Exception:  # noqa: BLE001
-                self.ctx.db.execute("UPDATE mr_lignes SET tx_achat=? WHERE mint=?", (h, mint))
+                self._x("UPDATE mr_lignes SET tx_achat=? WHERE mint=?", (h, mint))
             # ON N ANNONCE RIEN ENCORE. Une signature dit que la transaction est PARTIE, jamais
             # qu elle a abouti. Le 23/09 un achat est revenu avec sa signature, le carnet a ouvert
             # une ligne de 20 EUR et le telephone a recu un « achete » vert -- alors que la chaine
@@ -752,11 +891,11 @@ class ModeleRapide:
             # La ligne reste donc en ATTENTE : `_confirmer` la passera en OUVERTE et previendra
             # quand la chaine aura dit oui, ou l ecrira ECHOUEE si elle dit non. `ts_entree` garde
             # l heure de l ACHAT, donc les 240 s de tenue courent depuis le bon instant.
-            self.ctx.db.execute("UPDATE mr_lignes SET statut='ATTENTE' WHERE mint=?", (mint,))
+            self._x("UPDATE mr_lignes SET statut='ATTENTE' WHERE mint=?", (mint,))
             log.info("modele_rapide: achat envoye %s — %s (en attente de la chaine)",
                      mint[:10], h[:16])
         except Exception as exc:  # noqa: BLE001
-            self.ctx.db.execute("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
+            self._x("UPDATE mr_lignes SET statut='ANNULEE', motif=? WHERE mint=?",
                                 (str(exc)[:160], mint))
             log.warning("modele_rapide: achat refuse %s (%s)", mint[:10], str(exc)[:100])
 
@@ -776,7 +915,7 @@ class ModeleRapide:
         `_sortir` ne la verrait pas puisqu il ne regarde que les OUVERTE.
         """
         from intel.execution import solana as sol
-        lignes = self.ctx.db.query(
+        lignes = self._q(
             "SELECT mint, ts_entree, mise_eur, risque, q, tx_achat FROM mr_lignes"
             " WHERE mode='live' AND statut='ATTENTE' AND tx_achat IS NOT NULL")
         if not lignes:
@@ -789,13 +928,13 @@ class ModeleRapide:
             etat = await sol.statut_tx(self.client, rpc, str(l["tx_achat"]))
             if etat == "attente":
                 if age > limite:
-                    self.ctx.db.execute(
+                    self._x(
                         "UPDATE mr_lignes SET statut='ECHOUEE', mise_eur=0, ts_sortie=?, motif=?"
                         " WHERE mint=?", (now, "jamais confirmee apres %.0f s" % limite, mint))
                     log.warning("modele_rapide: achat %s jamais confirme apres %.0f s", mint[:10], limite)
                 continue
             if etat == "echec":
-                self.ctx.db.execute(
+                self._x(
                     "UPDATE mr_lignes SET statut='ECHOUEE', mise_eur=0, ts_sortie=?, motif=?"
                     " WHERE mint=?", (now, "rejetee par la chaine", mint))
                 log.warning("modele_rapide: achat %s REJETE par la chaine", mint[:10])
@@ -806,22 +945,71 @@ class ModeleRapide:
                     "engagé\n<i>slippage ou pool déplacé entre la cotation et la signature</i>"
                     % mint[:8])
                 continue
-            self.ctx.db.execute("UPDATE mr_lignes SET statut='OUVERTE' WHERE mint=?", (mint,))
+            self._x("UPDATE mr_lignes SET statut='OUVERTE' WHERE mint=?", (mint,))
             log.info("modele_rapide: ACHAT confirme %s", mint[:10])
             await self._prevenir(
-                "🟢 <b>%s…</b> acheté · <i>au plus bas + bande</i>\n"
-                "%.2f EUR · risque %.3f · coffre %.0f SOL · revente dans 4 min"
-                % (mint[:8], float(l["mise_eur"] or 0), float(l["risque"] or 0),
-                   float(l["q"] or 0)))
+                "🟢 <b>%s…</b> acheté · <i>%s</i>\n"
+                "%.2f EUR · risque %.3f · coffre %.0f SOL · revente dans %d min"
+                % (mint[:8], self._cfg("nom_regle", "au plus bas + bande"),
+                   float(l["mise_eur"] or 0), float(l["risque"] or 0), float(l["q"] or 0),
+                   round(self._tenue() / 60)))
+
+    def _gain_atteint(self, now: float) -> set[str]:
+        """Les mints dont le prix du pool a touche `prise_gain_x` fois le prix d entree.
+
+        VIDE POUR LA PRODUCTION, et il faut que ca reste vide : `BANDE + PAUSE` tient 240 s SANS
+        stop ni prise de gain, et c est mesure -- sur la regle Telegram, tenir aveuglement donne
+        +7,24 % par ticket, la prise de gain a +50 % le ramene a +5,10 %, le stop a +2,11 %, les deux
+        a +0,62 %. Les deux reflexes coutent 6,6 points. Le defaut `prise_gain_x: 0` les desactive.
+
+        POURQUOI LE SUIVEUR G+D EN A UNE, LUI. Sa regle gelee dit : « premiere lecture >= entree
+        x 1,25, puis on vend a la lecture suivante ». Ce n est pas un detail de sa regle -- **148 de
+        ses 294 sorties sont des prises de gain**, soit la moitie. Un suiveur qui tiendrait
+        aveuglement 240 s executerait donc une AUTRE regle que celle mesuree sur la moitie de ses
+        tickets. C est exactement l ecart qui a coute -15,69 EUR le 22/09 sur le cout de la pause.
+
+        LE DECLENCHEUR EST LE PRIX DU POOL, comme dans le carnet papier -- pas une cotation du
+        routeur : c est gratuit (la lecture existe deja) et c est le meme signal que celui qui a ete
+        mesure. La cotation, elle, sert a la VENTE, une ligne plus bas.
+
+        LE DELAI DE 2 s du carnet papier (« on vend a la lecture SUIVANTE ») est ici joue par la
+        latence reelle -- cotation, signature, atterrissage -- qui depasse 2 s. Ce n est pas
+        identique a la lettre, et c est note comme tel plutot que presente comme equivalent.
+        """
+        # `or 0.0` : une cle absente peut rendre None selon la source de config, et `float(None)`
+        # leverait -- dans une methode appelee a chaque cycle de vente, une exception ici empecherait
+        # de VENDRE. Le defaut desarme la prise de gain, jamais l inverse.
+        x = float(self._cfg("prise_gain_x", 0.0) or 0.0)
+        if x <= 1.0:
+            return set()
+        vus: set[str] = set()
+        for l in self._q(
+                "SELECT mint, pair, prix_entree, ts_entree FROM mr_lignes"
+                " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL"
+                " AND prix_entree > 0 AND ts_entree > ?", (now - self._tenue(),)):
+            r = self._q(
+                "SELECT MAX(prix_sol) p FROM solana_prix_chaine WHERE pair_id = ? AND ts >= ?",
+                (str(l["pair"]), float(l["ts_entree"] or 0)))
+            haut = float(r[0]["p"] or 0) if r else 0.0
+            if haut >= x * float(l["prix_entree"]):
+                vus.add(str(l["mint"]))
+        return vus
 
     async def _sortir(self, now: float) -> None:
-        """Vend tout ce qui a passe TENUE_S. AUCUN seuil : ni stop, ni prise de gain."""
+        """Vend tout ce qui a passe TENUE_S -- et, si `prise_gain_x` est arme, ce qui l a touche."""
         from intel.execution import solana as sol
         cle = self._cfg("cle_fichier", None)
         rpc, proprio = sol.rpc_url(), sol.signer_address(cle)
-        for l in self.ctx.db.query(
+        gagnants = self._gain_atteint(now)
+        a_vendre = list(self._q(
+            "SELECT mint, ts_entree FROM mr_lignes WHERE mode='live' AND statut='OUVERTE'"
+            " AND tx_achat IS NOT NULL AND ts_entree <= ?", (now - self._tenue(),)))
+        if gagnants:
+            vus = {str(l["mint"]) for l in a_vendre}
+            a_vendre += [l for l in self._q(
                 "SELECT mint, ts_entree FROM mr_lignes WHERE mode='live' AND statut='OUVERTE'"
-                " AND tx_achat IS NOT NULL AND ts_entree <= ?", (now - self._tenue(),)):
+                " AND tx_achat IS NOT NULL") if str(l["mint"]) in gagnants - vus]
+        for l in a_vendre:
             mint = str(l["mint"])
             try:
                 solde = await sol.token_balance(self.client, rpc, proprio, mint)
@@ -829,7 +1017,7 @@ class ModeleRapide:
                 await self._echec_vente(mint, "solde illisible : %s" % str(exc)[:60], now)
                 continue
             if not solde:
-                self.ctx.db.execute("UPDATE mr_lignes SET statut='FERMEE', ts_sortie=?, motif=?"
+                self._x("UPDATE mr_lignes SET statut='FERMEE', ts_sortie=?, motif=?"
                                     " WHERE mint=?", (now, "solde nul sur la chaine", l["mint"]))
                 continue
             try:
@@ -841,7 +1029,7 @@ class ModeleRapide:
                 if tx.get("status") != "BUILT" or not tx.get("tx"):
                     raise RuntimeError(tx.get("refused_reason") or "vente non assemblee")
                 h = await sol.send(self.client, rpc, sol.sign(tx["tx"], cle))
-                self.ctx.db.execute(
+                self._x(
                     "UPDATE mr_lignes SET statut='FERMEE', ts_sortie=?, tx_vente=?, motif=?"
                     " WHERE mint=?", (now, h, "sortie a %d s" % self._tenue(), l["mint"]))
                 log.info("modele_rapide: VENTE %s — %s", str(l["mint"])[:10], h[:16])
@@ -866,6 +1054,12 @@ class ModeleRapide:
         """
         if not critique and not bool(self._cfg("alertes", True)):
             return
+        # QUAND DEUX INSTANCES PARLENT DANS LE MEME CANAL, IL FAUT SAVOIR LAQUELLE. Sans cette
+        # etiquette le suiveur G+D et la production enverraient des messages identiques et un 🟢
+        # serait inattribuable -- or c est sur ces messages que l operateur suit son argent.
+        etiq = self._cfg("etiquette", None)
+        if etiq:
+            texte = "%s %s" % (etiq, texte)
         from intel.alerts.telegram import TelegramSender
         try:
             await TelegramSender(
@@ -917,16 +1111,16 @@ class ModeleRapide:
         _minuit = _dt.datetime.now(_tz).replace(hour=0, minute=0, second=0,
                                                 microsecond=0).timestamp()
         try:
-            r = self.ctx.db.query(
+            r = self._q(
                 "SELECT COUNT(*) n, COALESCE(SUM(gain_eur),0) g, COALESCE(SUM(mise_eur),0) m,"
                 " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w FROM mr_lignes"
                 " WHERE mode='live' AND gain_eur IS NOT NULL AND ts_entree >= ?", (depuis,))
-            j = self.ctx.db.query(
+            j = self._q(
                 "SELECT COUNT(*) n, COALESCE(SUM(gain_eur),0) g, COALESCE(SUM(mise_eur),0) m,"
                 " SUM(CASE WHEN gain_eur > 0 THEN 1 ELSE 0 END) w FROM mr_lignes"
                 " WHERE mode='live' AND gain_eur IS NOT NULL AND ts_entree >= ?",
                 (max(depuis, _minuit),))
-            o = self.ctx.db.query(
+            o = self._q(
                 "SELECT COUNT(*) n, COALESCE(SUM(mise_eur),0) m FROM mr_lignes"
                 " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL"
                 " AND ts_entree >= ?", (depuis,))
@@ -995,7 +1189,7 @@ class ModeleRapide:
         manque, au lieu de bloquer la vente dessus.
         """
         from intel.execution import solana as sol
-        a_compter = self.ctx.db.query(
+        a_compter = self._q(
             "SELECT mint, tx_achat, tx_vente FROM mr_lignes WHERE mode='live' AND statut='FERMEE'"
             " AND gain_eur IS NULL AND tx_achat IS NOT NULL AND tx_vente IS NOT NULL"
             " AND ts_sortie >= ?", (now - 6 * 3600,))
@@ -1015,7 +1209,7 @@ class ModeleRapide:
             except Exception:  # noqa: BLE001
                 continue
             gain = (da + dv) * taux
-            self.ctx.db.execute(
+            self._x(
                 "UPDATE mr_lignes SET gain_eur=?, motif=? WHERE mint=?",
                 (gain, "compte sur la chaine : %+.5f SOL" % (da + dv), l["mint"]))
             log.info("modele_rapide: %s compte sur la chaine — %+.5f SOL soit %+.2f EUR",

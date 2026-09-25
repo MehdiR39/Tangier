@@ -112,6 +112,112 @@ tourne en reel a 10 EUR, le compteur de couts repart. Le fil reste ecrit parce q
 qu il decrit -- payer ~180 EUR de nuit pour rafraichir une mesure deja a 648 exemplaires -- se
 representera au prochain debranchement.
 
+### 0.2 quinquies — 25/09 : DIVERSIFIER avec G+D, et trois mesures qui corrigent la veille
+
+Mido, 25/09 : `BANDE + PAUSE` a perdu **125,21 EUR** sur la journee (20 tickets) pendant que
+`G+D les trois` gagnait **+17,87** (32 tickets). Sa question : pourquoi l une se degrade et pas
+l autre.
+
+**CORRELATIONS DES GAINS QUOTIDIENS**, 9 jours communs, mise 25 EUR (celle de la page) :
+
+| paire | r |
+|---|---|
+| `G+D 45s` / `G+D les trois` | **+0,919** — c est UNE strategie, pas deux |
+| `G+D 45s` / `BANDE + PAUSE` | **-0,028** |
+| `G+D les trois` / `BANDE + PAUSE` | **+0,150** |
+
+| ligne | EUR/jour | ecart-type | ratio |
+|---|---|---|---|
+| `BANDE + PAUSE` | +51,11 | 105,26 | +0,486 |
+| `G+D les trois` | +26,72 | 53,40 | +0,500 |
+| **melange 50/50** | **+38,91** | **62,49** | **+0,623** |
+
+Le melange a le meilleur rapport gain/risque du projet. **RESERVE : 9 jours seulement** — une
+correlation sur 9 points a un IC d environ -0,5 a +0,6. A re-mesurer a 20 jours communs.
+
+#### TROIS CHOSES QUE J AI DITES ET QUI ETAIENT FAUSSES OU INCOMPLETES
+
+**(1) « Elles achetent des jetons differents, G+D prend des petits jetons calmes » — FAUX.**
+**79 % des jetons de G+D sont DANS la bande 0,20-0,35** (218 sur les 276 dont on connait le score).
+Les deux regles visent la MEME zone de risque. Les 4 jetons communs sur 20 etaient un fait exact,
+mais l explication ne l etait pas : elles sont disjointes en tickets REALISES, pas en selection.
+
+**(2) « C est la source de la pause qui explique l ecart » — FAUX, et c est teste.**
+La pause de `BANDE + PAUSE` lit le flux ENTIER de la bande et bloque 87-90 % ; celle de G+D ne lit
+que ses propres tickets (`papier_gd_direct.py` l.517, la pause CIRCULAIRE) et ne bloque que 56 %
+(367 refus contre 294 pris). Memes 3 032 tickets de bande, meme seuil, meme duree, meme cout reel,
+mise 20 EUR, depuis le gel de G+D — **seule la source change** :
+
+| variante | tickets | EUR/ticket | sigma | EUR/jour |
+|---|---|---|---|---|
+| bande **sans** pause | 3 032 (100 %) | **-0,362** | -1,40 | **-106,2** |
+| bande + pause sur **tout le flux** (la prod) | 300 (10 %) | **+2,151** | +2,40 | **+62,4** |
+| bande + pause **circulaire** (celle de G+D) | 1 067 (35 %) | **+0,449** | +1,00 | **+46,3** |
+
+**LA PAUSE EST LA STRATEGIE** : la bande sans pause perd 106 EUR/jour. Bloquer 90 % du temps n est
+pas un defaut, c est ou est tout l argent. Et la pause severe BAT la circulaire sur les memes
+tickets (+2,151 contre +0,449) : ce n est donc pas la pause qui fait tenir G+D.
+
+**(3) « G+D rend +4,64 %/ticket » — c est la colonne OPTIMISTE.** `net` retire un cout FORFAITAIRE
+de 2,62 points. `net_reel`, qui utilise une vraie cotation du routeur a la sortie, donne
+**+2,948 %/ticket sur 271 tickets, +1,10 sigma** (contre +1,77 pour `net`). **Le critere du gel est
+juge sur `net`.** A noter au moment du verdict.
+
+A mise egale et au peage reel, sur les memes 9 jours : **`BANDE + PAUSE` +62 EUR/jour, G+D +22**.
+G+D vaut **un tiers** de la production. On l ajoute pour la DECORRELATION, pas pour le rendement.
+
+#### ETAT DU GEL `G+D a 45 s` (fige le 16/09 14h10 UTC, critere ecrit d avance)
+
+`293 tickets sur 300` · **+4,64 %/ticket** (seuil +4,50) · moities **+0,86 % / +8,40 %** · sans le
+meilleur **+3,64 %** · gagnants 63 %. **Les trois parties du critere sont passees**, mais la marge
+est de **0,14 point sur une erreur type de 2,6** (sigma 45 pts, n = 293) et tout le gain est dans la
+seconde moitie. Mido a tranche de ne pas attendre les 7 derniers tickets.
+
+#### CE QUI A ETE CONSTRUIT LE 25/09 — `suiveur_gd`, et pourquoi ainsi
+
+Mido : « ca c est ton travail tu dois le faire sans casser ce qui est fait en ce moment tu peux meme
+faire un truc parallele ». Fait : **une SECONDE instance de `ModeleRapide`**, prefixe de config
+`suiveur_gd`, table `gd_lignes`, boucle a part.
+
+- **LA PRODUCTION EST INCHANGEE PAR CONSTRUCTION, pas par relecture.** Aucune des 36 requetes SQL du
+  module n a ete reecrite : elles nomment toujours `mr_lignes` en clair, et `_sql` substitue la table
+  de l instance. Pour `mr_lignes`, `_sql` est **l identite stricte** (retour immediat, pas meme un
+  `replace`). Verifie en comparant les litteraux SQL a ceux de HEAD : **36 avant, 36 apres,
+  identiques**, plus 5 ajouts qui ne s executent que pour le suiveur.
+- **IL SUIT LE CARNET PAPIER au lieu de recalculer la regle.** G+D demande la foule, le coffre et la
+  tendance ; le moteur ne calcule aucune des trois, et la foule exige de resoudre le saut de routeur
+  dans le bloc (98 % des sorties vont a un routeur) — un compteur naif est FAUX. `papier_gd_direct`
+  fait tout cela en direct depuis le 16/09 : on lit `pris=1`, donc la regle executee est la sienne.
+  Carnet fige > `gd_fraicheur` (900 s), base illisible, pair absente : reponse NON, jamais d achat.
+- **LA PRISE DE GAIN x1,25 EST ARMEE, et il fallait la faire** : **148 des 294 sorties de G+D sont
+  des prises de gain**, la moitie. Tenir aveuglement 240 s aurait execute une AUTRE regle sur la
+  moitie des tickets — l erreur du 22/09. La production garde `prise_gain_x` absent (donc desarme) :
+  chez elle stop et prise de gain coutent 6,6 points.
+- **LA FENETRE D ENTREE EST BORNEE A 8 s (47 -> 55 s)**, `fenetre_entree_s`. La regle gelee entre au
+  plus tard 55 s parce qu entrer a 65 s coute **-3,65 points**. Et on ne peut PAS mesurer apres coup
+  si le carnet papier a ecrit sa ligne avant 47 s : son `t_dec` est un age NOMINAL (naissance + 45),
+  jamais un instant d ecriture, et son appel RPC ajoute un delai non stocke. **On ne parie pas sur la
+  course : au-dela de 55 s le ticket est PERDU, pas achete tard.** `pas_secondes: 2` donne 4 chances.
+- **LE SUIVEUR CEDE LE JETON QUE LA PROD TIENT** (statut `CEDEE`, pour chiffrer la cession). Sans
+  cela, deux lignes porteraient le meme mint et le P&L lu au solde du portefeuille — un jeton, une
+  ligne — serait inattribuable. Avec 79 % de recouvrement, ~4 collisions/jour a l observe du 25/09.
+- **PIEGE EVITE : un nom d index est GLOBAL dans SQLite.** `CREATE INDEX IF NOT EXISTS i_mr_statut ON
+  gd_lignes(...)` aurait trouve le nom deja pris et n aurait RIEN fait — table du suiveur sans index,
+  en silence. `_sql` reecrit donc aussi le nom de l index.
+- Pause de la bande et frein DESARMES chez le suiveur : sa pause est deja appliquee par le carnet
+  papier, et le frein ne fait pas partie de sa regle gelee. Le garde-fou de l argent est
+  `max_perte_jour_eur: 100`, separe de celui de la prod (partage, il aurait arrete `BANDE + PAUSE`).
+- **Tests** : `tests/intel_tests/test_suiveur_gd.py`, 13 cas. Suite complete 434 passes ; 3 echecs
+  dans `test_ecart_pool.py`, anterieurs et sur un fichier non touche.
+
+**CRITERE DU SUIVEUR, ECRIT AVANT DE BRANCHER** : on coupe a -100 EUR cumules · a 150 tickets reels
+on compare son `gain_eur` lu au portefeuille a +0,27 EUR/ticket (mise 10 EUR), et sous ZERO on
+debranche · la correlation n est re-jugee qu a 20 jours communs.
+
+**CE QUI RESTE A FAIRE** : `suiveur_gd.enabled: true` + `mode: live` demandent un REDEMARRAGE de
+`tangier-intel` (le scheduler cree ses taches au demarrage), donc l accord explicite de Mido. Au
+moment du controle : **0 position reelle ouverte**, jour calendaire a 16 tickets et **-64,82 EUR**.
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
