@@ -1517,7 +1517,6 @@ suiveur_gd:
   traits_75: false
   cle_fichier: null
   alertes: true
-  cumul_depuis: 0
   # LES GARDE-FOUS D EXECUTION SONT REECRITS ICI EN CLAIR, avec les MEMES valeurs que la production,
   # au lieu d etre laisses aux defauts du code : un garde-fou qui protege de l argent reel doit etre
   # lisible dans le fichier, pas deduit d une signature de fonction.
@@ -1533,6 +1532,13 @@ suiveur_gd:
   # c est sur ces messages que l operateur suit son argent.
   etiquette: "🅶"
   nom_regle: "G+D · foule + coffre + tendance"
+  nom_court: "G+D"
+  # L INSTANT DE LA MISE EN SERVICE, en epoch : 25/09 a 23h40 heure de PARIS. Le conteneur tourne en
+  # UTC (verifie : 21h54 UTC = 23h54 Paris), donc une heure lue dans les logs est a +2 de l heure de
+  # l operateur. La date du pied de message est DERIVEE de cette valeur, jamais ecrite en dur -- une
+  # date figee dans le texte survivrait au changement de methode et mentirait sans le signaler.
+  # A CHANGER EN MEME TEMPS QUE `regle`, jamais separement : un total doit porter sur UNE regle.
+  cumul_depuis: 1790372400
 
 recuperation:
   # ACTIVEE le 19/09 09h30 sur accord de Mido : 92 comptes vides trouves, 14,46 EUR recuperes a la main

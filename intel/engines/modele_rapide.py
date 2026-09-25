@@ -1133,8 +1133,13 @@ class ModeleRapide:
         # C est exactement ce qui vient d arriver avec « depuis le 18/09 ».
         quand = (_dt.datetime.fromtimestamp(depuis, _tz)
                  .strftime("depuis le %d/%m %Hh%M") if depuis else "tout l historique")
+        # `nom_court` : le pied de message dit A QUELLE REGLE ce total appartient, et c est lu sur un
+        # telephone. Le nom technique de la regle fait l affaire pour la production (`BANDE`) mais pas
+        # pour le suiveur, ou il donnerait `GD_SUIVEUR`. Defaut = le nom technique, donc la production
+        # est inchangee.
         bloc = ["", "━━━━━━━━━━━━━━",
-                "<i>%s · %s</i>" % (str(self._cfg("regle", "?")).upper(), quand)]
+                "<i>%s · %s</i>" % (str(self._cfg("nom_court", self._cfg("regle", "?"))).upper(),
+                                    quand)]
         # DEUX LIGNES, JAMAIS UNE. Demande de Mido le 23/09 : « separe P&L du jour et P&L total ».
         # Un total qui grossit cache une journee qui saigne -- c est exactement ce qui s etait
         # passe le 20/09 avec `FORET REENTRAINEE`, ou le cumul restait flatteur pendant que la
