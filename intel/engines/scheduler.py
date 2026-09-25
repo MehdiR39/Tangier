@@ -413,9 +413,15 @@ class Runtime:
                 or _hxg.AsyncClient(headers={"User-Agent": "tangier-intel/gd"}),
                 prefixe="suiveur_gd",
                 table=str(self.ctx.config.get("suiveur_gd.table", "gd_lignes")))
+            # `plancher` PASSE EXPLICITEMENT, sinon les 2 s demandees tournent a 5 -- le plancher de
+            # `_loop` est a 5,0 et c est le piege deja constate le 16/09 sur la veille rapide. Ici il
+            # se chiffre : la fenetre d entree de G+D fait 8 s (47 -> 55 s), donc a 5 s le suiveur n a
+            # qu UNE ou DEUX chances de voir la decision du carnet papier, contre QUATRE a 2 s. Le
+            # cycle mesure 0,07 s : cette boucle sait ce qu elle coute, donc elle passe le plancher.
             tasks.append(asyncio.create_task(self._loop(
                 "suiveur_gd", self.suiveur_gd.cycle,
-                int(self.ctx.config.get("suiveur_gd.pas_secondes", 2)))))
+                int(self.ctx.config.get("suiveur_gd.pas_secondes", 2)),
+                plancher=float(self.ctx.config.get("suiveur_gd.pas_secondes", 2)))))
         # Collecte BNB Chain, LECTURE SEULE. Aucune cle, aucun ordre, tables separees. Sert a
         # constituer une donnee honnete -- liens sociaux horodates par nous a T+60 -- pour pouvoir
         # un jour tester la regle Telegram ailleurs que sur Solana. Voir bnb_collecte.py.

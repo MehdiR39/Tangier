@@ -1476,8 +1476,9 @@ modele_rapide:
 #
 # DEUX ACTES POUR QU IL ACHETE, comme partout : `enabled: true` ET `mode: live`.
 suiveur_gd:
-  enabled: false
-  mode: paper
+  # ARME LE 25/09 au soir sur accord explicite de Mido (« une bonne idee je suis in »), a 10 EUR.
+  enabled: true
+  mode: live
   # LA TABLE SEPAREE EST LA RAISON D ETRE DE CE BLOC. Le registre des couts (`cout_registre.py`,
   # `cout_glissement.py`, `cout_reserve.py`, `calibration_live.py`) ne filtre que sur `mode='live'` :
   # si G+D ecrivait dans `mr_lignes`, il moyennerait deux regles aux pools de tailles differentes et
