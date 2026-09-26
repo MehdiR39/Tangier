@@ -843,7 +843,10 @@ if _sortie:
 
         _tk = [{"t": t, "fin": t + 242.0, "r": min(b - cout(q), 3.0)}
                for t, q, b, r in _br if 0.20 <= r < 0.35]
-        _var = [{"nom": "BANDE + PAUSE (en service)", "seuil": -0.30,
+        # LES ETIQUETTES SUIVENT CE QUI TOURNE VRAIMENT. Depuis le 26/09 12h38 c est le MODELE FRAIS
+        # qui est en production ; laisser « (en service) » sur l ancien ferait lire la page a
+        # l envers -- on croirait suivre la production alors qu on suit le temoin.
+        _var = [{"nom": "BANDE + PAUSE (ancien modèle, témoin)", "seuil": -0.30,
                  "courbe": _courbe(_pause(_tk, -0.30))},
                 {"nom": "A · PAUSE 25", "seuil": -0.25, "courbe": _courbe(_pause(_tk, -0.25))}]
         _na, _nb = _meta["bande_frais"]
@@ -870,10 +873,10 @@ if _sortie:
                         "r": min(_ok[i][2] - cout(_ok[i][1]), 3.0)}
                        for i in range(len(_ok)) if _na <= _s[i] < _nb]
                 _tf.sort(key=lambda z: z["t"])
-                _var.append({"nom": "B · MODELE FRAIS", "seuil": -0.30,
+                _var.append({"nom": "B · MODELE FRAIS (en service)", "seuil": -0.30,
                              "courbe": _courbe(_pause(_tf, -0.30))})
         except Exception as _e:
-            _var.append({"nom": "B · MODELE FRAIS", "seuil": -0.30, "courbe": [],
+            _var.append({"nom": "B · MODELE FRAIS (en service)", "seuil": -0.30, "courbe": [],
                          "erreur": str(_e)[:120]})
         _variantes = {"gel": _gel_c, "gel_lisible": _meta["gel_lisible"],
                       "bande_frais": _meta["bande_frais"], "nul": 0.384, "lignes": _var}

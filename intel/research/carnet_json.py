@@ -52,6 +52,15 @@ BASCULE_FORET = dt.datetime(2026, 9, 19, 15, 30, tzinfo=TZ).timestamp()
 # que le compteur Telegram : les trois doivent designer le meme instant, sinon la page, le
 # telephone et le journal racontent trois histoires.
 BASCULE_BANDE = dt.datetime(2026, 9, 21, 9, 56, tzinfo=TZ).timestamp()
+# LE PASSAGE AU MODELE FRAIS, 26/09 12h38'30. La strategie ne change PAS (toujours `bande + pause`)
+# -- c est le modele dessous qui change, et avec lui la bande, recalibree sur les memes quantiles.
+# Cette date ne coupe donc PAS le carnet reel ; elle sert au bras temoin (`bascule_verdict.py`).
+BASCULE_MODELE = 1790419110.0
+COMBO = os.environ.get("COMBO_DB", "/app/db/papier_combo.sqlite")
+CHALLENGER = os.environ.get("CHALLENGER_DB", "/app/db/papier_challenger.sqlite")
+V_RESERVE, FIXE_COUT = 17.5845, 0.03524
+BANDE_ANCIENNE = (0.20, 0.35)
+BANDE_NOUVELLE = (0.17763490200673798, 0.3920447192432126)
 
 
 def ecrire(nom, obj):
@@ -280,10 +289,137 @@ def live():
             {"cle": "tout", "nom": "Tout le carnet réel", "depuis": None},
             {"cle": "economies", "nom": "Depuis les économies (19/09 10h53)", "depuis": BASCULE_ECO},
             {"cle": "foret", "nom": "Depuis la forêt + mise 10 € (19/09 15h30)", "depuis": BASCULE_FORET},
-            {"cle": "bande", "nom": "BANDE + PAUSE, la méthode en service (21/09 09h56)",
+            # LA STRATEGIE EN SERVICE, depuis le 21/09 : `bande + pause`. Elle n a PAS change le
+            # 26/09 -- seul le modele dessous a ete remplace, et la bande recalibree sur les memes
+            # quantiles. La periode ne se coupe donc pas la, comme le compteur Telegram ne se coupe
+            # pas : ce qui doit rester continu, c est la strategie. (Mido, 26/09 : « on a pas change
+            # de strat, on change le modele ».) Le choix ci-dessous isole quand meme le nouveau
+            # modele, pour qui veut voir SES tickets seuls.
+            {"cle": "bande", "nom": "La stratégie en service : bande + pause (21/09 09h56)",
              "depuis": BASCULE_BANDE},
+            {"cle": "modele_frais", "nom": "Depuis le modèle frais seul (26/09 12h38)",
+             "depuis": BASCULE_MODELE},
         ],
     }
+
+
+def _cout_pool(q):
+    return FIXE_COUT + 2.0 * (25.0 * 0.31 / 30.0) / ((q or 0) + V_RESERVE)
+
+
+def _rejoue(tk):
+    """La pause de la regle : 30 min apres une cloture sous -30 %. `tk` : [{t, fin, r}]."""
+    pris, att, bl = [], [], 0.0
+    for x in sorted(tk, key=lambda z: z["t"]):
+        att.sort(key=lambda z: z["fin"])
+        while att and att[0]["fin"] <= x["t"]:
+            f = att.pop(0)
+            if f["r"] <= -0.30:
+                bl = max(bl, f["fin"] + 1800.0)
+        if x["t"] >= bl:
+            pris.append(x)
+        att.append(x)
+    return pris
+
+
+def marche() -> dict:
+    """LE MARCHE LUI-MEME, jour par jour — « c est moi ou c est le marche ? »
+
+    Mido, 26/09 : « ajoute des indicateurs marche, car quand moi je perds de l argent je sais pas si
+    c est le marche ou mes strats ». C est la question que la page ne savait pas trancher : elle
+    montrait le resultat de la strategie sans jamais dire ce que le marche offrait CE JOUR-LA.
+
+    CE QU ON MESURE, sur TOUS les pools eligibles -- pas seulement ceux qu on achete :
+      rendement    ce que rapporte un pool eligible pris au hasard, net du peage. C EST LE TEMOIN :
+                   s il est a -2 EUR, perdre 2 EUR par ticket est le tarif du jour, pas une faute.
+      effondrement la part des pools qui tombent sous -50 %. Le danger ambiant.
+      gros gains   la part au-dessus de +50 % et de x2. **C est de la que vient tout l argent** : la
+                   strategie vit de la queue, donc un jour sans queue est un jour sans gain, quelle
+                   que soit la regle.
+      volume       combien de pools eligibles par jour. Peu de pools = peu d occasions.
+
+    ET L ECART, qui est la vraie reponse : ce que NOTRE regle a fait moins ce que le marche offrait.
+    Un ecart positif un jour de perte veut dire que la regle a bien travaille dans un marche mauvais.
+    """
+    out = {"jours": [], "erreur": None}
+    try:
+        c = sqlite3.connect("file:%s?mode=ro" % COMBO, uri=True, timeout=30)
+        depuis = time.time() - 10 * 86400
+        lignes = list(c.execute(
+            "SELECT d.t_dec, d.risque, d.q, i.brut_240 FROM decision d JOIN issue i"
+            " ON i.pair = d.pair WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL"
+            " AND d.q IS NOT NULL AND d.risque IS NOT NULL AND d.t_dec >= ? ORDER BY d.t_dec",
+            (depuis,)))
+    except Exception as e:  # noqa: BLE001
+        out["erreur"] = str(e)[:200]
+        return out
+
+    par_jour: dict[str, list] = {}
+    for t, r, q, b in lignes:
+        net = min(float(b) - _cout_pool(q), 3.0)
+        j = dt.datetime.fromtimestamp(float(t), TZ).strftime("%Y-%m-%d")
+        par_jour.setdefault(j, []).append({"t": float(t), "fin": float(t) + 242.0,
+                                           "r": net, "risque": float(r)})
+    mise = float(MISE_TABLE)
+    for j in sorted(par_jour):
+        v = par_jour[j]
+        rs = [x["r"] for x in v]
+        n = len(rs)
+        # ce que la REGLE aurait pris ce jour-la, pour l ecart au marche
+        bande = [x for x in v if BANDE_ANCIENNE[0] <= x["risque"] < BANDE_ANCIENNE[1]]
+        pris = _rejoue(bande) if bande else []
+        out["jours"].append({
+            "jour": j, "n": n,
+            "marche_eur": round(mise * (sum(rs) / n), 3),
+            "marche_median": round(mise * sorted(rs)[n // 2], 3),
+            "effondrement_pct": round(100.0 * sum(1 for x in rs if x <= -0.50) / n, 1),
+            "gros_gains_pct": round(100.0 * sum(1 for x in rs if x >= 0.50) / n, 1),
+            "x2_pct": round(100.0 * sum(1 for x in rs if x >= 1.00) / n, 1),
+            "regle_eur": round(mise * (sum(x["r"] for x in pris) / len(pris)), 3) if pris else None,
+            "regle_n": len(pris),
+            "ecart": (round(mise * (sum(x["r"] for x in pris) / len(pris) - sum(rs) / n), 3)
+                      if pris else None),
+        })
+    return out
+
+
+def bascule() -> dict:
+    """L ANCIEN MODELE CONTRE LE NOUVEAU, depuis le passage du 26/09 — meme logique que
+    `bascule_verdict.py`, mais pour la page.
+
+    Mido : « il faut continuer a suivre l ancien modele pour savoir si on a bien fait de changer ».
+    Chaque bras lit SA PROPRE pause sur SON PROPRE flux : croiser la bande de l un avec le flux de
+    l autre fabriquerait un troisieme objet qui n a jamais tourne nulle part.
+    """
+    out = {"bascule": BASCULE_MODELE, "bras": [], "erreur": None,
+           "pour_trancher": 411}   # mesure du 26/09 : 411 tickets/bras a 50 % de puissance
+    mise = float(MISE_TABLE)
+    for nom, chemin, bnd in (("ancien (témoin)", COMBO, BANDE_ANCIENNE),
+                             ("nouveau (en prod)", CHALLENGER, BANDE_NOUVELLE)):
+        try:
+            c = sqlite3.connect("file:%s?mode=ro" % chemin, uri=True, timeout=30)
+            tk = []
+            for t, r, q, b in c.execute(
+                    "SELECT d.t_dec, d.risque, d.q, i.brut_240 FROM decision d JOIN issue i"
+                    " ON i.pair = d.pair WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL"
+                    " AND d.q IS NOT NULL AND d.risque IS NOT NULL AND d.t_dec >= ?",
+                    (BASCULE_MODELE,)):
+                if bnd[0] <= float(r) < bnd[1]:
+                    tk.append({"t": float(t), "fin": float(t) + 242.0,
+                               "r": min(float(b) - _cout_pool(q), 3.0)})
+            pris = _rejoue(tk)
+            v = [mise * x["r"] for x in pris]
+            out["bras"].append({
+                "nom": nom, "bande": list(bnd), "offerts": len(tk), "n": len(v),
+                "niveau": round(sum(v) / len(v), 3) if v else None,
+                "total": round(sum(v), 2) if v else None,
+                "gros_gains_pct": (round(100.0 * sum(1 for x in v if x >= mise * 0.50) / len(v), 1)
+                                   if v else None),
+                "gagnants_pct": (round(100.0 * sum(1 for x in v if x > 0) / len(v), 1) if v else None),
+            })
+        except Exception as e:  # noqa: BLE001
+            out["bras"].append({"nom": nom, "erreur": str(e)[:120]})
+    return out
 
 
 def main() -> None:
@@ -299,6 +435,13 @@ def main() -> None:
                 print("carnet_json: TABLE EN ECHEC : %s" % str(e)[:300], flush=True)
                 ecrire("carnet_erreur.json", {"quand": dt.datetime.now(TZ).isoformat(timespec="seconds"),
                                               "erreur": str(e)[:600]})
+            # LE MARCHE ET LA BASCULE, a la meme cadence que la table. Chacun dans son `try` :
+            # ils lisent d autres bases, et une base illisible ne doit pas emporter la page entiere.
+            for nom, fn in (("carnet_marche.json", marche), ("carnet_bascule.json", bascule)):
+                try:
+                    ecrire(nom, fn())
+                except Exception as e:  # noqa: BLE001
+                    print("carnet_json: %s EN ECHEC : %s" % (nom, str(e)[:200]), flush=True)
             prochaine_table = time.time() + PAS_TABLE
         try:
             d = live()

@@ -34,6 +34,8 @@ RACINE = os.path.dirname(os.path.abspath(__file__))
 F_TABLE = os.path.join(RACINE, "carnet.json")
 F_LIVE = os.path.join(RACINE, "carnet_live.json")
 F_ERR = os.path.join(RACINE, "carnet_erreur.json")
+F_MARCHE = os.path.join(RACINE, "carnet_marche.json")
+F_BASCULE = os.path.join(RACINE, "carnet_bascule.json")
 TZ = dt.timezone(dt.timedelta(hours=2))
 
 GAIN, PERTE, ACCENT, DOUX = "#3f9c6d", "#c9564b", "#d4a03c", "#8b9098"
@@ -627,11 +629,14 @@ def table_complete():
     #     gagne rien. Sans ce repere le graphique fait croire que « positif = ca marche ».
     _V = D.get("variantes") or {}
     if _V.get("lignes"):
-        st.subheader("Les trois variantes de la règle en service")
+        st.subheader("Les trois variantes de la règle")
         st.caption("Toutes partent du **%s**, le gel des candidates : elles voient donc les "
                    "**mêmes tickets**, et seule la règle diffère. L'axe est en **€ par ticket** — "
                    "en euros cumulés, une ligne qui trade beaucoup écraserait les autres sans être "
                    "meilleure." % _V.get("gel_lisible", "?"))
+        st.caption("⚠️ Depuis le **26/09 à 12h38**, c'est **B · MODÈLE FRAIS** qui est en "
+                   "production. `BANDE + PAUSE` continue de tourner en papier comme **témoin**, "
+                   "pour qu'on puisse dire si la bascule valait le coup — voir l'onglet *Marché*.")
         _vides = [l["nom"] for l in _V["lignes"] if len(l.get("courbe") or []) < 1]
         _trac = [l for l in _V["lignes"] if len(l.get("courbe") or []) >= 1]
         if _vides:
@@ -914,6 +919,95 @@ def couts():
                      use_container_width=True, hide_index=True, height=420)
 
 
+def marche():
+    """« C'EST MOI OU C'EST LE MARCHÉ ? » — la question que la page ne savait pas trancher.
+
+    Mido, 26/09 : *« ajoute des indicateurs marché, car quand moi je perds de l'argent je sais pas
+    si c'est le marché ou mes strats »*. Elle montrait le résultat de la règle sans jamais dire ce
+    que le marché offrait CE JOUR-LÀ — donc une perte était toujours ambiguë.
+
+    LA COLONNE QUI RÉPOND EST L'ÉCART : ce que la règle a fait, moins ce qu'un pool éligible pris au
+    hasard rapportait le même jour. Positif un jour de perte = la règle a bien travaillé dans un
+    marché mauvais. Négatif = c'est la règle.
+    """
+    M = lire(F_MARCHE)
+    if not M or not M.get("jours"):
+        st.info("Pas encore de données de marché — `carnet_json` les écrit toutes les 5 minutes.")
+        if M and M.get("erreur"):
+            st.caption("erreur : %s" % M["erreur"])
+        return
+    jours = M["jours"]
+    d = jours[-1]
+
+    st.subheader("Aujourd'hui : le marché, et nous")
+    c = st.columns(4)
+    c[0].metric("Ce que le marché donnait", eur(d["marche_eur"], 2),
+                help="Rendement net d'un pool éligible pris au hasard. C'est le tarif du jour : "
+                     "s'il est négatif, perdre est normal.")
+    c[1].metric("Ce que la règle a fait",
+                eur(d["regle_eur"], 2) if d.get("regle_eur") is not None else "—",
+                help="Sur les tickets que la règle aurait pris, pause comprise.")
+    c[2].metric("ÉCART", eur(d["ecart"], 2) if d.get("ecart") is not None else "—",
+                delta=None,
+                help="Règle moins marché. C'est la seule colonne qui dit si c'est vous ou le marché.")
+    c[3].metric("Gros gains au marché", "%.1f %%" % d["gros_gains_pct"],
+                help="Part des pools au-dessus de +50 %. Tout l'argent vient de là : "
+                     "un jour sans queue est un jour sans gain, quelle que soit la règle.")
+
+    if d.get("ecart") is not None:
+        if d["ecart"] > 0 and (d.get("regle_eur") or 0) < 0:
+            st.warning("Journée perdante, mais **la règle a fait mieux que le marché** "
+                       "(%+.2f €/ticket d'écart). Le marché était mauvais." % d["ecart"])
+        elif d["ecart"] < 0:
+            st.error("**La règle a fait moins bien que le marché** (%+.2f €/ticket). "
+                     "Ce n'est pas le marché." % d["ecart"])
+
+    st.subheader("Les dix derniers jours")
+    lignes = []
+    for j in jours:
+        lignes.append({
+            "jour": j["jour"], "pools": j["n"],
+            "marché €/ticket": j["marche_eur"],
+            "effondrements": "%.1f %%" % j["effondrement_pct"],
+            "gros gains": "%.1f %%" % j["gros_gains_pct"],
+            "×2": "%.1f %%" % j["x2_pct"],
+            "règle €/ticket": j.get("regle_eur"),
+            "écart": j.get("ecart"),
+        })
+    st.dataframe(lignes, use_container_width=True, hide_index=True)
+    st.caption("`marché` = ce que rapporte un pool éligible au hasard, net du péage, à la mise de "
+               "la page. `écart` = règle − marché : **c'est lui qui répond à « moi ou le marché »**.")
+
+    # ---- le bras témoin depuis le passage au modèle frais ---------------------
+    B = lire(F_BASCULE)
+    if B and B.get("bras"):
+        st.subheader("Depuis le changement de modèle : l'ancien contre le nouveau")
+        st.caption("La stratégie n'a pas changé — `bande + pause` des deux côtés. Seul le modèle "
+                   "dessous a changé, le 26/09 à 12h38. **Chaque bras lit sa propre pause sur son "
+                   "propre flux** : croiser les deux fabriquerait une règle qui n'a jamais tourné.")
+        cols = st.columns(len(B["bras"]))
+        for col, br in zip(cols, B["bras"]):
+            with col:
+                if br.get("erreur"):
+                    st.metric(br["nom"], "—")
+                    st.caption("erreur : %s" % br["erreur"])
+                    continue
+                st.metric(br["nom"],
+                          eur(br["niveau"], 2) if br.get("niveau") is not None else "—",
+                          help="€ par ticket depuis la bascule")
+                st.caption("%d tickets pris sur %d offerts · bande [%.3f ; %.3f]"
+                           % (br.get("n") or 0, br.get("offerts") or 0,
+                              br["bande"][0], br["bande"][1]))
+        n = min([br.get("n") or 0 for br in B["bras"]] or [0])
+        cible = B.get("pour_trancher", 411)
+        st.progress(min(1.0, n / cible),
+                    text="%d tickets par bras sur les %d qu'il faut pour trancher" % (n, cible))
+        st.caption("**Rien de tout cela n'est un verdict avant %d tickets par bras.** Distinguer un "
+                   "écart de +2,1 €/ticket demande 411 tickets à 50 %% de puissance et 838 à 80 %% "
+                   "(mesure du 26/09, σ = 15,41). Sur peu de tickets, l'écart est dominé par "
+                   "quelques tirages." % cible)
+
+
 st.title("Carnet Tangier")
 st.caption("Tout ce qui a réellement tourné, au coût d'exécution mesuré sur la chaîne. "
            "Les chiffres viennent de `data/table_std2.py` — cette page ne recalcule rien.")
@@ -929,10 +1023,12 @@ def horloge():
 
 horloge()
 
-onglets = st.tabs(["Carnet réel", "Coûts", "Stratégies"])
+onglets = st.tabs(["Carnet réel", "Marché", "Coûts", "Stratégies"])
 with onglets[0]:
     bandeau_reel()
 with onglets[1]:
-    couts()
+    marche()
 with onglets[2]:
+    couts()
+with onglets[3]:
     table_complete()
