@@ -78,6 +78,48 @@ def rpc_url() -> str:
 
 
 _SOL_EUR: tuple[float, float] = (0.0, 0.0)      # (price, fetched_at)
+_EUR_USD: tuple[float, float] = (0.0, 0.0)      # (rate, fetched_at)
+EUR_USD_DEFAUT = 1.08                           # le dernier recours, et rien d autre
+
+
+async def eur_usd(client: httpx.AsyncClient, max_age_s: int = 21600) -> float:
+    """Combien de dollars vaut un euro, lu sur le marche et garde six heures.
+
+    POURQUOI CETTE FONCTION EXISTE. `sol_eur` divisait le prix DOLLAR du SOL par **1,08 ecrit en
+    dur**. Le prix du SOL etait donc juste et frais, mais la conversion vers l euro etait figee au
+    taux du jour ou cette ligne a ete ecrite. Consequence : tout ce qui s affiche en euros -- le
+    Telegram, la page, la mise reellement engagee -- est faux du meme pourcentage que la derive de
+    l euro/dollar depuis. Mido, 26/09 : « tu trades en euros ou en dollar ? ».
+
+    CE QUE CA NE CHANGEAIT PAS, et c est pour ca que personne ne l avait vu : la strategie travaille
+    en POURCENTAGES et la chaine en SOL. Un taux faux ne change ni un rendement, ni une decision,
+    ni un multiple -- il ne fausse que l affichage et la taille reelle de l ordre.
+
+    SIX HEURES DE CACHE : une parite majeure bouge de quelques dixiemes de pour cent par jour. La
+    relire a chaque achat n apporterait rien et ajouterait un appel reseau au chemin d achat.
+
+    ET ELLE NE PEUT PAS CASSER L ACHAT : toute panne rend la derniere valeur connue, sinon 1,08.
+    """
+    global _EUR_USD
+    import time as _t
+    r, at = _EUR_USD
+    if r > 0 and _t.time() - at < max_age_s:
+        return r
+    try:
+        # `follow_redirects=True` N EST PAS UN DETAIL : sans lui, httpx rend le 301 tel quel, le
+        # `.json()` echoue, et on retombe EN SILENCE sur 1,08 -- exactement la panne muette qu on
+        # voulait supprimer. Attrape le 26/09 en verifiant que le taux « lu » valait pile 1,0800.
+        rep = await client.get("https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD",
+                               timeout=10, follow_redirects=True)
+        taux = float(((rep.json() or {}).get("rates") or {}).get("USD") or 0)
+        # Une parite EUR/USD hors de [0,80 ; 1,60] n a pas existe depuis la creation de l euro :
+        # au-dela, c est la reponse qui est cassee, pas le marche.
+        if 0.80 <= taux <= 1.60:
+            _EUR_USD = (taux, _t.time())
+            return taux
+    except Exception:  # noqa: BLE001
+        pass
+    return r or EUR_USD_DEFAUT
 
 
 async def sol_eur(client: httpx.AsyncClient, fallback: float = 96.0, max_age_s: int = 600) -> float:
@@ -86,6 +128,10 @@ async def sol_eur(client: httpx.AsyncClient, fallback: float = 96.0, max_age_s: 
     A hard-coded rate is a silent accounting error. On 2026-09-08 the book assumed 180 EUR while
     SOL traded at 96: a ticket announced at 5 EUR committed 2.67, and every gain was reported 88 %
     too high. Only the multiples happened to be right, the two errors cancelling each other.
+
+    DEUX CONVERSIONS, DEUX SOURCES, ET AUCUNE EN DUR (corrige le 26/09) : le prix du SOL en dollars
+    vient de DexScreener, et le taux euro/dollar de `eur_usd`. Auparavant la seconde etait un 1,08
+    ecrit dans le code -- le prix du SOL etait frais, sa traduction en euros ne l etait pas.
     """
     global _SOL_EUR
     import time as _t
@@ -98,7 +144,7 @@ async def sol_eur(client: httpx.AsyncClient, fallback: float = 96.0, max_age_s: 
         best = max(pairs, key=lambda x: float((x.get("liquidity") or {}).get("usd") or 0))
         usd = float(best["priceUsd"])
         if usd > 0:
-            _SOL_EUR = (usd / 1.08, _t.time())
+            _SOL_EUR = (usd / await eur_usd(client), _t.time())
             return _SOL_EUR[0]
     except Exception:  # noqa: BLE001
         pass
