@@ -1205,7 +1205,13 @@ modele_rapide:
   # plus a 10 EUR, d ou les 4,04 % contre 3,88 %).
   # Verifie au deploiement a 10 EUR : accord EXACT avec la reference sur 1 259 tickets
   # (ecart max 0,00) et +3,2 % de declenchements.
-  pause_cout_fixe: 0.03524
+  # RECALIBRE LE 26/09 POUR LA MISE DE 25 EUR. Ce seuil DOIT bouger avec la mise, sinon la pause ne
+  # juge plus « -30 % » sur le bon cout et se declenche a cote -- c est exactement l erreur du 22/09
+  # (le moteur lisait `cout_reduit` a 1,54 % quand le peage reel etait 3,88 %, d ou trois achats de
+  # nuit hors regle et -15,69 EUR).
+  # Seule la part FIXE se dilue : 0,1251 EUR/ticket, mesure sur 752 tickets reels a deux mises.
+  #     0,03524 - 0,1251 x (1/20 - 1/25) = 0,03399
+  pause_cout_fixe: 0.03399
   # AU-DELA DE COMBIEN DE SILENCE DU CARNET PAPIER LA PAUSE BLOQUE-T-ELLE. La pause cherche les
   # clotures des 30 dernieres minutes ; si `papier_combo` n ecrit plus, elle n en trouve aucune et
   # l ancien code lisait ca comme « rien ne s est effondre, on peut acheter ». Le garde-fou
@@ -1405,7 +1411,34 @@ modele_rapide:
   # n arrivent pas plus vite ; seul double ce qu on perd si la reponse est non. C est un choix
   # d exposition, assume comme tel, pas un choix de mesure.
   # PENSER A `pause_cout_fixe` : le seuil de la pause depend de la mise (voir son commentaire).
-  mise_eur: 20.0
+  #
+  # ================================================================================================
+  # 26/09 : 20 -> 25 EUR, sur decision de Mido apres calcul de l optimum.
+  #
+  # L OPTIMUM VIENT DE DEUX TERMES QUI TIRENT EN SENS INVERSE, mesures sur 752 tickets reels qui ont
+  # tourne A DEUX MISES (10 puis 20 EUR) -- donc separables, pas supposes :
+  #     part FIXE            0,1251 EUR/ticket  (reseau) -> se DILUE quand on monte
+  #     part PROPORTIONNELLE 2,534 %            (commissions) -> ne bouge jamais
+  #     part IMPACT          2 x ordre_SOL / (coffre + V) -> CROIT avec la mise
+  #     cout total :  20 EUR 3,623 %  ·  25 EUR 3,614 %  ·  30 EUR 3,647 %  ·  50 EUR 3,943 %
+  # Optimum analytique = racine(fixe x EUR_par_SOL x coffre / 2) = 23,2 EUR pour un coffre median
+  # de 89 SOL. Le fichier `data/cout_optimum.json`, calcule independamment, place le creux a 20 EUR.
+  #
+  # ET C EST VRAI POUR LES QUATRE REGLES DU PROJET, parce qu elles achetent toutes des pools qui
+  # viennent de naitre et que ceux-la font tous ~90 SOL : marche 25 EUR · bande 23 · bande fraiche
+  # 23 · G+D 22. Pour justifier 70 EUR il faudrait des pools de ~800 SOL -- ce ne seraient plus des
+  # lancements, donc plus cette strategie.
+  #
+  # CE QUE CE CHANGEMENT N EST PAS. Entre 20 et 30 EUR la courbe est PLATE (0,03 point) : passer a
+  # 25 ne rend pas plus efficace, ca mise 25 % de plus a la meme efficacite. Le gain espere monte
+  # de 25 %, la perte aussi. C est un choix d exposition, comme le 22/09, pas un gain de rendement.
+  #
+  # AU-DELA DE ~30 EUR IL Y A UNE CONTRAINTE DURE, pas une optimisation : cinq pools sur vingt-cinq
+  # deviennent INVENDABLES a notre taille (mesure du 09/09). Ne pas monter plus haut sans la
+  # remesurer.
+  #
+  # `max_perte_jour_eur` reste a 150 : il se declenchera donc ~25 % plus facilement. Assume.
+  mise_eur: 25.0
   # Le taux SOL/EUR est LU SUR LE MARCHE a chaque achat (sol.sol_eur), jamais fige : le 08/09 un
   # taux en dur de 180 EUR alors que le SOL valait 96 engageait 2,67 EUR pour un ticket annonce a 5.
   # Si le taux est illisible, l achat est REPORTE plutot que mal dimensionne.
