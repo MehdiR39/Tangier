@@ -1176,13 +1176,19 @@ modele_rapide:
   # AUJOURD HUI gagne. A CHANGER EN MEME TEMPS QUE `regle` OU `modele`, jamais separement : le
   # total doit toujours porter sur UNE seule regle. Mettre 0 pour retrouver tout l historique.
   # L ancien carnet n est pas efface pour autant -- il reste entier dans `mr_lignes`.
-  # REMIS A L INSTANT EXACT DE LA BASCULE (26/09 12h38'30 Paris) avec le passage au modele frais.
-  # PREMIERE VALEUR FAUSSE, ET CORRIGEE PAR MIDO : j avais mis 12h00 alors que le redemarrage a eu
-  # lieu a 12h38. Un ticket achete par l ANCIEN modele a 12h19'56, +17,23 EUR, entrait donc dans le
-  # total du nouveau. C est exactement le defaut qu il avait signale le 21/09 (« on a toujours les
-  # chiffres anciens 256/658 ») : un total qui melange deux regles ne dit plus si ce qui tourne
-  # AUJOURD HUI gagne. L instant de reference est celui du redemarrage, jamais une heure ronde.
-  cumul_depuis: 1790419110
+  # ON NE REMET PAS A ZERO QUAND SEUL LE MODELE CHANGE. Mido, 26/09 : « on a pas change de strat, on
+  # change le modele ». Il a raison et la regle etait mal ecrite : ce qui doit rester continu, c est
+  # LA STRATEGIE -- `bande + pause`, tenue 240 s -- et elle est la meme avant et apres. Le modele est
+  # une piece interne, pas une methode : remettre le total a zero a chaque reentrainement le rendrait
+  # illisible, alors qu il existe justement pour dire si ce qu on fait gagne SUR LA DUREE.
+  #
+  # CE QU IL FAUT REMETTRE A ZERO, EN REVANCHE : un changement de REGLE (`regle`) ou de mise. C est
+  # le sens de sa demande du 21/09 (« on a toujours les chiffres anciens 256/658 ») -- elle portait
+  # sur le remplacement d une STRATEGIE par une autre, pas sur un reentrainement.
+  #
+  # 21/09 09h56 = mise en service de `bande + pause` en reel (§3.169). Le passage au modele frais le
+  # 26/09 a 12h38 NE COUPE PAS le compteur : meme strategie, autre modele.
+  cumul_depuis: 1789977360
   # LE COUT AVEC LEQUEL LA PAUSE JUGE « -30 % », part fixe. Le moteur lisait `cout_reduit` du
   # carnet papier, qui vaut 1,54 % en moyenne -- une hypothese optimiste (depot recupere, priorite
   # baissee) ecrite avant qu on mesure le peage. Le peage REEL, lu sur 404 tickets d argent reel,
@@ -1347,8 +1353,13 @@ modele_rapide:
   # les clotures d une AUTRE bande que celle ou l on achete -- la regle mesuree perdrait sa pause,
   # et la bande sans pause perd 106 EUR/jour (mesure du 26/09 sur 3 032 tickets).
   combo_db: /app/db/papier_challenger.sqlite
-  nom_court: "B FRAIS"
-  nom_regle: "bande du modele frais"
+  # LE PIED DU MESSAGE NOMME LA STRATEGIE, PAS LE MODELE. Meme raison que `cumul_depuis` : la
+  # strategie n a pas change, seule une piece interne. Ecrire « B FRAIS » la ferait passer pour une
+  # methode neuve et casserait la lecture du total, qui court depuis le 21/09.
+  nom_court: "BANDE + PAUSE"
+  # La ligne d achat, elle, peut dire quel modele decide -- c est une information utile au ticket,
+  # pas un changement de methode.
+  nom_regle: "bande + pause · modele frais"
   # `auto` : le seuil vient du FICHIER, recalcule a chaque entrainement. Un seuil fige ici
   # garderait une proportion de tickets differente a chaque reentrainement, et deriverait en
   # silence -- la derive exacte mesuree sur les gels (§3.158 : 40 tickets gardes contre 110).

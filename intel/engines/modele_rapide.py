@@ -1113,9 +1113,15 @@ class ModeleRapide:
         heure -- rend le chiffre du telephone incapable de dire si ce qui tourne AUJOURD HUI
         gagne. C est le meme defaut de lecture que le P&L en 24 h glissantes.
 
-        `cumul_depuis` est l instant (epoch) de la mise en service. A CHANGER en meme temps que la
-        methode, jamais separement : le total doit toujours porter sur UNE regle. Zero = tout
-        l historique, comme avant.
+        `cumul_depuis` est l instant (epoch) de la mise en service. Zero = tout l historique.
+
+        CE QUI COUPE LE COMPTEUR, ET CE QUI NE LE COUPE PAS. Mido, 26/09, apres le passage au modele
+        frais : « on a pas change de strat, on change le modele ». Il a raison, et ce commentaire
+        disait l inverse. Ce qui doit rester continu, c est LA STRATEGIE -- ici `bande + pause`,
+        tenue 240 s -- et elle ne bouge pas quand le modele dessous est reentraine. Un modele est
+        une piece interne, pas une methode : couper le total a chaque reentrainement le rendrait
+        illisible, alors qu il existe pour dire si ce qu on fait gagne SUR LA DUREE.
+        On coupe donc sur un changement de `regle` ou de mise, jamais sur un changement de `modele`.
         """
         depuis = float(self._cfg("cumul_depuis", 0) or 0)
         # LE DEBUT DU JOUR CALENDAIRE, heure de Paris. Mido, 20/09 : « t as un modele en test qui
