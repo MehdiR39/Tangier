@@ -1664,7 +1664,37 @@ suiveur_gd:
   # point, et seulement sur les tickets tardifs. Contre +19 points de couverture.
   fenetre_entree_s: 13
   tenue_secondes: 240
-  prise_gain_x: 1.25
+  # ================================================================================================
+  # 26/09 : LE SEUIL PASSE DE x1,25 A x2,00, sur mesure a posteriori du gel.
+  #
+  # D OU VENAIT LE 1,25 : « seuil +25 % = milieu du plateau +20/+30 mesure, choisi pour ne pas coller
+  # a un point » (journal, 16/09). Methode correcte -- mais le plateau avait ete mesure sur les
+  # donnees d AVANT le gel. Mido : « verifie depuis la mise en prod que 1,25 etait le bon choix ».
+  #
+  # REJOUE SUR 383 TICKETS G+D POSTERIEURS AU GEL, suivis a 2 s (`papier_large` enregistre l age, le
+  # prix de franchissement ET le prix de la lecture SUIVANTE -- c est ce dernier qu on utilise,
+  # vendre au declencheur flattant de +2,5 pts/ticket, piege attrape le 16/09) :
+  #                         EUR/ticket   1re moitie   2e moitie
+  #     tenue 287 s             +0,469      -0,154      +1,086
+  #     x1,25 (en service)      +2,162      +1,846      +2,477
+  #     x1,50                   +3,614      +2,648      +4,572
+  #     x2,00                   +5,348      +5,097      +5,599
+  # Et sur les 3 DERNIERS JOURS seuls : 1,604 / 1,843 / 3,730 / 4,731. Quatre verifications
+  # independantes (deux periodes x deux moities) disent la meme chose.
+  #
+  # LE MECANISME est celui mesure le meme jour sur la bande : vendre a +25 % coupe les jetons qui
+  # allaient faire x2 ou x3, et c est la qu est tout l argent. Noter aussi que NE PAS prendre du tout
+  # est PIRE que x2 (+0,469 contre +5,348) : il y a bien un optimum, et il est vers x2.
+  #
+  # CE QUI N EST PAS ETABLI : seuls 1,25 / 1,5 / 2,0 sont enregistres par le carnet, donc l optimum
+  # pourrait etre a 1,8 ou 2,5 -- on ne peut pas le dire. Et les NIVEAUX sont gonfles (cout
+  # forfaitaire de 2,62 pts au lieu du peage reel de 3,88 %) ; seule la COMPARAISON entre seuils est
+  # valide, le meme cout s appliquant partout.
+  #
+  # POURQUOI ON PEUT TOUCHER A UNE REGLE GELEE : son critere pre-enregistre a ECHOUE ce matin
+  # (+4,30 %/ticket contre un seuil de +4,50 a 315 tickets). Le gel est termine, il ne protege plus
+  # rien. POUR REVENIR EN ARRIERE : remettre 1.25.
+  prise_gain_x: 2.00
   # LIRE LE PRIX DANS LA CHAINE, PAS DANS LA TABLE. `solana_prix_chaine` est ecrite toutes les
   # 10,0 s (mediane mesuree le 26/09) ; la chaine repond a la cadence du cycle, soit 2 s ici.
   # MESURE §3.95, appariee sur 3 245 pools (meme regle, seule la cadence change) : voir le marche a
