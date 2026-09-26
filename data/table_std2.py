@@ -175,7 +175,38 @@ for t, risque, regime, cr, b240, q, var in c.execute(
             if m.probabilite(f) <= m.seuil_p80:
                 ranger(nom_m, t, r)
 for x in appliquer_pause(_bp):
-    ranger("BANDE + PAUSE (gelee)", x["t"], x["r"])
+    # DEPUIS LE 26/09 12h38 CETTE LIGNE EST LE TEMOIN, PLUS LA PRODUCTION. Elle est calculee sur
+    # `papier_combo`, dont les scores viennent de `modele_vidage.json` -- l ANCIEN modele. Mido l a
+    # vu sur le graphe : « bande + pause c est l ancien modele non ? ». Oui. La garder etiquetee
+    # comme la methode en service ferait lire la page a l envers, exactement comme sur le graphe des
+    # variantes corrige plus haut.
+    ranger("BANDE + PAUSE (ancien modele, temoin)", x["t"], x["r"])
+
+# ------------------------------------------------------------------ CE QUI TOURNE VRAIMENT
+# LA PRODUCTION DEPUIS LE 26/09 12h38 : meme strategie `bande + pause`, mais le MODELE FRAIS et sa
+# bande recalibree sur les memes quantiles. Sa ligne est courte -- elle demarre a la bascule -- et
+# c est justement pour ca qu il faut la tracer : sans elle, le graphe ne montre AUCUNE des lignes
+# dans lesquelles l argent est reellement engage.
+# Elle lit `papier_challenger`, le flux score par le modele frais, et applique SA pause sur SON
+# flux : croiser la bande de l un avec le flux de l autre fabriquerait une regle qui n a jamais
+# tourne nulle part.
+try:
+    _BASCULE_MODELE = 1790419110.0
+    _BF = (0.17763490200673798, 0.3920447192432126)
+    _cf = sqlite3.connect("file:/app/db/papier_challenger.sqlite?mode=ro", uri=True, timeout=30)
+    _tf = []
+    for _t, _r, _q, _b in _cf.execute(
+            "SELECT d.t_dec, d.risque, d.q, i.brut_240 FROM decision d JOIN issue i"
+            " ON i.pair = d.pair WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL"
+            " AND d.q IS NOT NULL AND d.risque IS NOT NULL AND d.t_dec >= ? ORDER BY d.t_dec",
+            (_BASCULE_MODELE,)):
+        if _BF[0] <= float(_r) < _BF[1]:
+            _tf.append({"t": float(_t), "fin": float(_t) + TENUE_S,
+                        "r": min(float(_b) - cout(_q), 3.0)})
+    for x in appliquer_pause(_tf):
+        ranger("MODELE FRAIS (en service depuis le 26/09)", x["t"], x["r"])
+except Exception as _e:  # noqa: BLE001
+    print("table_std2: ligne du modele frais indisponible (%s)" % str(_e)[:120], flush=True)
 
 # EXPERT DETENTEURS : la conjonction prix ET detention, gelee a 03h00. Il faut joindre
 # papier_social, que seul ce collecteur-la remplit.
@@ -499,7 +530,12 @@ FINS = {"_avant": COUPE, "_apres": 1e18, "_jour": 1e18}
 for _i, _j in enumerate(_passes):
     FINS[_j] = _minuit - 86400 * (len(_passes) - 1 - _i)
 ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + risque", "G+D a 45 s (gele)", "G+D a 30 s (gele)",
-         "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)", "BANDE + PAUSE (gelee)",
+         # CE QUI TOURNE EN PRODUCTION EN PREMIER. Une page qui range la methode en service au
+         # milieu de trente-cinq lignes de recherche oblige a la chercher -- et depuis le 26/09
+         # l ancienne ligne est le TEMOIN, pas la production. Les deux sont nommees pour ce
+         # qu elles sont, et c est ce qui tourne qui vient d abord.
+         "MODELE FRAIS (en service depuis le 26/09)", "BANDE + PAUSE (ancien modele, temoin)",
+         "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)",
          "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET REENTRAINEE 6h", "FORET 75s REENTRAINEE 20 %", "FORET 75s REENTR. 10 % (lecture)", "FORET 75s REENTR. 5 % (lecture)", "FORET GAGNANT 20 %", "FORET GAGNANT 10 % (lecture)", "FORET GAGNANT 5 % (lecture)", "FORET 75s ISO-MOTEUR", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
 print("COUT : %.2f pt PARTOUT (cases et total). Mesure sur les 92 tickets reels du 18/09, transactions relues sur la"
