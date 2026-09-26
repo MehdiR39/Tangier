@@ -295,8 +295,13 @@ def live():
             # pas : ce qui doit rester continu, c est la strategie. (Mido, 26/09 : « on a pas change
             # de strat, on change le modele ».) Le choix ci-dessous isole quand meme le nouveau
             # modele, pour qui veut voir SES tickets seuls.
+            # `defaut: true` — LA PERIODE QUI S OUVRE EN PREMIER, et elle est designee ICI, jamais
+            # deduite de l ordre de la liste. La page prenait la DERNIERE option par defaut : en
+            # ajoutant « depuis le modele frais » a la fin le 26/09, j ai fait disparaitre tout le
+            # suivi de Mido sans le vouloir -- il ne voyait plus que 4 tickets. Or la STRATEGIE n a
+            # pas change, seul le modele : c est `bande + pause` depuis le 21/09 qui doit s afficher.
             {"cle": "bande", "nom": "La stratégie en service : bande + pause (21/09 09h56)",
-             "depuis": BASCULE_BANDE},
+             "depuis": BASCULE_BANDE, "defaut": True},
             {"cle": "modele_frais", "nom": "Depuis le modèle frais seul (26/09 12h38)",
              "depuis": BASCULE_MODELE},
         ],

@@ -137,7 +137,14 @@ def bandeau_reel():
     # On choisit la periode UNE fois, en haut, et tout ce qui suit la respecte.
     _reg = L.get("regimes") or [{"cle": "tout", "nom": "Tout le carnet réel", "depuis": None}]
     _noms = [r["nom"] for r in _reg]
-    _choisi = _reg[_noms.index(st.radio("Période", _noms, index=len(_noms) - 1, horizontal=True,
+    # LE DEFAUT EST DESIGNE PAR LE PRODUCTEUR (`defaut: true`), JAMAIS DEDUIT DE L ORDRE. Il valait
+    # `len - 1` -- la derniere option -- et le 26/09 j ai ajoute « depuis le modele frais » a la fin :
+    # la page s est mise a n afficher que les 4 tickets posterieurs a la bascule, et tout le suivi
+    # de la strategie a disparu. Mido : « pourquoi tu m as retire le suivi d avant, je t ai dit
+    # c est juste un changement de modele et pas de strat ». Ajouter une option ne doit plus jamais
+    # pouvoir deplacer le defaut.
+    _idef = next((i for i, r in enumerate(_reg) if r.get("defaut")), len(_noms) - 1)
+    _choisi = _reg[_noms.index(st.radio("Période", _noms, index=_idef, horizontal=True,
                                         key="regime_reel", label_visibility="collapsed"))]
     _dep = _choisi.get("depuis")
     _G = [x for x in (L.get("gains") or []) if not _dep or x["t"] >= _dep]
