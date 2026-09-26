@@ -644,6 +644,96 @@ marche ou mes strats »*). La colonne qui repond est l'**ECART** = regle − mar
 26/09  marche +0,396  regle +9,390  ecart +8,994
 ```
 
+### 0.2 decies — 26/09 nuit : « tout ce qui affaiblit la pause detruit la valeur » (3e confirmation)
+
+**LE MECANISME EST MAINTENANT ETABLI SUR TROIS FILTRES INDEPENDANTS**, tous mesures le meme jour :
+
+| filtre teste | effet sur le flux | resultat |
+|---|---|---|
+| filtre de variable avant la pause (bande) | 310 → 480 tickets pris | gain detruit |
+| prise de gain serree (bande) | 321 → 751 tickets pris | +2,78 → −0,38 €/ticket |
+| **plafond de coffre abaisse (G+D)** | 249 → 62 tickets pris | **+0,469 → −1,940 €/ticket** |
+
+**Reduire le flux fait voir MOINS de clotures a la pause, donc elle bloque moins, donc elle prend
+des tickets moins bons.** C'est la meme cause a chaque fois. **A retenir avant de proposer tout
+nouveau filtre : il devra s'appliquer APRES la pause, ou ne pas s'appliquer du tout.**
+
+#### LE PLAFOND DE COFFRE DE G+D : mesure, et piege de methode evite de justesse
+
+| plafond | pris | €/ticket | 1re moitie | 2e moitie |
+|---|---|---|---|---|
+| < 30 SOL | 15 | −9,856 | −14,517 | −4,530 |
+| < 50 SOL | 28 | −3,419 | −5,851 | −0,986 |
+| < 70 SOL | 62 | −1,940 | −2,503 | −1,533 |
+| **< 100 SOL (la regle)** | **249** | **+0,469** | −0,006 | +0,856 |
+
+**Le plafond actuel est le bon. Toucher a ce reglage detruit la valeur.**
+
+**LE PIEGE** : une premiere mesure, filtrant le coffre APRES la pause, disait l'INVERSE (+4,627
+€/ticket sous 20 SOL). Le coffre est un filtre de SELECTION — il agit AVANT. La bonne mesure rejoue
+la selection puis la pause.
+
+#### ET LA PISTE QUE J'ALLAIS PROPOSER ETAIT A L'ENVERS
+
+Constat de depart : G+D achete des pools quasi vides — **6 % de ses tickets ont moins de 10 SOL**, le
+1er centile est a **2,6 SOL**, et notre ordre de 20 € y pese **7,3 %**. Le refus de slippage de 19h38
+s'est produit sur un pool de **3 SOL**. J'allais proposer un PLANCHER de coffre.
+
+**Verification avant de proposer — et elle renverse tout :**
+```
+tranche       vus  achetes  refuses   gain REEL
+< 5 SOL         2        1        1     +42,21     <- le ticket qui a porte toute la nuit
+10 a 50 SOL    29        1        1      −4,68
+> 50 SOL      474       26        2     −22,45
+```
+**Les pools minces sont ou est l'argent, en reel comme au papier** (+3,137 €/ticket sous 5 SOL contre
++0,187 au-dessus de 50). Un plancher aurait supprime exactement le ticket gagnant.
+
+**CE QUI RESTE VRAI** : le papier ne paie ni le slippage ni l'impossibilite de sortir, donc il
+SURESTIME ces pools — c'est le piege deja connu (« le papier comptait des ×18 dans des pools a 3 € »).
+Mais on ne peut pas s'en proteger par la selection sans casser la pause. Le taux de refus est le
+prix a payer pour y aller.
+
+#### LES 2 REFUS DE SLIPPAGE, ANALYSE COMPLETE (et ce qu'ils ont coute)
+
+Mido : *« est-ce possible de simuler si on etait reste a 10, on aurait eu plus de tickets ? »*
+
+| heure | coffre | impact a 10 € | impact a 20 € | ce que le ticket a fait |
+|---|---|---|---|---|
+| 19:38 | **3 SOL** | 2,876 % | **5,752 %** | **+114,88 %** (+22,98 € a 20 €) |
+| 19:42 | 37 SOL | 0,257 % | 0,513 % | −6,16 % |
+
+**Reponse : un sur deux, probablement oui.** Sur le pool de 3 SOL, halver la mise halve l'impact et
+peut faire la difference — et c'etait le ticket a +115 %. Sur celui de 37 SOL, notre ordre pese
+0,5 % : la mise n'y est pour rien.
+**Les refus ont donc coute +21,74 €** — ce qui CONTREDIT le chiffre general (les refus de la prod
+valaient −0,813 €/ticket). Les deux sont vrais, sur des populations differentes.
+
+#### ET LA JOURNEE A 10 € PLUTOT QU'A 20 € ? Pire.
+
+```
+G+D a pris 46 tickets aujourd'hui · le suiveur en a encaisse 28, pour +15,08 €
+si TOUS etaient passes : a 10 € −6,63 € · a 20 € −13,26 €
+```
+**La journee papier de G+D est NEGATIVE** ; le suiveur a fait +15,08 € en attrapant un sous-ensemble
+favorable de 28 sur 46. **C'est un tirage, pas une competence** — et ma correction de fenetre, qui le
+fera passer de 69 % a 96 % des tickets, le rapprochera de −6,63 € les jours de ce type. C'est ce
+qu'il faut (suivre la regle mesuree), mais il faut le savoir avant de voir le chiffre baisser.
+
+#### POURQUOI RIEN N'ACHETE DEPUIS 16h : le marche, pas une panne
+
+```
+LA TENDANCE (moyenne des 50 derniers resultats du marche)
+   11h +0,1799  ·  14h +0,0035  ·  15h −0,0722  ·  22h −0,1533
+derniere fois positive : 19h42
+```
+**G+D n'achete que si la tendance est positive. Le marche est en regime negatif depuis 15h** et il
+empire (−15 % par ticket). Elle s'est retiree toute seule : c'est le filtre qui fait son travail.
+La PROD s'est arretee en meme temps par un autre chemin — pause apres une cloture a −96,7 %.
+**Trois verifications excluent la panne** : le carnet papier ecrit (derniere decision il y a 3 s) ·
+le suiveur juge bien (37 pools en 3 h, tous ecartes parce que G+D dit non) · et les changements du
+soir agissent APRES la decision d'acheter, donc on n'arrive meme pas jusqu'a eux.
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
