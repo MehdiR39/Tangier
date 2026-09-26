@@ -594,10 +594,26 @@ WSL. Les bons indicateurs sont `docker ps` et la fraicheur de `data/carnet_live.
 | prod 20 € | 113 | 8 | 7 % |
 | prod 25 € | 5 | 1 | 20 % |
 
-**Le suiveur n'a RIEN achete depuis son passage a 20 €.** n = 2, donc rien n'est prouve — mais la
-direction est confirmee par la prod sur 518 et 113 tentatives. **A COMPTER DEMAIN MATIN** : si le
-suiveur est toujours a ~100 % de refus sur une dizaine de tentatives, deux reponses possibles —
-redescendre a 10 € (ou il faisait 28/28), ou desserrer `slippage_achat_pct` de 20 a 30 %.
+**Le suiveur n'a RIEN achete depuis son passage a 20 €.**
+
+**ATTRIBUTION RETIREE — Mido l'a demontee dans l'heure.** J'avais ecrit « c'est probablement la
+mise », parce que c'etait le seul changement au moment des refus. C'est un raisonnement de
+correlation sur DEUX points, et deux faits le contredisent :
+
+1. **La PROD a tourne a 20 € pendant des jours avec 7 % de refus, pas 100 %** (105 achats, 8 refus).
+   Donc 20 € en soi n'est pas le probleme. Si le suiveur avait ce meme taux, la probabilite de 2
+   refus d'affilee serait de **0,005** — improbable, mais pas impossible sur deux tirages.
+2. **Le carnet papier simule un ordre de 0,31 SOL (~30 €)**, PLUS gros que les 20 € du suiveur, et
+   n'a jamais de refus — parce qu'il n'envoie aucune transaction. Le papier ne dit donc RIEN sur
+   cette question, ni dans un sens ni dans l'autre.
+
+**TROIS HYPOTHESES, AUCUNE TRANCHEE** : la malchance (1 sur 200) · les jetons de G+D, qui ont des
+coffres plus petits (mediane 82 SOL contre 89 pour la bande), donc plus d'impact a mise egale · la
+mise, l'hypothese que je privilegiais et **la plus faible des trois**.
+
+**A COMPTER DEMAIN MATIN**, sans prejuger : si le suiveur reste a ~100 % de refus sur une dizaine de
+tentatives, alors seulement comparer redescendre a 10 € (ou il faisait 28/28) contre desserrer
+`slippage_achat_pct` de 20 a 30 %.
 *(Un ticket refuse vaut 0, pas une perte : les refus mesures valaient −0,813 €/ticket.)*
 
 #### CINQ AUTRES ERREURS DE METHODE, toutes attrapees le meme jour
