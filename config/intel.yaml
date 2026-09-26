@@ -1646,7 +1646,23 @@ suiveur_gd:
   # decision du carnet papier des 47 s (son `t_dec` est un age nominal, pas un instant d ecriture, et
   # son appel RPC pour la foule ajoute un delai non stocke). Avec `pas_secondes: 2` le suiveur a
   # quatre chances de l attraper, et au-dela de 55 s il RENONCE au ticket au lieu de l acheter tard.
-  fenetre_entree_s: 8
+  # ELARGIE DE 8 A 13 s LE 26/09 AU SOIR (fenetre 47 -> 60 s). MA VALEUR DE 8 s ETAIT PLUS COURTE
+  # QUE L INTERVALLE ENTRE DEUX LECTURES DE PRIX, donc elle perdait des tickets PAR CONSTRUCTION.
+  #
+  # CE QUI A ETE MESURE, apres que Mido a demande pourquoi le suiveur n achetait plus :
+  #   le collecteur lit chaque pool toutes les **10,0 s** (mediane ; 90e centile 11 s) ;
+  #   couverture d une fenetre partant de 47 s : 8 s -> 77 % · 11 s -> 93 % · 13 s -> 96 % ·
+  #   au-dela, plus rien a gagner (97 %).
+  #   RESULTAT : **31 % des tickets de G+D (15 sur 48) n etaient jamais juges par le moteur.**
+  #   Sur ces 15 : 0 absent du flux, 6 sans aucune lecture dans la fenetre, 9 avec une lecture
+  #   dedans mais rates quand meme -- parce que le moteur filtre sur l age de la DERNIERE lecture,
+  #   qui saute de 47 a 57 d un coup. Si le cycle tombe quand elle vaut 57, le pool est ecarte
+  #   alors qu une lecture a 47 existait. Une fenetre de 13 s couvre DEUX paliers, pas un.
+  #
+  # CE QUE CA COUTE, et pourquoi c est un bon echange : entrer jusqu a 60 s au lieu de 55. La
+  # penalite mesuree de G+D est -3,65 points entre 47 et 65 s, soit ~0,2 point par seconde -> ~1
+  # point, et seulement sur les tickets tardifs. Contre +19 points de couverture.
+  fenetre_entree_s: 13
   tenue_secondes: 240
   prise_gain_x: 1.25
   # 0 = AUCUN PLAFOND, comme pour la production. Mido, 26/09 : « je veux pas de plafond nulle part ».
