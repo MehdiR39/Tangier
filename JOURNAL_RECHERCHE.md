@@ -432,6 +432,202 @@ meme ou l on ecrit le process serait la faute du 20/09, une troisieme fois.
 
 **Echeance attendue vers le 30/09** (~29 tickets/jour).
 
+### 0.2 nonies — 26/09 APRES-MIDI ET SOIR : six changements en production, et ce qui les justifie
+
+**JOURNEE DE LOIN LA PLUS CHARGEE DU PROJET.** Six changements en production le meme jour : si le
+resultat bouge, **on ne saura pas lequel en est responsable.** C'est le prix assume d'avoir avance
+vite plutot que d'attendre — Mido l'a tranche trois fois (« mais putain a ton rythme on fera rien »,
+« on va pas a chaque fois attendre 20 jours pour decider d'investir 20 € »).
+
+#### CE QUI A CHANGE EN PRODUCTION, DANS L'ORDRE
+
+| heure | quoi | justification | retour arriere |
+|---|---|---|---|
+| 12h38 | **modele frais (B)** + bande [0,1776 ; 0,3920] + pause sur `papier_challenger` | 7 axes sur 7, la prod 0 sur 7 | remettre les 3 lignes |
+| 13h46 | `max_ecart_pool_pct` **20 → 40 %** | le garde a change de SENS avec la strategie | remettre 20 |
+| 14h39 | mise prod **20 → 25 €** + `pause_cout_fixe` 0,03399 | optimum de cout mesure a 23,2 € | remettre 20 / 0,03524 |
+| ~16h | **plafonds de perte retires** (prod et suiveur) | demande de Mido ; la MISE devient le seul garde-fou | remettre 150 / 100 |
+| ~16h | mise suiveur **10 → 20 €** | l'argument qui justifiait 10 etait le plafond, retire | remettre 10 |
+| ~20h | suiveur : fenetre **8 → 13 s**, prix lu **a 2 s**, seuil **x1,25 → x2,00** | voir ci-dessous | tout est dans la config |
+
+#### LE GARDE-FOU DE COTATION AVAIT CHANGE DE SENS (et Mido l'a vu avant moi)
+
+*« la protection on l'avait mise en place pour une autre strat qui achetait beaucoup de tickets »* —
+il avait raison. Valeur des tickets refuses, **recalculee au prix reellement cote** :
+
+| periode | refus | valeur reelle | verdict |
+|---|---|---|---|
+| AVANT `bande + pause` (14-20/09) | 9 | **−1,489 €/ticket** | le garde GAGNE 13 € |
+| DEPUIS `bande + pause` (21/09) | 9 | **+1,208 €/ticket** | le garde COUTE 11 € |
+
+**Mecanisme** : le seuil a ete calibre le 14/09 sur une strategie qui achetait des jetons CALMES —
+la, une cotation 30 % au-dessus du pool signifie « on te sandwiche ». `bande + pause` achete
+l'INVERSE, la bande etant VOLONTAIREMENT la zone volatile : le meme ecart y signifie « ca decolle ».
+**Le garde n'a pas change ; ce qu'il mesure, si.**
+
+#### LA MISE : optimum de COUT ≠ optimum de CROISSANCE
+
+Le cout se **decompose** sur 752 tickets reels ayant tourne A DEUX MISES (10 puis 20 €) :
+
+```
+part FIXE            0,1251 €/ticket (reseau)  -> se DILUE quand on monte
+part PROPORTIONNELLE 2,534 %         (commissions) -> ne bouge jamais
+part IMPACT          2 x ordre_SOL / (coffre + V) -> CROIT avec la mise
+cout : 20 € 3,623 % · 25 € 3,614 % · 30 € 3,647 % · 50 € 3,943 % · 100 € 4,978 %
+```
+**Optimum de cout = racine(fixe × EUR_par_SOL × coffre / 2) = 23,2 €** a coffre median 89 SOL.
+Et c'est le meme pour les QUATRE regles du projet (marche 25 · bande 23 · fraiche 23 · G+D 22),
+parce qu'elles achetent toutes des pools qui viennent de naitre, et ceux-la font tous ~90 SOL.
+**Pour justifier 70 €, il faudrait des pools de ~800 SOL** — ce ne seraient plus des lancements.
+
+**MAIS L'OPTIMUM DE CROISSANCE EST PLUS HAUT** (Kelly sur les rendements reels, capital 500 €) :
+40 € en Kelly plein, ~20 € en demi-Kelly. Les deux repondent a des questions differentes et j'ai
+melange les deux en repondant, ce qui a mis Mido en colere a juste titre.
+**Capital : 500 € (peut monter a 1 200).** A 25/20 €, ecart-type d'UNE journee ~151 € = 30 % du
+capital. La pire descente de `bande + pause` seule est **−100 € sur 104 tickets** (les −346 € du
+carnet complet viennent des anciennes regles).
+
+**DEUX CHOSES QUE J'AI DITES ET QUI ETAIENT FAUSSES :**
+1. *« au-dela de 30 € les pools deviennent invendables »* — **FAUX**, verifie apres coup :
+   **755 achats reels, ZERO refus** pour illiquidite. Le garde `max_aller_retour_pct` est branche
+   (l.878) et n'a jamais tire. Le chiffre venait d'une note du 09/09 sur 25 pools, jamais reverifiee.
+2. *« on peut monter jusqu'a 70 »* (dit un jour anterieur) — contredit par les deux calculs
+   independants. Explication probable, ecrite dans `cout_optimum.py` l.68 : **surestimer la part
+   FIXE pousse l'optimum vers des mises trop grosses.** Mesuree, elle vaut 0,125 € : rien a diluer.
+
+#### LE DEFAUT LE PLUS COUTEUX DE LA JOURNEE : ma fenetre d'entree
+
+J'avais borne la fenetre du suiveur a **8 s** (47 → 55 s) pour ne pas acheter trop tard. Or **le
+collecteur lit chaque pool toutes les 10,0 s** (mediane ; 90e centile 11 s) : une fenetre plus courte
+que l'intervalle entre deux lectures perd des pools PAR CONSTRUCTION.
+
+```
+31 % des tickets de G+D (15 sur 48) JAMAIS juges par le moteur
+   0  absent du flux de prix
+   6  aucune lecture dans la fenetre
+   9  une lecture dedans, rates quand meme — le moteur filtre sur l'age de la DERNIERE lecture,
+      qui saute de 47 a 57 d'un coup
+couverture : 8 s -> 77 % · 11 s -> 93 % · 13 s -> 96 % · au-dela plus rien
+```
+**Corrige a 13 s.** La PROD n'etait pas concernee (fenetre 120 s) : **0 rate sur 1 504 tickets.**
+
+#### LE PRIX LU A 2 s AU LIEU DE 10 (trouvaille de Mido)
+
+*« pourquoi on a toujours des trucs a 10 alors qu'on a dit qu'on peut descendre bien plus bas »* —
+la lecture a 2 s existait depuis le 11/09 (`veille_rapide`), mesuree a **+1,14 pt/ticket et +2,64 pts
+a coffre < 100 SOL** (§3.95, apparie sur 3 245 pools), et mon suiveur ne s'en servait pas.
+Constate en vrai : sur le meme jeton, le carnet papier a pris son gain **21 s** apres l'entree, le
+suiveur **205 s** plus tard. Sur 28 tickets compares, le suiveur reproduit le TYPE de sortie de G+D
+dans **86 %** des cas — c'est le MOMENT qui derivait.
+`_prix_direct` lit desormais les reserves du pool a chaque cycle. **Quatre garanties, trois tests** :
+echec → {} · repli sur la table · appel dans un `try` · la vente A L'ECHEANCE ne depend d'aucun des
+deux. C'est le CHEMIN DE VENTE, celui qui a coute 29 € le 20/09.
+
+#### LA PRISE DE GAIN : x1,25 N'ETAIT PLUS LE BON SEUIL
+
+Sur **383 tickets G+D posterieurs a son gel**, suivis a 2 s (`papier_large` enregistre l'age du
+franchissement, le prix, ET le prix de la lecture SUIVANTE — vendre au declencheur flatte de
++2,5 pts, piege du 16/09) :
+
+| seuil | €/ticket | 1re moitie | 2e moitie |
+|---|---|---|---|
+| tenue 287 s (aucune prise) | +0,469 | −0,154 | +1,086 |
+| **x1,25 (en service)** | +2,162 | +1,846 | +2,477 |
+| x1,50 | +3,614 | +2,648 | +4,572 |
+| **x2,00** | **+5,348** | +5,097 | +5,599 |
+
+Et sur les 3 derniers jours seuls : 1,604 / 1,843 / 3,730 / **4,731**. **Quatre verifications
+independantes** (deux periodes × deux moities) dans le meme ordre. **Passe a x2,00.**
+Le 1,25 avait ete choisi le 16/09 comme « milieu du plateau +20/+30 » — methode correcte, mais sur
+les donnees d'AVANT le gel. **`SEUILS` passe de 4 a 14 valeurs** pour situer le vrai optimum dans
+3-4 jours (« ne pas prendre du tout » est PIRE que x2, donc l'optimum est a l'INTERIEUR).
+
+#### ET SUR LA BANDE, C'EST L'INVERSE : aucune prise de gain n'aide
+
+Teste sur 3 302 tickets : **a x1,25 la bande passe de +2,78 a −0,38 €/ticket.** Monotone — plus la
+prise est serree, pire c'est. Noter que le nombre de tickets MONTE quand la prise est serree
+(321 → 751) : sortir tot evite les clotures a −30 %, donc la pause bloque moins. **Tout ce qui
+affaiblit la pause detruit la valeur.**
+**PIEGE DE METHODE ATTRAPE** : x3,00 semblait battre la tenue aveugle (+2,884 contre +2,781). En
+relevant le plafond de recherche de +300 % a +500 %, l'avantage DISPARAIT (+3,013 contre +3,148).
+**C'etait un artefact du plafond.** Et consequence generale : **notre plafond a +300 % sous-estime
+la strategie de 0,37 €/ticket** — toutes nos comparaisons papier sont biaisees a la baisse, d'autant
+plus que la regle attrape des queues.
+
+#### L'OBJECTIF DE 50 €/JOUR EST ATTEINT — et ce n'est pas la mise qui l'a fait
+
+```
+prod a 25 €    +25,9 €/jour  (21 tickets/j)
+G+D a 10 €     +24,4 €/jour  (45 tickets/j)
+TOTAL          +50,3 €/jour
+```
+**Mais l'ecart-type d'UNE journee est de ~111 €** — deux fois l'objectif — sur 5,2 jours de prod et
+0,6 jour de G+D. **Le chiffre est la, la preuve ne l'est pas.**
+**Ce qui a fait la moitie du chemin est l'ajout d'une SOURCE DECORRELEE, pas les mises ni le modele.**
+
+**IL N'Y A PAS DE TROISIEME SOURCE DANS LE CARNET** : sur 36 lignes, **4 seulement sont positives**,
+et ce sont les trois qu'on traite deja plus `G foule <= 74`, qui est un MORCEAU de G+D (r = +0,60).
+La troisieme source devra etre **creee**, pas choisie. Deux directions qui ne ressembleraient a
+aucune des deux : une SORTIE differente (les deux sortent a 240 s au chronometre), ou un AGE DE
+DECISION different (les deux decident a 45 s).
+
+#### L'INCIDENT DOCKER — 26 min sans trader, et ce n'etait pas le bot
+
+Docker s'est arrete **deux fois** (21h18 et 21h51). Cause trouvee : **`vmmemWSL` occupait 14,24 Go
+sur 28,8**, ne laissant que 3,0 Go libres. Sans plafond, WSL2 gonfle et ne rend jamais ; sous
+pression le service se fait tuer. **`C:\Users\Osiris\.wslconfig` cree** (memory=12GB, 6 processeurs,
+`autoMemoryReclaim=gradual`). Apres redemarrage : WSL plafonne a **11,85 Go**, Windows a **7,3 Go
+libres au lieu de 3,0**.
+**A SAVOIR POUR LA PROCHAINE FOIS** : `com.docker.service` a l'etat `Stopped` NE veut PAS dire que le
+bot est mort — il l'est en ce moment et tout tourne. Sur les versions recentes le moteur vit dans
+WSL. Les bons indicateurs sont `docker ps` et la fraicheur de `data/carnet_live.json`.
+
+#### LE SIGNAL D'ALERTE OUVERT AU COUCHER
+
+**Le taux de refus `-32002` (slippage a la simulation) monte avec la mise :**
+
+| | tentatives | refus | taux |
+|---|---|---|---|
+| suiveur a 10 € | 28 | 0 | **0 %** |
+| suiveur a 20 € | 2 | 2 | **100 %** |
+| prod 10 € | 518 | 10 | 2 % |
+| prod 20 € | 113 | 8 | 7 % |
+| prod 25 € | 5 | 1 | 20 % |
+
+**Le suiveur n'a RIEN achete depuis son passage a 20 €.** n = 2, donc rien n'est prouve — mais la
+direction est confirmee par la prod sur 518 et 113 tentatives. **A COMPTER DEMAIN MATIN** : si le
+suiveur est toujours a ~100 % de refus sur une dizaine de tentatives, deux reponses possibles —
+redescendre a 10 € (ou il faisait 28/28), ou desserrer `slippage_achat_pct` de 20 a 30 %.
+*(Un ticket refuse vaut 0, pas une perte : les refus mesures valaient −0,813 €/ticket.)*
+
+#### CINQ AUTRES ERREURS DE METHODE, toutes attrapees le meme jour
+
+1. **`float(x or nan)` transforme tout ZERO en manquant** (`0.0 or nan` vaut nan).
+2. **Un bootstrap qui replace les tickets a intervalle REGULIER** detruit les rafales ; la pause
+   durant 1 800 s, elle bloque alors bien plus que dans la realite.
+3. **Un filtre s'applique APRES la pause, jamais avant** — filtrer avant reduit le flux, donc la
+   pause voit moins de clotures et prend PLUS de tickets (480 au lieu de 310).
+4. **« ~4,6 faux positifs a 5 % » sur 92 filtres etait faux dans le MAUVAIS sens** : un filtre au
+   hasard bat la base dans les deux moities ~25 % du temps, donc le hasard en produit ~23.
+5. **Un fichier de travail nomme `queue.py`** masque le module standard et casse l'import de scipy.
+
+#### ET LA PAGE MENTAIT SUR CE QUI TOURNE — corrige en trois endroits
+
+- le graphe des variantes annoncait **« BANDE + PAUSE (en service) »** alors que ce n'est plus le cas
+- la courbe « Gain cumule » montrait l'ANCIEN modele sous le nom de la production
+- **et en ajoutant « depuis le modele frais » au selecteur de periode, j'ai fait DISPARAITRE tout le
+  suivi de Mido** — il ne voyait plus que 4 tickets au lieu de 107. Le defaut etait
+  `index=len(_noms)-1` : la page prenait LA DERNIERE option. Le defaut est desormais **designe** par
+  le producteur (`defaut: true`), jamais deduit de l'ordre.
+
+**NOUVEL ONGLET « MARCHE »** (demande de Mido : *« quand je perds de l'argent je sais pas si c'est le
+marche ou mes strats »*). La colonne qui repond est l'**ECART** = regle − marche :
+```
+24/09  marche -1,807  regle +0,488  ecart +2,295  -> marche mauvais, la regle a bien travaille
+25/09  marche -0,575  regle -6,568  ecart -5,992  -> ce n'etait PAS le marche
+26/09  marche +0,396  regle +9,390  ecart +8,994
+```
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
@@ -442,6 +638,20 @@ meme ou l on ecrit le process serait la faute du 20/09, une troisieme fois.
 | `FORET GAGNANT 20 %` | 20/09 12h32 | 400 puis 2 000 | 0 ticket, démarre cet après-midi |
 | `impact_annonce` | 19/09 22h | 300 valeurs | 14 au 19/09 au soir |
 | Registre des coûts | continu | — | 509 tickets |
+
+> **⚠️ CE BLOC DÉCRIT L'ÉTAT D'AVANT LE 26/09. Deux règles tournent désormais en réel :**
+>
+> | | règle | mise | réglages |
+> |---|---|---|---|
+> | **moteur principal** | `bande + pause`, **modèle FRAIS** (gel du 22/09) | **25 €** | bande [0,1776 ; 0,3920] · pause lue sur `papier_challenger` · écart pool 40 % · **aucun plafond** |
+> | **suiveur** | `G+D` (exécute les décisions de `papier_gd_direct`) | **20 €** | prise de gain **×2,00** · prix lu à **2 s** · fenêtre d'entrée 47-60 s · **aucun plafond** |
+>
+> La **stratégie** n'a pas changé le 26/09 — c'est le MODÈLE dessous, et la bande avec lui
+> (recalibrée sur les mêmes quantiles). Le compteur Telegram et la page ne se coupent donc PAS là :
+> ce qui doit rester continu, c'est la stratégie. Détail complet en **§0.2 nonies**.
+>
+> Le témoin (`papier_combo`, ancien modèle) continue de tourner en papier pour qu'on puisse dire si
+> la bascule valait le coup — `bascule_verdict.py` et l'onglet *Marché*.
 
 **EN PRODUCTION RÉELLE depuis le 21/09 09h56 : `BANDE + PAUSE`** (§3.169). **Mise 20 €** depuis le
 22/09 15h (§3.172), tenue 240 s, décision 45 s, pause −30 %/30 min, pas de frein,
