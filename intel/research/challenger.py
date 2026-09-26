@@ -169,9 +169,15 @@ def geler() -> None:
         X.append([float(f.get(k)) if f.get(k) is not None else np.nan for k in VAR])
         y.append(1 if b - cout(q) <= -0.50 else 0)
     X = np.array(X, dtype=float)
+    # `feature_name=VAR` N EST PAS COSMETIQUE. Le moteur et le carnet papier cherchent chaque
+    # variable PAR NOM (`arbres.Modele.probabilite` fait `valeurs.get(nom)`). Un modele entraine sur
+    # un tableau sans noms produit `Column_0`, `Column_1`... : a l execution CHAQUE variable serait
+    # trouvee absente, chaque arbre prendrait sa branche par defaut, et le modele rendrait une
+    # constante SANS LEVER LA MOINDRE ERREUR. C est la regle 10 du projet (train/serve skew), deja
+    # documentee dans `prod_reentraine.py`. La verification plus bas est la pour s en assurer.
     boost = lgb.train({"objective": "binary", "verbose": -1, "num_leaves": 31,
                        "learning_rate": 0.05, "min_data_in_leaf": 20, "seed": 0},
-                      lgb.Dataset(X, label=y), num_boost_round=300)
+                      lgb.Dataset(X, label=y, feature_name=list(VAR)), num_boost_round=300)
     s = boost.predict(X)
     # LA BANDE, PAR LES QUANTILES QU OCCUPE CELLE EN SERVICE (point 3 de l en-tete).
     ref = sorted(r for _, _, _, _, r in lignes)
@@ -188,6 +194,34 @@ def geler() -> None:
     d = os.path.join(DOSSIER, now.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(d, exist_ok=True)
     boost.save_model(os.path.join(d, "modele.json"))
+
+    # DEUX FORMATS, PARCE QU IL Y A DEUX LECTEURS, ET ILS SONT INCOMPATIBLES :
+    #   `modele.json`      format `save_model`, lu par `lgb.Booster` -> le jugement, ici.
+    #   `modele_dump.json` format `dump_model`, lu par `arbres.Modele` -> le CARNET PAPIER et LE
+    #                      MOTEUR, qui n ont pas LightGBM. C est celui-la qu il faudra mettre en
+    #                      production, jamais l autre : `lgb.Booster` refuse de lire un dump, et
+    #                      `arbres.Modele` leve une KeyError sur un `save_model`.
+    dump = boost.dump_model()
+    dump["seuil_p80"] = float(sorted(s)[int(0.80 * (len(s) - 1))])
+    json.dump(dump, open(os.path.join(d, "modele_dump.json"), "w"))
+
+    # LA VERIFICATION QUI EMPECHE LE TRAIN/SERVE SKEW. On relit le dump avec le lecteur DU MOTEUR,
+    # sur des variables nommees comme le moteur les nomme, et on exige l accord avec LightGBM.
+    # Sans elle, un modele muet -- qui rend une constante parce qu il ne trouve aucune variable --
+    # passerait en production sans le moindre signe.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from arbres import Modele  # noqa: PLC0415
+    relu = Modele(os.path.join(d, "modele_dump.json"))
+    if list(relu.variables) != list(VAR):
+        raise SystemExit("ABANDON : le dump ne porte pas les noms de variables (%s...)"
+                         % list(relu.variables)[:3])
+    ecart = 0.0
+    for i in range(0, len(X), max(1, len(X) // 200)):
+        v = {VAR[j]: (None if X[i][j] != X[i][j] else float(X[i][j])) for j in range(len(VAR))}
+        ecart = max(ecart, abs(relu.probabilite(v) - float(s[i])))
+    if ecart > 1e-6:
+        raise SystemExit("ABANDON : le dump et LightGBM divergent de %.2e" % ecart)
+    print("   verification lecteur du moteur : %d variables nommees, ecart max %.2e" % (len(VAR), ecart))
     json.dump({"gel": now.timestamp(), "gel_lisible": now.strftime("%d/%m/%Y %H:%M:%S"),
                "variables": VAR, "bande": list(bande), "quantiles": [qlo, qhi],
                "n_entrainement": len(y), "vidages": sum(y) / len(y),

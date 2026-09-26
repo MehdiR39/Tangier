@@ -59,7 +59,13 @@ COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte
                # le MEME modele 75s gele, prive des six variables que le moteur ne saura pas
                # produire a 75 s (images, robots, regime). Il mesure en marche avant ce que la
                # production fera VRAIMENT, a cote du carnet complet qui continue de tourner.
-               "foret75_iso")
+               "foret75_iso",
+               # LE FLUX SCORE DU CHALLENGER, sans lequel aucun modele reentraine ne peut etre
+               # adopte : sa PAUSE doit voir le flux entier de SA bande, et ce flux n existe nulle
+               # part ailleurs (`papier_combo` ne stocke que les scores du modele en service).
+               # Adopter un challenger sans ce carnet ferait tourner sa bande SANS pause, soit
+               # -106 EUR/jour (mesure du 26/09 sur 3 032 tickets). Papier, zero euro.
+               "papier_challenger")
 PAS = 60.0
 JOURNAL = "/app/logs"
 
