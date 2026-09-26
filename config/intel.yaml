@@ -1176,9 +1176,13 @@ modele_rapide:
   # AUJOURD HUI gagne. A CHANGER EN MEME TEMPS QUE `regle` OU `modele`, jamais separement : le
   # total doit toujours porter sur UNE seule regle. Mettre 0 pour retrouver tout l historique.
   # L ancien carnet n est pas efface pour autant -- il reste entier dans `mr_lignes`.
-  # REMIS A 12h00 (Paris) LE 26/09 avec le passage au modele frais : le total doit porter sur UNE
-  # regle, et `BANDE + PAUSE` s arrete ici a 102 tickets et +69,26 EUR.
-  cumul_depuis: 1790416800
+  # REMIS A L INSTANT EXACT DE LA BASCULE (26/09 12h38'30 Paris) avec le passage au modele frais.
+  # PREMIERE VALEUR FAUSSE, ET CORRIGEE PAR MIDO : j avais mis 12h00 alors que le redemarrage a eu
+  # lieu a 12h38. Un ticket achete par l ANCIEN modele a 12h19'56, +17,23 EUR, entrait donc dans le
+  # total du nouveau. C est exactement le defaut qu il avait signale le 21/09 (« on a toujours les
+  # chiffres anciens 256/658 ») : un total qui melange deux regles ne dit plus si ce qui tourne
+  # AUJOURD HUI gagne. L instant de reference est celui du redemarrage, jamais une heure ronde.
+  cumul_depuis: 1790419110
   # LE COUT AVEC LEQUEL LA PAUSE JUGE « -30 % », part fixe. Le moteur lisait `cout_reduit` du
   # carnet papier, qui vaut 1,54 % en moyenne -- une hypothese optimiste (depot recupere, priorite
   # baissee) ecrite avant qu on mesure le peage. Le peage REEL, lu sur 404 tickets d argent reel,
