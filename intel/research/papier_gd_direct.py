@@ -258,7 +258,23 @@ def tendance(t_dec):
 # Sans ca on ne peut comparer que des entrees, et l operateur a raison : la sortie compte autant.
 SUIVI_MAX = 1800 if os.environ.get("PAPIER_GD_REGLE") == "large" else FIN_S
 HORIZONS = (167, 287, 600, 900, 1200, 1500, 1800)
-SEUILS = (1.25, 1.5, 2.0, 0.7)
+# ELARGIE LE 26/09 AU SOIR. On ne pouvait comparer que trois seuils de sortie (1,25 / 1,5 / 2,0), et
+# la mesure du jour a montre que le seuil en service -- x1,25, choisi en juillet comme « milieu du
+# plateau +20/+30 » sur les donnees d AVANT le gel -- etait devenu le PIRE des trois sur 383 tickets
+# posterieurs :
+#     tenue 287 s +0,469 · x1,25 +2,162 · x1,50 +3,614 · x2,00 +5,348 EUR/ticket
+# Comme « ne pas prendre du tout » est PIRE que x2, l optimum est a l INTERIEUR -- mais on ne pouvait
+# pas le situer, faute de points entre 1,5 et l echeance. Mido : « ajoute autant que tu veux ».
+#
+# CE QUE CA COUTE : rien. Un jalon est un dictionnaire de plus dans une colonne JSON, ecrit au
+# PREMIER franchissement seulement. Aucun appel reseau supplementaire -- le prix est deja lu toutes
+# les 2 s pour les seuils existants ; on ne fait que le comparer a plus de bornes.
+# CE QUE CA N AFFECTE PAS : la regle elle-meme. `papier_gd_direct` VEND toujours a TP = 0,25 (x1,25)
+# et l echeance a 287 s. Les jalons ne servent qu a rejouer d autres sorties apres coup.
+#
+# Les seuils BAS (0,5 / 0,85) permettront en plus de mesurer ce que couterait un stop, question
+# jamais tranchee sur cette regle : le journal ne l a mesuree que sur la regle Telegram.
+SEUILS = (1.1, 1.25, 1.4, 1.5, 1.6, 1.75, 2.0, 2.25, 2.5, 3.0, 4.0, 0.85, 0.7, 0.5)
 
 
 def jalonner(t, prix, age):
