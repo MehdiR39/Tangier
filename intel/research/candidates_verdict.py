@@ -183,13 +183,37 @@ def critere_a(nom, pris_c, pris_p, offerts, drapeau_c, drapeau_p, seuil_c, seuil
               "p(candidate <= prod) = %.3f%s"
               % (L, lo, hi, float(np.mean(np.array(diffs) <= 0)),
                  "" if (lo > 0 or hi < 0) else "  [ecart NON distinguable de zero]"))
-    # CONCENTRATION : un ecart porte par deux tickets n est pas un ecart.
-    for etiq, pris in ((" production", pris_p), (" candidate ", pris_c)):
-        v = sorted((MISE * x["r"] for x in pris), reverse=True)
-        tot = sum(v)
-        print("      %s : total %+8.2f EUR · 3 meilleurs %+.2f (%.0f %%) · SANS eux %+0.3f/ticket"
-              % (etiq, tot, sum(v[:3]), 100 * sum(v[:3]) / tot if tot else float("nan"),
-                 st.mean(v[3:]) if len(v) > 3 else float("nan")))
+    # ---- LE TAUX DE GROS GAINS, et surtout PAS « la moyenne sans les 3 meilleurs » -------------
+    #
+    # Mido, 26/09 : « la strat s appuie sur miser peu pour supporter les pertes et profiter de gros
+    # gains, qu est-ce que tu me racontes ». Il a raison, et c etait une erreur de fond. Retirer les
+    # 3 meilleurs tickets d une strategie dont la THESE EST LA CAPTURE DE QUEUE la rend negative PAR
+    # CONSTRUCTION -- ca ne teste rien, ca supprime l objet du test. C est un controle legitime pour
+    # une regle qui pretend a une moyenne stable ; ici la moyenne est justement le mauvais outil :
+    # l indice de queue de Hill du projet vaut alpha = 1,55-2,44, donc la variance est peut-etre
+    # INFINIE et sigma/sqrt(n) n a pas de sens.
+    #
+    # LE BON TEST EST UN COMPTAGE. « Combien de gros gains, contre combien au marche » a l intervalle
+    # serre d une binomiale, et c est exactement la these de la bande (§3.100 : 25,2 % de gros gains
+    # contre 10 % au marche). Une regle de ce projet se juge la-dessus.
+    try:
+        from scipy import stats as _sc
+    except Exception:  # noqa: BLE001
+        return ecart
+    km = {s: sum(1 for x in offerts if x["r"] >= s) for s in (0.50, 1.00, 2.00)}
+    print("      TAUX DE GROS GAINS (le test qui correspond a la these : peu mise, queue capturee)")
+    for etiq, pris in (("production", pris_p), ("candidate", pris_c)):
+        bout = ""
+        for s, lab in ((0.50, "+50%"), (1.00, "x2"), (2.00, "x3")):
+            k = sum(1 for x in pris if x["r"] >= s)
+            reste = km[s] - k
+            _, p = _sc.fisher_exact([[k, len(pris) - k],
+                                     [reste, len(offerts) - len(pris) - reste]],
+                                    alternative="greater")
+            bout += "  %s %4.1f%% (x%.2f marche, p=%.3f)" % (lab, 100 * k / len(pris),
+                                                             (k / len(pris)) / (km[s] / len(offerts))
+                                                             if km[s] else float("nan"), p)
+        print("        %-11s%s" % (etiq, bout))
     return ecart
 
 
