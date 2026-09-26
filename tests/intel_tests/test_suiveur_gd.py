@@ -27,6 +27,31 @@ import sqlite3
 from intel.engines import modele_rapide as mr
 
 
+def test_la_bande_est_configurable_et_son_defaut_est_celui_de_la_production():
+    """Adopter un modele reentraine impose de changer la bande EN MEME TEMPS : un modele frais
+    redistribue ses scores, donc [0,20 ; 0,35] designerait d autres jetons."""
+    m = _moteur(cfg={"regle": "bande"})
+    assert m._bande() == mr.BANDE, "sans config, on garde la bande de la production"
+    m2 = _moteur(cfg={"regle": "bande", "bande": [0.17763490200673798, 0.3920447192432126]})
+    assert m2._bande() == (0.17763490200673798, 0.3920447192432126)
+    assert m2.retenu({}, 0.18) is True, "0,18 est dans la bande fraiche, pas dans celle en service"
+    assert m2.retenu({}, 0.36) is True, "0,36 est dans la bande fraiche, pas dans celle en service"
+    assert m2.retenu({}, 0.17) is False
+    assert m2.retenu({}, 0.40) is False
+
+
+def test_la_bande_est_lue_AUX_DEUX_ENDROITS():
+    """La regle d achat ET la requete de la pause. Ne la changer qu a un seul endroit ferait
+    acheter dans une bande et surveiller les clotures d une AUTRE -- la pause ne serait plus celle
+    qui a ete mesuree, et rien ne le signalerait."""
+    import inspect
+    src = inspect.getsource(mr.ModeleRapide.pause_ouverte)
+    assert "self._bande()" in src, "la PAUSE lit encore la bande en dur"
+    assert "BANDE[0]" not in src and "BANDE[1]" not in src, "reste un usage en dur dans la pause"
+    achat = inspect.getsource(mr.ModeleRapide.retenu)
+    assert "self._bande()" in achat, "la regle d achat lit encore la bande en dur"
+
+
 def _moteur(table="gd_lignes", cfg=None, base=None):
     m = mr.ModeleRapide.__new__(mr.ModeleRapide)
     m.table, m.prefixe = table, "suiveur_gd"

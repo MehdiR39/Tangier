@@ -287,6 +287,25 @@ class ModeleRapide:
         entraine, pas a une habitude : 240 s pour le modele a 45 s, 163 s pour celui a 75 s."""
         return float(self._cfg("tenue_secondes", TENUE_S))
 
+    def _bande(self) -> tuple[float, float]:
+        """LES BORNES DE LA BANDE, lues dans la config. Defaut = celles de la production.
+
+        POURQUOI ELLES NE PEUVENT PLUS ETRE EN DUR. Adopter un modele reentraine impose de changer
+        la bande EN MEME TEMPS : un modele frais redistribue ses scores, et garder [0,20 ; 0,35]
+        designerait d autres jetons -- ce ne serait plus la regle mesuree. `challenger.py` calcule
+        la bande du challenger sur les QUANTILES qu occupe celle en service, et c est ce couple-la
+        qu on lit ici.
+
+        ET ELLES SONT LUES AUX DEUX ENDROITS QUI COMPTENT : la regle d achat (`retenu`) et la
+        requete de la PAUSE (`pause_ouverte`). Les changer a un seul endroit ferait acheter dans une
+        bande et surveiller les clotures d une autre -- la pause ne serait plus celle qui a ete
+        mesuree, sans que rien ne le signale.
+        """
+        b = self._cfg("bande", None)
+        if not b:
+            return BANDE
+        return (float(b[0]), float(b[1]))
+
     def _seuil(self) -> float:
         """Le seuil de decision, qu il soit ecrit dans la config ou porte par le modele.
 
@@ -344,12 +363,14 @@ class ModeleRapide:
             # 266 tickets) mais c est la seule ligne du projet qui rapporte, et elle est branchee
             # sur decision de Mido -- qui rappelle qu il faut quelque chose en production, sinon le
             # registre des couts ne se remplit plus et plus aucune strategie n est evaluable.
-            return BANDE[0] <= risque < BANDE[1]
+            lo, hi = self._bande()
+            return lo <= risque < hi
         if r == "bas_bande":
             x = f.get("depuis_min")
             if x is None or x != x:
                 return False
-            return float(x) <= 1e-9 and BANDE[0] <= risque < BANDE[1]
+            lo, hi = self._bande()
+            return float(x) <= 1e-9 and lo <= risque < hi
         if r == "bas":
             x = f.get("depuis_min")
             if x is None or x != x:
@@ -491,7 +512,7 @@ class ModeleRapide:
                     " ON i.pair = d.pair WHERE d.eligible = 1 AND i.brut_240 IS NOT NULL"
                     " AND d.risque IS NOT NULL AND d.risque >= ? AND d.risque < ?"
                     " AND d.t_dec + ? > ? AND d.t_dec + ? <= ?",
-                    (fixe, k, V_RESERVE, BANDE[0], BANDE[1],
+                    (fixe, k, V_RESERVE, self._bande()[0], self._bande()[1],
                      TENUE_S, now - duree, TENUE_S, now)).fetchone()
             finally:
                 cn.close()

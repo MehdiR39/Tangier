@@ -1176,7 +1176,9 @@ modele_rapide:
   # AUJOURD HUI gagne. A CHANGER EN MEME TEMPS QUE `regle` OU `modele`, jamais separement : le
   # total doit toujours porter sur UNE seule regle. Mettre 0 pour retrouver tout l historique.
   # L ancien carnet n est pas efface pour autant -- il reste entier dans `mr_lignes`.
-  cumul_depuis: 1789977360
+  # REMIS A 12h00 (Paris) LE 26/09 avec le passage au modele frais : le total doit porter sur UNE
+  # regle, et `BANDE + PAUSE` s arrete ici a 102 tickets et +69,26 EUR.
+  cumul_depuis: 1790416800
   # LE COUT AVEC LEQUEL LA PAUSE JUGE « -30 % », part fixe. Le moteur lisait `cout_reduit` du
   # carnet papier, qui vaut 1,54 % en moyenne -- une hypothese optimiste (depot recupere, priorite
   # baissee) ecrite avant qu on mesure le peage. Le peage REEL, lu sur 404 tickets d argent reel,
@@ -1306,7 +1308,43 @@ modele_rapide:
   pause_enabled: true
   pause_secondes: 1800
   pause_seuil: -0.30
-  modele: /app/data/recherche/balayage/modele_vidage.json
+  # ================================================================================================
+  # 26/09 — LE MODELE PASSE A `B · MODELE FRAIS`, SUR DECISION DE MIDO, AVANT SON ECHEANCE.
+  #
+  # CE QUI EST MESURE. Sur la fenetre ou les deux sont HORS ECHANTILLON (2 227 tickets depuis le gel
+  # du 22/09), B gagne les SEPT criteres de `table_std2::_criteres` et la production en gagne ZERO :
+  #     EUR/ticket  +0,189 -> +2,297  ·  EUR/jour  +4,31 -> +67,07
+  #     2e moitie   -1,477 -> -0,243  ·  part portee par le top 3  1 035 % -> 69 %
+  #     part de l avance qui survit a ses 3 meilleurs : 0,00 -> 0,32
+  # Et B franchit les trois conditions de son gel : (a) +2,108 EUR/ticket sur les memes tickets,
+  # (b) positive, (c) p = 0,0037 contre le decalage circulaire. La production ne franchit pas (c).
+  #
+  # CE QUI NE L EST PAS, ET QUI EST DIT ICI PLUTOT QU APRES COUP :
+  #   - **l echeance du gel n etait PAS atteinte** : 101 tickets sur 200, 3,5 jours sur 14, et
+  #     `challenger.py` disait ATTENDRE. Mido a tranche deux fois. C est une decision prise CONTRE
+  #     le verdict du process, et elle est ecrite comme telle.
+  #   - l ecart n est pas significatif : IC95 de -2,31 a +3,22, p(B pas mieux) = 0,37.
+  #   - l ecart repose sur CINQ tickets ; celui de la production sur UN.
+  #   - le modele de B a une AUC PIRE sur les trois cibles. On ne decide pas sur l AUC -- Mido :
+  #     « le seul critere c est est-ce qu on gagne » -- mais le fait est note.
+  #   - sa selection AVANT pause est moins bonne (-0,987 contre -0,730) : tout son avantage passe
+  #     par la PAUSE (+2,232 sur +1,975), c est-a-dire par la partie qu on n explique pas.
+  #
+  # POUR REVENIR EN ARRIERE : remettre les trois lignes ci-dessous a `modele_vidage.json`,
+  # `bande: [0.20, 0.35]` et `combo_db: /app/db/papier_combo.sqlite`, ET `cumul_depuis`.
+  modele: /app/data/recherche/challengers/20260922-221347/modele_dump.json
+  # LA BANDE CHANGE EN MEME TEMPS QUE LE MODELE, JAMAIS SEPAREMENT. Un modele reentraine
+  # redistribue ses scores : garder [0,20 ; 0,35] designerait d autres jetons et ce ne serait plus
+  # la regle mesuree. Ces bornes sont celles que `challenger.py` a calculees sur les QUANTILES
+  # [0,451 ; 0,914] qu occupait la bande en service.
+  bande: [0.17763490200673798, 0.3920447192432126]
+  # ET LA SOURCE DE LA PAUSE CHANGE AVEC. Elle doit voir le flux entier de la bande DE CE MODELE ;
+  # `papier_combo` ne porte que les scores de l ancien. Sans ce changement, la pause surveillerait
+  # les clotures d une AUTRE bande que celle ou l on achete -- la regle mesuree perdrait sa pause,
+  # et la bande sans pause perd 106 EUR/jour (mesure du 26/09 sur 3 032 tickets).
+  combo_db: /app/db/papier_challenger.sqlite
+  nom_court: "B FRAIS"
+  nom_regle: "bande du modele frais"
   # `auto` : le seuil vient du FICHIER, recalcule a chaque entrainement. Un seuil fige ici
   # garderait une proportion de tickets differente a chaque reentrainement, et deriverait en
   # silence -- la derive exacte mesuree sur les gels (§3.158 : 40 tickets gardes contre 110).
