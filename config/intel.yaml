@@ -1426,10 +1426,35 @@ modele_rapide:
   # du jour etaient des achats payes 28 a 59 % trop cher.
   #     sans plafond    0 % refuses    -52,58 EUR
   #     plus de 30 %   10 % refuses   +110,83 EUR
-  #     plus de 20 %   18 % refuses   +130,02 EUR   <- retenu
+  #     plus de 20 %   18 % refuses   +130,02 EUR   <- retenu a l epoque
   #     plus de 10 %   40 % refuses    -54,25 EUR   (jette trop, l avantage part avec)
   # Ne coute AUCUN appel : le prix du pool est deja lu toutes les 10 s par le collecteur.
-  max_ecart_pool_pct: 20.0
+  #
+  # ================================================================================================
+  # 26/09 — PORTE A 40 %, PARCE QUE CE QUE CE GARDE MESURE A CHANGE DE SENS AVEC LA STRATEGIE.
+  #
+  # Mido : « la protection on l avait mise en place pour une autre strat qui achetait beaucoup de
+  # tickets, il me semble ». Il avait raison, et la mesure le confirme -- le signe s INVERSE au
+  # passage a `bande + pause` (valeur des tickets refuses, recalculee AU PRIX REELLEMENT COTE) :
+  #     AVANT bande+pause (14-20/09)   9 refus   -1,489 EUR/ticket   total  -13,40   le garde GAGNE
+  #     DEPUIS bande+pause (21/09)     9 refus   +1,208 EUR/ticket   total  +10,88   le garde COUTE
+  #
+  # LE MECANISME, et il est lisible. Le seuil a ete calibre le 14/09 sur une strategie qui achetait
+  # des jetons CALMES : la, une cotation 30 % au-dessus du pool signifie « on te sandwiche, tu paies
+  # trop cher ». `bande + pause` achete l INVERSE -- la bande est VOLONTAIREMENT la zone volatile --
+  # et pour ces jetons-la le meme ecart signifie « ca decolle en ce moment ». Le garde n a pas
+  # change ; ce qu il mesure, si.
+  #
+  # POURQUOI ON NE MESURE PAS PLUS LONGTEMPS. Se tromper ici coute ~2 EUR/jour : 1,7 refus par jour,
+  # un mauvais ticket a 20 EUR de mise. Immobiliser la decision douze jours pour un pari a deux
+  # euros n a pas de sens -- et c est le reproche que Mido m a fait trois fois le 26/09.
+  #
+  # CE QUI N EST PAS PROUVE, ecrit avant : 9 tickets, et le total tient a DEUX d entre eux
+  # (+38,14 et +16,07). Sans eux c est negatif. On change sur un MECANISME plus une borne de perte,
+  # pas sur une preuve.
+  # POUR REVENIR EN ARRIERE : remettre 20.0. Les refus restent enregistres avec leur surcout dans
+  # `mr_lignes.motif`, donc la mesure continue toute seule dans les deux sens.
+  max_ecart_pool_pct: 40.0
   # PEUT-ON RESSORTIR ? On cote la revente AVANT d acheter. Mesure du 09/09 sur 25 pools suivis :
   # l aller-retour coute 2,9 % en median, mais SIX pools sur vingt-cinq coutent plus de 10 % et
   # CINQ plus de 25 % -- sur ceux-la on peut acheter et pas sortir, a notre taille. Ils causent
