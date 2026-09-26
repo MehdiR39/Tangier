@@ -1514,7 +1514,14 @@ modele_rapide:
   # `max_ordres_jour: 0` desactive ce plafond. La seule protection reste la perte sur 24 h
   # glissantes -- celle-la, il l a explicitement approuvee.
   max_ordres_jour: 0
-  max_perte_jour_eur: 150.0    # le budget que l operateur a accepte de perdre
+  # 0 = AUCUN PLAFOND. Mido, 26/09 : « je veux pas de plafond nulle part ». Le code traite
+  # explicitement 0 comme « desactive » (voir `cycle`) -- sans ce garde, 0 aurait bloque le moteur
+  # des la premiere minute negative de la journee, soit l inverse du reglage demande.
+  # CE QUI PROTEGE MAINTENANT, a la place : la TAILLE DE LA MISE. C est le sens du calcul de
+  # croissance du 26/09 -- une mise bien dimensionnee borne le dommage par construction, la ou un
+  # plafond ne fait que couper apres coup, souvent au pire moment (19/09 : 229 achats bloques un
+  # jour ou la journee etait positive).
+  max_perte_jour_eur: 0
   cle_fichier: null
 
 # ---------------------------------------------------------------------------
@@ -1601,7 +1608,33 @@ suiveur_gd:
   # que `pause_fraicheur` : les trois instances papier sont mortes le 18/09 sans que personne ne le
   # voie pendant des heures.
   gd_fraicheur: 900
-  mise_eur: 10.0
+  # ================================================================================================
+  # 26/09 : 10 -> 20 EUR, sur decision de Mido (« augmente a 20 voir 25 comme l autre »).
+  #
+  # CE QUI A CHANGE DEPUIS LA MISE EN SERVICE D HIER SOIR. L argument qui justifiait 10 EUR etait le
+  # plafond de perte : a 25 EUR l ecart-type journalier de G+D (158 EUR) depassait son plafond de
+  # -100, donc le moteur se serait coupe presque chaque jour. **Les plafonds ont ete retires le
+  # 26/09 a la demande de Mido, cet argument n existe plus.**
+  #
+  # CE QUE DIT LE CALCUL DE CROISSANCE, a capital 500 EUR et prod figee a 25 EUR :
+  #     mise G+D   10 EUR -> +51 EUR/jour · croissance +41 · sigma/jour 110
+  #                20 EUR -> +76          · croissance +58 · sigma/jour 151
+  #                40 EUR -> +125         · croissance +74 · sigma/jour 257   <- maximum
+  # Le maximum est a 40, et on n y va PAS : a 40 EUR l ecart-type d UNE JOURNEE vaut la moitie du
+  # capital. Le sommet de la courbe est large (30-50 EUR quasi identiques), donc se placer bas coute
+  # peu et protege de l erreur d estimation -- d autant que ce Kelly est calcule sur 28 tickets.
+  #
+  # ET SURTOUT : le rendement par euro mise de G+D (+0,0538) est le MEME que celui de la production
+  # (+0,0521). Elle n est pas meilleure, elle est DECORRELEE (r = -0,03). Monter sa mise n achete
+  # donc pas un meilleur rendement, seulement de l exposition.
+  #
+  # LA VRAIE CONTRAINTE RESTE LE CAPITAL, et elle est dite ici : a 500 EUR, l ecart-type du total
+  # journalier passe de 110 a 151 EUR, soit 30 % du capital. Une journee a -3 sigma coute 453 EUR.
+  # Rien de tout cela n est un plafond automatique -- il n y en a plus -- c est la MISE qui est
+  # desormais le seul garde-fou.
+  #
+  # Son critere reel est inchange : 150 tickets, debranchement sous ZERO. Elle en a 28.
+  mise_eur: 20.0
   # 10 EUR LE PREMIER JOUR, PAS 20, et ce n est pas de la prudence : le suiveur doit voir la decision
   # du carnet papier dans les secondes qui suivent les 45 s, et cette course-la ne se teste pas hors
   # ligne. Le premier jour a 10 EUR la prouve a moitie prix. Mido a accepte 20 ensuite.
@@ -1616,7 +1649,8 @@ suiveur_gd:
   fenetre_entree_s: 8
   tenue_secondes: 240
   prise_gain_x: 1.25
-  max_perte_jour_eur: 100.0
+  # 0 = AUCUN PLAFOND, comme pour la production. Mido, 26/09 : « je veux pas de plafond nulle part ».
+  max_perte_jour_eur: 0
   max_ordres_jour: 0
   # LA PAUSE DE LA BANDE N A RIEN A FAIRE ICI : G+D a sa propre pause de 30 min, et c est le carnet
   # papier qui l applique deja avant d ecrire `pris=1`. L ajouter reviendrait a en empiler deux.

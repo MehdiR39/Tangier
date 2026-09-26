@@ -639,8 +639,14 @@ class ModeleRapide:
         # sans que l operateur l ait demande, et il a arrete le carnet en pleine journee alors
         # qu il venait de dire de laisser tourner. Ce qu il a accepte, c est un BUDGET.
         max_jour = int(self._cfg("max_ordres_jour", 0))
-        perte_max = float(self._cfg("max_perte_jour_eur", 150.0))
-        bloque = live and ((max_jour > 0 and n_jour >= max_jour) or perte_jour <= -perte_max)
+        # `max_perte_jour_eur: 0` DESACTIVE le plafond, comme `max_ordres_jour: 0` desactive le sien.
+        # SANS CE `> 0`, METTRE 0 FERAIT L INVERSE DE CE QU ON CROIT : la condition deviendrait
+        # `perte_jour <= 0`, donc le moteur s arreterait des la premiere minute negative de la
+        # journee. Un reglage qui fait le contraire de son nom est un piege, et celui-la coute des
+        # journees entieres d achats bloques.
+        perte_max = float(self._cfg("max_perte_jour_eur", 150.0) or 0.0)
+        bloque = live and ((max_jour > 0 and n_jour >= max_jour)
+                           or (perte_max > 0 and perte_jour <= -perte_max))
         if bloque:
             log.info("modele_rapide: plafond atteint (%d ordres, %+.0f EUR) — plus d achat aujourd'hui",
                      n_jour, perte_jour)

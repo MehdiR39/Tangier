@@ -27,6 +27,19 @@ import sqlite3
 from intel.engines import modele_rapide as mr
 
 
+def test_plafond_de_perte_a_zero_DESACTIVE_au_lieu_de_tout_bloquer():
+    """Mido, 26/09 : « je veux pas de plafond nulle part ». `0` doit DESACTIVER.
+
+    LE PIEGE : sans le garde `perte_max > 0`, la condition devient `perte_jour <= 0` et le moteur
+    s arrete des la premiere minute negative de la journee -- l inverse exact de ce que le reglage
+    annonce, et des journees entieres d achats bloques sans que rien ne le dise.
+    """
+    import inspect
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    assert "perte_max > 0 and perte_jour <= -perte_max" in src, (
+        "`max_perte_jour_eur: 0` bloquerait TOUT au lieu de desactiver le plafond")
+
+
 def test_la_bande_est_configurable_et_son_defaut_est_celui_de_la_production():
     """Adopter un modele reentraine impose de changer la bande EN MEME TEMPS : un modele frais
     redistribue ses scores, donc [0,20 ; 0,35] designerait d autres jetons."""
