@@ -218,6 +218,81 @@ debranche · la correlation n est re-jugee qu a 20 jours communs.
 `tangier-intel` (le scheduler cree ses taches au demarrage), donc l accord explicite de Mido. Au
 moment du controle : **0 position reelle ouverte**, jour calendaire a 16 tickets et **-64,82 EUR**.
 
+### 0.2 sexies — 26/09 au matin : LE GEL `G+D a 45 s` A ECHOUE SON CRITERE, et la prod est SUR son nul
+
+**LE VERDICT EST TOMBE, ET IL EST NEGATIF.** Le carnet a passe son echeance de 300 tickets :
+
+```
+tickets 315 sur 9,63 jours · +4,30 % par ticket · +42 EUR/jour
+  sans le meilleur +3,37 % · gagnants 63 % · moities +0,94 % / +7,64 %
+  CRITERE : >= +4,50 % par ticket, deux moities > 0, positif sans le meilleur
+```
+
+**+4,30 % contre un seuil de +4,50 % : ECHEC.** Les deux autres parties passent. Le critere disait
+« sinon la regle est abandonnee ».
+
+**CE QUE LES 22 DERNIERS TICKETS ONT CHANGE.** A 293 tickets, le 25/09 au soir, il etait a
+**+4,64 %** — il PASSAIT. A 315 il est a +4,30 : il ECHOUE. J avais dit que le verdict tombait dans
+~5 h et qu armer maintenant abimerait la mesure ; Mido a tranche de ne pas attendre, et les 7 tickets
+ont bel et bien fait basculer le verdict.
+
+**MAIS IL FAUT ETRE JUSTE SUR CE QUE CA PROUVE.** La marge etait de 0,14 point sur une erreur type
+de **±2,6 points** (sigma 45 pts, n = 293). +4,64 et +4,30 sont tous deux DANS le bruit du seuil :
+le basculement n est pas une surprise, c est precisement pourquoi une barre pre-enregistree est un
+ENGAGEMENT et pas une mesure. On prend la reponse telle qu elle vient.
+Et sur la colonne honnete `net_reel` (vraie cotation du routeur), la regle etait a **+2,948 %** —
+elle n a JAMAIS approche les +4,50. Elle echoue donc sur les deux colonnes.
+
+**NOTRE CONTAMINATION N EXPLIQUE PAS L ECHEC** : nos achats reels ont commence a 01h22, a 10 EUR
+(~0,1 SOL) sur des coffres a ~80 SOL, soit ~0,12 % d impact sur le prix. Reel mais negligeable
+devant 0,34 point d ecart. Ne pas s en servir comme excuse.
+
+#### PREMIERE NUIT DU SUIVEUR EN REEL : LA MECANIQUE MARCHE, LE RESULTAT NE DIT RIEN
+
+| | tickets | total | par ticket |
+|---|---|---|---|
+| suiveur `G+D` (10 EUR) | 15 | **+30,17 EUR** | +2,011 |
+| **sans son meilleur ticket** | 14 | **-12,04 EUR** | **-0,860** |
+
+**Son meilleur ticket vaut +42,21 EUR, soit 140 % du total.** Bruit du total sur 15 tickets :
+**±45,3 EUR.** Le +30,17 est donc entierement dans le bruit, et porte par UN ticket. **Ne rien
+conclure.**
+
+**CE QUI EST VERIFIE, ET C EST LA LE VRAI RESULTAT DE LA NUIT :**
+- **ages d entree 49 a 56 s** (mediane 51) — la fenetre tient. Deux tickets a 56 s : le controle
+  porte sur l age de la LECTURE de prix, l entree horloge arrive ~1 s plus tard. Ecart connu, pas
+  un bug.
+- **la prise de gain x1,25 a bien tire** : 6 sorties sur 15 avant 240 s (221, 170, 21, 179, 205,
+  228 s), soit 40 % — proche des 50 % mesures sur le carnet papier. Sans elle on aurait execute une
+  autre regle sur la moitie des tickets.
+- **aucune ligne `CEDEE`** : aucune collision avec la production, qui n a pris que 3 tickets.
+- **aucune erreur, aucun `ok=False`**, 0 position restee ouverte.
+
+#### LA PROD : TECHNIQUEMENT PARFAITE, ET STATISTIQUEMENT SUR SON NUL
+
+| jour (Paris) | tickets | total | par ticket |
+|---|---|---|---|
+| 23/09 | 22 | +77,48 | +3,522 |
+| 24/09 | 17 | +78,86 | +4,639 |
+| 25/09 | 18 | **-80,21** | -4,456 |
+| 26/09 (en cours) | 3 | -11,76 | -3,920 |
+
+**Depuis la mise en service (22/09 15h) : 99 tickets, +77,35 EUR, +0,781 EUR/ticket, +0,56 sigma.**
+**Le nul par decalage circulaire est a +0,384 EUR/ticket a 10 EUR, donc +0,768 a 20 EUR.**
+=> la production est a **+0,013 EUR/ticket AU-DESSUS de son nul mecanique**. Apres 99 tickets elle
+est **indiscernable du nul**. Ni cassee, ni prouvee. Echeance a 266 tickets : **il en manque 167.**
+
+**LA NUIT DE LA PROD S EXPLIQUE ENTIEREMENT PAR LA PAUSE** : sur 289 pools juges, 160 hors bande,
+**124 bloques par la pause et 3 passes — la pause a bloque 98 % de ce qui etait eligible.** Les 3
+tickets sont tous entre 00h36 et 01h27, puis plus rien pendant 8 heures. Ce n est pas une panne,
+c est la regle qui fait ce qui est mesure (elle bloque 87-90 % du temps).
+
+**CE QUI RESTE VRAI ET NE BOUGE PAS** : on a arme le suiveur pour la **DECORRELATION** (r = -0,03),
+pas pour son niveau propre. Ce verdict-la ne touche pas la decorrelation. Le critere du suiveur en
+reel — 150 tickets, comparaison a +0,27 EUR/ticket, debranchement sous ZERO — est ecrit dans
+`config/intel.yaml` et c est lui qui tranche maintenant, sur de l argent reel et non sur une colonne
+de papier.
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
