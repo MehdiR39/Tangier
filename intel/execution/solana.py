@@ -80,6 +80,31 @@ def rpc_url() -> str:
 _SOL_EUR: tuple[float, float] = (0.0, 0.0)      # (price, fetched_at)
 _EUR_USD: tuple[float, float] = (0.0, 0.0)      # (rate, fetched_at)
 EUR_USD_DEFAUT = 1.08                           # le dernier recours, et rien d autre
+# LE TAUX SURVIT AUX REDEMARRAGES. Sans ce fichier, `_EUR_USD` est perdu a chaque relance du
+# conteneur -- il y en a eu SIX le 26/09 -- et le premier calcul d apres repart sur la constante.
+TAUX_FICHIER = os.path.join(os.environ.get("DATA_DIR", "/app/data"), "taux_eur_usd.json")
+
+
+def _charger_taux() -> tuple[float, float]:
+    try:
+        import json as _j
+        with open(TAUX_FICHIER, encoding="utf-8") as fh:
+            d = _j.load(fh)
+        t, at = float(d.get("taux") or 0), float(d.get("quand") or 0)
+        return (t, at) if 0.80 <= t <= 1.60 else (0.0, 0.0)
+    except Exception:  # noqa: BLE001
+        return (0.0, 0.0)
+
+
+def _ecrire_taux(taux: float, quand: float) -> None:
+    try:
+        import json as _j
+        tmp = TAUX_FICHIER + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            _j.dump({"taux": taux, "quand": quand}, fh)
+        os.replace(tmp, TAUX_FICHIER)
+    except Exception:  # noqa: BLE001
+        pass                                    # ecrire le cache ne doit jamais casser un achat
 
 
 async def eur_usd(client: httpx.AsyncClient, max_age_s: int = 21600) -> float:
@@ -103,6 +128,9 @@ async def eur_usd(client: httpx.AsyncClient, max_age_s: int = 21600) -> float:
     global _EUR_USD
     import time as _t
     r, at = _EUR_USD
+    if r <= 0:                                  # au demarrage, on reprend le dernier taux connu
+        r, at = _charger_taux()
+        _EUR_USD = (r, at)
     if r > 0 and _t.time() - at < max_age_s:
         return r
     try:
@@ -116,10 +144,22 @@ async def eur_usd(client: httpx.AsyncClient, max_age_s: int = 21600) -> float:
         # au-dela, c est la reponse qui est cassee, pas le marche.
         if 0.80 <= taux <= 1.60:
             _EUR_USD = (taux, _t.time())
+            _ecrire_taux(taux, _t.time())
             return taux
-    except Exception:  # noqa: BLE001
-        pass
-    return r or EUR_USD_DEFAUT
+        log.warning("eur_usd: taux hors bornes (%s) — on garde %.4f", taux, r or EUR_USD_DEFAUT)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("eur_usd: lecture impossible (%s)", str(exc)[:80])
+    # LE REPLI DOIT CRIER, SINON IL REPOUSSE SEULEMENT LA PANNE MUETTE. Mido, 26/09 : « ce nouveau
+    # taux va finir par expirer aussi ». Exact -- un cache qui expire sans bruit et retombe sur une
+    # constante, c est la meme faute, differee. On dit donc l AGE du taux servi, et on hurle quand
+    # on en est reduit a la valeur en dur.
+    if r > 0:
+        log.warning("eur_usd: taux PERIME servi (%.4f, %.1f h) — l affichage en euros derive",
+                    r, (_t.time() - at) / 3600)
+        return r
+    log.error("eur_usd: AUCUN taux connu, repli sur %.2f EN DUR — tous les montants en euros sont "
+              "faux tant que ca dure", EUR_USD_DEFAUT)
+    return EUR_USD_DEFAUT
 
 
 async def sol_eur(client: httpx.AsyncClient, fallback: float = 96.0, max_age_s: int = 600) -> float:
