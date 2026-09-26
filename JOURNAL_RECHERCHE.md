@@ -345,6 +345,93 @@ significativite etant portee separement par (c). Exiger en plus un IC excluant z
 DURCIR APRES COUP une barre ecrite d avance — l erreur exacte commise sur le frein. **Echeance
 inchangee : 200 tickets ou 14 jours. B est a 101/200, 3,5 jours sur 14. On attend.**
 
+### 0.2 octies — 26/09 : LE PROCESS DE MISE A JOUR DU MODELE. Et cinq erreurs de methode.
+
+Mido pousse depuis des jours : *« comment on va mettre en place un process qui determine quand et
+comment on update ? »*. Ecrit : `intel/research/challenger.py` (decide) + `papier_challenger.py`
+(la piece manquante). **Ces scripts ne changent RIEN : ils gelent, ils jugent, ils annoncent.**
+
+#### QUAND — il n y a RIEN A DETECTER, donc un challenger permanent
+
+Le modele en service **NE DERIVE PAS** : AUC **0,7105** hors echantillon contre **0,7202** sur tout
+l historique. Et pourtant un modele reentraine (`B`) bat la production **7 axes sur 7**. Donc aucun
+signal de derive n annonce qu un reentrainement va aider : « reentrainer quand ca derive » est le
+MAUVAIS declencheur. On gele un challenger a intervalle regulier, point.
+
+#### COMMENT — quatre verrous, et le quatrieme est le plus important
+
+1. **La bande se recalibre sur les QUANTILES**, jamais sur les bornes : un modele reentraine
+   redistribue ses scores, et garder [0,20 ; 0,35] designerait d autres jetons.
+2. **On juge sur les SEPT CRITERES** de `table_std2::_criteres`, **JAMAIS sur l AUC**. Il en faut
+   **5 sur 7** — pas 7/7 (les axes sont correles entre eux) ni 4/7 (un match nul).
+3. **L echeance est ecrite DANS le gel** : 200 tickets ou 14 jours.
+4. **CHAQUE GEL INCREMENTE LE COMPTEUR D ESSAIS** partage avec `veille_derive`, et le DSR se calcule
+   a ce N cumule. Sans ca, un challenger permanent qui adopte « le meilleur » a chaque tour finit
+   par adopter du BRUIT — c est une selection sur N candidats. **Reentrainer souvent COUTE, et le
+   cout devient explicite.**
+
+#### LA PIECE SANS LAQUELLE RIEN N EST ADOPTABLE : le flux score du challenger
+
+Un modele reentraine ne peut pas passer en production tel quel, **et ce n est pas a cause du modele,
+c est la PAUSE**. Elle doit voir le flux ENTIER de SA bande ; or `papier_combo.sqlite` ne stocke que
+les scores du modele EN SERVICE. Adopter un challenger sans ce carnet ferait tourner sa bande **SANS
+pause**, soit **-106 EUR/jour**. `papier_challenger` est une seconde instance de `papier_combo`
+(patron de `papier_large`), ajoutee a `COLLECTEURS` du gardien. **Lancee le 26/09 a 11h55, elle
+score B en direct.**
+
+**DEUX FORMATS DE MODELE, INCOMPATIBLES, ET C EST UN PIEGE MORTEL.** `arbres.Modele` — que le carnet
+papier ET LE MOTEUR utilisent, faute de LightGBM dans le conteneur — lit un `dump_model()` ;
+`lgb.Booster` lit un `save_model()`. Le gel ecrit desormais **les deux**.
+**ET LE PIRE Y ETAIT** : j entrainais sur un tableau numpy sans noms de colonnes. Le dump aurait
+porte `Column_0`… et le moteur, qui cherche chaque variable **PAR NOM**, aurait trouve TOUT absent,
+pris la branche par defaut a chaque arbre et rendu **une constante, sans lever la moindre erreur**
+(regle 10, train/serve skew). Corrige, et surtout **VERIFIE** : le gel relit son propre dump avec le
+lecteur du moteur et exige l accord avec LightGBM — **ecart max 4,4e-16**.
+
+#### LES CINQ ERREURS DE METHODE DE LA JOURNEE, a ne jamais refaire
+
+1. **`float(x or nan)` transforme tout ZERO en manquant** (`0.0 or nan` vaut nan). Toujours
+   `float(x) if x is not None else nan`.
+2. **Un bootstrap qui replace les tickets a intervalle REGULIER detruit les rafales** ; la pause
+   durant 1800 s, elle bloque alors bien plus que dans la realite (A ressortait a p = 0,81 pour un
+   ecart observe de +0,84). Preserver les ecarts de temps A L INTERIEUR des blocs.
+3. **Un filtre s applique APRES la pause, jamais avant.** Filtrer avant reduit le flux, donc la
+   pause voit moins de clotures, bloque moins et prend PLUS de tickets (480 au lieu de 310) : on
+   mesure l affaiblissement de la pause, pas le filtre.
+4. **« ~4,6 faux positifs a 5 % » sur 92 filtres est faux et dans le mauvais sens.** Un filtre au
+   hasard a ~50 % de chances de battre la base dans chaque moitie, donc ~25 % dans les deux : le
+   hasard en produit ~23. Toujours construire le nul par permutation.
+5. **Un fichier de travail nomme `queue.py` masque le module standard `queue`** et casse l import de
+   scipy avec un message incomprehensible.
+
+#### ET LA FAUTE DE RAISONNEMENT, qui a coute le plus de temps
+
+**J ai decide sur l AUC toute la matinee alors qu on l avait explicitement ecarte.** Mido :
+*« le seul critere c est est-ce qu on gagne »*. Pire : le journal (§3.167) enregistre deja que
+ignorer la grille des sept criteres a coute **-45,75 EUR le 20/09** — une regle notee 2/6 mise en
+production sur la foi d un seul chiffre. **J ai refait exactement ca** en recommandant B sur
++2,108 EUR/ticket. Puis j ai glisse de **« pas prouve » a « pas mieux »**, qui ne sont pas la meme
+chose : un test demande « peut-on prouver », une decision demande « qu est-ce qui est le plus
+probablement meilleur ».
+
+#### CE QUE LA GRILLE DIT AUJOURD HUI, et ce qu on fait
+
+| | prod | A · PAUSE 25 | B · MODELE FRAIS |
+|---|---|---|---|
+| EUR/ticket | +0,189 | +1,028 | **+2,297** |
+| EUR/jour | +4,31 | +20,81 | **+67,07** |
+| 1re moitie | +1,897 | — | **+4,887** |
+| 2e moitie | **-1,477** | — | **-0,243** |
+| part qui survit a -3 | **0,000** | 0,000 | **0,319** |
+| part portee par le top 3 | **1 035 %** | 214 % | **69 %** |
+| sigma du niveau | +0,108 | +0,53 | **+1,468** |
+
+**B gagne 7/7. La production gagne 0/7.** Et pourtant **le verdict du process est ATTENDRE** :
+101 tickets sur 200, 3,5 jours sur 14. **On ne bascule pas avant l echeance** — basculer le jour
+meme ou l on ecrit le process serait la faute du 20/09, une troisieme fois.
+
+**Echeance attendue vers le 30/09** (~29 tickets/jour).
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
