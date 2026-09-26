@@ -293,6 +293,58 @@ reel — 150 tickets, comparaison a +0,27 EUR/ticket, debranchement sous ZERO �
 `config/intel.yaml` et c est lui qui tranche maintenant, sur de l argent reel et non sur une colonne
 de papier.
 
+### 0.2 septies — 26/09 : LE CRITERE (a) N ETAIT CALCULE POUR AUCUNE CANDIDATE. Corrige.
+
+Mido a vu sur le graphe de l app que `B · MODELE FRAIS` etait nettement au-dessus de la production
+et m a repris : j avais dit le 25/09 que son avantage etait du CALENDRIER. **Avec les tickets du
+26/09, cette conclusion ne tient plus.**
+
+**LE DEFAUT DE L OUTIL.** `candidates_verdict.py` annonce trois criteres mais n en calculait que
+deux. La seule ligne affichee, « ecart A - production », etait une difference de deux moyennes **NON
+appariees**, sur des sous-ensembles differents (79 / 70 / 101 tickets). Corrige : `critere_a()`.
+
+**CE QU EST UNE COMPARAISON APPARIEE POUR UNE REGLE DE SELECTION.** Pas ce qu on croit : un ticket
+que les DEUX prennent rend exactement la meme chose des deux cotes. **Tout l ecart vient donc des
+EXCLUSIFS.** C est cette decomposition qui est la vraie comparaison appariee.
+
+| | communs | exclusifs PROD | exclusifs candidate | ecart | IC95 de l ecart |
+|---|---|---|---|---|---|
+| `A · PAUSE 25` | 70 · +1,028 | **9 · -6,342** | **aucun** | **+0,840** | -0,82 a +1,47 |
+| `B · MODELE FRAIS` | 36 · +2,311 | 43 · -1,588 | 65 · +2,289 | **+2,108** | -2,36 a +3,36 |
+
+**A EST UN SOUS-ENSEMBLE STRICT DE LA PRODUCTION** : elle prend 70 de ses 79 tickets et n en a AUCUN
+en propre. Elle est donc « la production moins 9 tickets », et ces 9 valent **-6,342 EUR/ticket**.
+Mecanisme lisible : un seuil de pause a -0,25 bloque plus souvent, et ce qu il bloque est mauvais.
+
+**B PREND UN ENSEMBLE VRAIMENT DIFFERENT**, et ce que la PRODUCTION prend en propre PERD (-1,588).
+
+**AUCUN DES DEUX ECARTS N EST SIGNIFICATIF** — les deux IC95 contiennent zero. Les deux candidates
+franchissent (a) et (c) ; la production ne franchit toujours pas (c) (p = 0,069).
+
+**LA LIGNE LA PLUS INSTRUCTIVE EST CELLE DE LA CONCENTRATION :**
+
+| | total | 3 meilleurs | SANS ses 3 meilleurs |
+|---|---|---|---|
+| production | +14,90 EUR | +154,15 (**1035 %**) | **-1,832 EUR/ticket** |
+| `A · PAUSE 25` | +71,98 | +154,15 (214 %) | -1,226 |
+| `B · MODELE FRAIS` | +231,96 | +160,13 (69 %) | **+0,733** |
+
+**Le resultat entier de la production tient a 3 tickets sur 79.** B est la seule des trois a rester
+positive une fois ses trois meilleurs retires.
+
+**DEUX ERREURS DE METHODE COMMISES ET CORRIGEES LE MEME JOUR, a ne pas refaire :**
+1. `float(f.get(k) or nan)` transforme **tout ZERO en manquant** (`0.0 or nan` vaut nan) et deplace
+   les scores du modele. Toujours `float(x) if x is not None else nan`.
+2. Un bootstrap par blocs qui **replace les tickets a intervalle regulier** detruit les rafales
+   d arrivee ; comme la pause dure 1800 s elle bloque alors bien plus que dans la realite, et le
+   monde reechantillonne ne ressemble plus a l observe (A ressortait a p = 0,81 pour un ecart
+   observe de +0,84). Preserver les ecarts de temps A L INTERIEUR des blocs.
+
+**LA BARRE N A PAS ETE TOUCHEE.** Le critere gele dit « elle bat la production en EUR/ticket », la
+significativite etant portee separement par (c). Exiger en plus un IC excluant zero, ce serait
+DURCIR APRES COUP une barre ecrite d avance — l erreur exacte commise sur le frein. **Echeance
+inchangee : 200 tickets ou 14 jours. B est a 101/200, 3,5 jours sur 14. On attend.**
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |

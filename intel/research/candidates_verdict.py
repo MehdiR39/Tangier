@@ -94,6 +94,105 @@ def dis(nom, pris, seuil, tickets):
     return m
 
 
+def critere_a(nom, pris_c, pris_p, offerts, drapeau_c, drapeau_p, seuil_c, seuil_p=-0.30):
+    """LE CRITERE (a) : la candidate bat-elle la production SUR LES MEMES TICKETS ?
+
+    POURQUOI CETTE FONCTION EXISTE. Jusqu au 26/09 ce critere n etait calcule pour AUCUNE des deux
+    candidates : la seule ligne affichee, « ecart A - production », etait la difference de deux
+    moyennes NON appariees, portant sur des sous-ensembles differents (79 tickets d un cote, 70 ou
+    101 de l autre). C est exactement la comparaison qui trompe quand les deux regles ne jugent pas
+    les memes jetons -- et Mido l a vu sur le graphe de l app avant moi.
+
+    CE QU EST UNE COMPARAISON APPARIEE POUR UNE REGLE DE SELECTION. Elle n est pas ce qu on croit :
+    un ticket que les DEUX prennent rend exactement la meme chose des deux cotes, donc la difference
+    y est nulle par construction. **Tout l ecart vient donc des EXCLUSIFS** -- ce que l une prend et
+    que l autre refuse. C est cette decomposition qui est la vraie comparaison appariee ici.
+
+    LA BARRE N EST PAS CHANGEE. Le critere gele dit « elle bat la production en EUR/ticket », et la
+    significativite est portee par le critere (c), separement. Exiger ici en plus un intervalle qui
+    exclut zero, ce serait DURCIR APRES COUP une barre ecrite d avance -- l erreur exacte commise sur
+    le frein. On calcule donc (a) comme il est ecrit, en COMPARAISON PONCTUELLE, et on affiche le
+    bruit a cote pour que personne ne lise le point comme une preuve.
+
+    LE BRUIT EST CELUI DE L ECART, jamais celui des deux niveaux separement : les deux regles voient
+    le MEME marche, donc leurs erreurs sont correlees et deux intervalles separes se recouvriraient
+    pour rien. On rejoue donc les DEUX regles sur chaque tirage, en BLOCS (L ~ n^(1/3)) parce que les
+    tickets se chevauchent dans le temps.
+    """
+    if len(pris_c) < 10 or len(pris_p) < 10:
+        print("   %-26s trop peu de tickets pour le critere (a)" % nom)
+        return None
+    ic = {x["i"] for x in pris_c}
+    ip = {x["i"] for x in pris_p}
+    par_i = {x["i"]: x for x in offerts}
+
+    def moy(ids):
+        return MISE * st.mean(par_i[i]["r"] for i in ids) if ids else float("nan")
+
+    def dit(etiq, ids):
+        if not ids:
+            print("      %-24s aucun" % etiq)
+        else:
+            print("      %-24s n=%-4d %+8.3f EUR/ticket" % (etiq, len(ids), moy(ids)))
+
+    mc, mp = moy(ic), moy(ip)
+    ecart = mc - mp
+    print("   %s — critere (a), sur les MEMES tickets" % nom)
+    dit("communs aux deux", ic & ip)
+    dit("exclusifs production", ip - ic)
+    dit("exclusifs candidate", ic - ip)
+    print("      ecart candidate - production : %+0.3f EUR/ticket  ->  (a) %s"
+          % (ecart, "FRANCHI" if ecart > 0 else "NON franchi"))
+
+    # le bruit de l ECART, les deux regles rejouees ensemble sur chaque tirage
+    try:
+        import numpy as np
+    except Exception:  # noqa: BLE001
+        return ecart
+    n = len(offerts)
+    L = max(2, int(round(n ** (1 / 3))))
+    # L ESPACEMENT REEL DOIT ETRE PRESERVE, et c est essentiel ici. Une premiere version replacait
+    # les tickets a 60 s d intervalle regulier : ca DETRUIT les rafales d arrivee, et comme la pause
+    # dure 1800 s elle bloquait alors bien plus que dans la realite -- le monde reechantillonne ne
+    # ressemblait plus au monde observe (A ressortait a p = 0,81 pour un ecart observe de +0,84).
+    # On garde donc les ecarts de temps A L INTERIEUR de chaque bloc, et on raboute les blocs avec
+    # l ecart median du flux.
+    ecarts_t = [offerts[k + 1]["t"] - offerts[k]["t"] for k in range(n - 1)]
+    gap = st.median(ecarts_t) if ecarts_t else 60.0
+    diffs = []
+    for _ in range(600):
+        dep = np.random.randint(0, max(1, n - L + 1), int(np.ceil(n / L)))
+        ech, curseur = [], 0.0
+        for d in dep:
+            bloc = offerts[d:d + L]
+            if not bloc:
+                continue
+            t0 = bloc[0]["t"]
+            for x in bloc:
+                t = curseur + (x["t"] - t0)
+                ech.append(dict(x, t=t, fin=t + TENUE))
+            curseur += (bloc[-1]["t"] - t0) + gap
+        ech = ech[:n]
+        pc = rejoue([x for x in ech if x[drapeau_c]], seuil_c)
+        pp = rejoue([x for x in ech if x[drapeau_p]], seuil_p)
+        if len(pc) >= 10 and len(pp) >= 10:
+            diffs.append(MISE * st.mean(x["r"] for x in pc) - MISE * st.mean(x["r"] for x in pp))
+    if diffs:
+        lo, hi = np.percentile(diffs, [2.5, 97.5])
+        print("      bruit de cet ecart (bootstrap par blocs, L=%d) : IC95 %+0.2f a %+0.2f · "
+              "p(candidate <= prod) = %.3f%s"
+              % (L, lo, hi, float(np.mean(np.array(diffs) <= 0)),
+                 "" if (lo > 0 or hi < 0) else "  [ecart NON distinguable de zero]"))
+    # CONCENTRATION : un ecart porte par deux tickets n est pas un ecart.
+    for etiq, pris in ((" production", pris_p), (" candidate ", pris_c)):
+        v = sorted((MISE * x["r"] for x in pris), reverse=True)
+        tot = sum(v)
+        print("      %s : total %+8.2f EUR · 3 meilleurs %+.2f (%.0f %%) · SANS eux %+0.3f/ticket"
+              % (etiq, tot, sum(v[:3]), 100 * sum(v[:3]) / tot if tot else float("nan"),
+                 st.mean(v[3:]) if len(v) > 3 else float("nan")))
+    return ecart
+
+
 def main() -> None:
     meta_f = os.path.join(DOSSIER, "modele_frais_meta.json")
     if not os.path.exists(meta_f):
@@ -120,19 +219,26 @@ def main() -> None:
     print("   %d tickets juges depuis le gel" % len(lignes))
     print()
 
-    def paquet(garde):
-        return [{"t": t, "fin": t + TENUE, "r": min(b - cout(q), 3.0)}
-                for t, vj, q, b, r in lignes if garde(vj, r)]
+    # UN SEUL FLUX, PORTANT LES DRAPEAUX DE TOUTES LES REGLES. Indispensable au critere (a) : sans
+    # identite par ticket on ne peut pas dire lesquels sont communs et lesquels sont exclusifs, et
+    # c est la seule chose qui puisse creer un ecart entre deux regles de selection.
+    # `B` est mis a False d office et rempli plus bas si le modele frais est lisible.
+    offerts = [{"i": i, "t": t, "fin": t + TENUE, "r": min(b - cout(q), 3.0),
+                "prod": BANDE[0] <= r < BANDE[1], "B": False}
+               for i, (t, vj, q, b, r) in enumerate(lignes)]
 
-    prod = paquet(lambda vj, r: BANDE[0] <= r < BANDE[1])
+    prod = [x for x in offerts if x["prod"]]
     print("   LA PRODUCTION, pour reference")
     ref = dis("BANDE + PAUSE (-0,30)", rejoue(prod, -0.30), -0.30, prod)
+    pris_prod = rejoue(prod, -0.30)
     print()
     print("   LES CANDIDATES")
     a = dis("A · PAUSE 25 (-0,25)", rejoue(prod, -0.25), -0.25, prod)
+    pris_a = rejoue(prod, -0.25)
 
     na, nb = meta["bande_frais"]
     modele = os.path.join(DOSSIER, "modele_frais.json")
+    pris_b = None
     if os.path.exists(modele):
         try:
             import lightgbm as lgb
@@ -140,27 +246,34 @@ def main() -> None:
             boost = lgb.Booster(model_file=modele)
             var = meta["variables"]
             X, ok = [], []
-            for t, vj, q, b, r in lignes:
+            for i, (t, vj, q, b, r) in enumerate(lignes):
                 try:
                     f = json.loads(vj)
                 except Exception:  # noqa: BLE001
                     continue
+                # `float(f.get(k)) if ... is not None` et JAMAIS `float(f.get(k) or nan)` :
+                # `0.0 or nan` vaut nan, donc cette seconde forme transforme tout ZERO en manquant
+                # et deplace les scores du modele. Erreur commise et corrigee le 26/09.
                 X.append([float(f.get(k)) if f.get(k) is not None else np.nan for k in var])
-                ok.append((t, q, b))
+                ok.append(i)
             s = boost.predict(np.array(X, dtype=float))
-            frais = [{"t": ok[i][0], "fin": ok[i][0] + TENUE,
-                      "r": min(ok[i][2] - cout(ok[i][1]), 3.0)}
-                     for i in range(len(ok)) if na <= s[i] < nb]
-            frais.sort(key=lambda z: z["t"])
+            for k, i in enumerate(ok):
+                offerts[i]["B"] = bool(na <= s[k] < nb)
+            frais = [x for x in offerts if x["B"]]
             dis("B · MODELE FRAIS", rejoue(frais, -0.30), -0.30, frais)
+            pris_b = rejoue(frais, -0.30)
         except Exception as exc:  # noqa: BLE001
             print("   B · MODELE FRAIS — illisible (%s)" % str(exc)[:70])
 
     print()
     print("   ECHEANCE : 200 tickets retenus OU 14 jours. (a) battre la production sur les memes")
     print("   tickets · (b) etre positive · (c) p < 0,05 contre le decalage circulaire.")
+    print()
     if ref is not None and a is not None:
-        print("   ecart A - production : %+0.3f EUR/ticket" % (a - ref))
+        critere_a("A · PAUSE 25", pris_a, pris_prod, offerts, "prod", "prod", -0.25, -0.30)
+        print()
+    if pris_b is not None:
+        critere_a("B · MODELE FRAIS", pris_b, pris_prod, offerts, "B", "prod", -0.30, -0.30)
 
 
 if __name__ == "__main__":
