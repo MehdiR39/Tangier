@@ -186,18 +186,56 @@ def test_la_production_ne_cede_jamais():
 
 # --- 5. la prise de gain reste desarmee pour la production -----------------------------------
 
+def test_la_prise_de_gain_ne_peut_JAMAIS_empecher_une_vente():
+    """Le garde-fou le plus important du module. La prise de gain lit le RESEAU : elle peut echouer,
+    et une exception qui remonterait dans `_sortir` laisserait des positions ouvertes -- l argent
+    bloque dans un jeton qui s effondre. C est ce qui a coute 29 EUR le 20/09 (deux positions
+    oubliees quatorze heures). `_sortir` doit donc l isoler, et la vente a l echeance doit suivre.
+    """
+    import inspect
+    src = inspect.getsource(mr.ModeleRapide._sortir)
+    assert "await self._gain_atteint(now)" in src, "la prise de gain n est plus appelee"
+    i = src.index("await self._gain_atteint(now)")
+    avant, apres = src[:i], src[i:]
+    assert "try:" in avant.split("gagnants")[-2] or "try:" in avant[-200:], (
+        "l appel n est pas dans un try : une panne reseau empecherait toute vente")
+    assert "gagnants = set()" in apres[:400], "pas de repli : en cas d echec on ne vend plus rien"
+    # et la vente a l echeance ne doit dependre ni de la chaine ni de la prise de gain
+    assert "ts_entree <= ?" in apres, "la vente a l echeance a disparu de `_sortir`"
+
+
+def test_lecture_directe_desactivee_par_defaut_et_repli_sur_la_table():
+    """`prise_gain_direct` absent -> on ne touche pas au reseau, comportement d avant inchange."""
+    import inspect
+    src = inspect.getsource(mr.ModeleRapide._gain_atteint)
+    assert 'self._cfg("prise_gain_direct", False)' in src, "la lecture directe doit etre optionnelle"
+    assert "direct = {}" in src, "il faut un repli explicite quand la lecture directe echoue"
+    assert "SELECT MAX(prix_sol) p FROM solana_prix_chaine" in src, (
+        "le repli sur la table a disparu : une panne reseau supprimerait la prise de gain")
+
+
+def test_prix_direct_rend_un_dictionnaire_vide_au_lieu_de_lever():
+    """Toute panne de lecture chaine doit rendre {} -- jamais lever, jamais bloquer."""
+    import asyncio
+    m = _moteur(cfg={"prise_gain_x": 1.25})
+    assert asyncio.get_event_loop_policy() is not None
+    assert asyncio.run(m._prix_direct([])) == {}, "aucun pool -> dictionnaire vide, pas d appel"
+
+
 def test_prise_de_gain_desarmee_par_defaut():
     """Sans `prise_gain_x`, aucune lecture de prix n est meme faite : la production tient 240 s."""
     m = _moteur(table="mr_lignes", cfg={})
+    import asyncio
     m._q = lambda *a, **k: (_ for _ in ()).throw(AssertionError("la production a lu les prix !"))
-    assert m._gain_atteint(1000.0) == set()
+    assert asyncio.run(m._gain_atteint(1000.0)) == set()
 
 
 def test_prise_de_gain_desarmee_si_none_ou_un():
+    import asyncio
     for v in (None, 0, 0.0, 1.0):
         m = _moteur(cfg={"prise_gain_x": v})
         m._q = lambda *a, **k: (_ for _ in ()).throw(AssertionError("lecture de prix inattendue"))
-        assert m._gain_atteint(1000.0) == set(), "prise_gain_x=%r doit desarmer" % (v,)
+        assert asyncio.run(m._gain_atteint(1000.0)) == set(), "prise_gain_x=%r doit desarmer" % (v,)
 
 
 def test_prise_de_gain_declenche_au_bon_multiple():
@@ -206,6 +244,7 @@ def test_prise_de_gain_declenche_au_bon_multiple():
               {"mint": "M2", "pair": "P2", "prix_entree": 100.0, "ts_entree": 500.0}]
     hauts = {"P1": 125.0, "P2": 124.0}
 
+    import asyncio
     m = _moteur(cfg={"prise_gain_x": 1.25, "tenue_secondes": 240.0})
 
     def q(sql, params=()):
@@ -213,4 +252,41 @@ def test_prise_de_gain_declenche_au_bon_multiple():
             return [{"p": hauts[str(params[0])]}]
         return lignes
     m._q = q
-    assert m._gain_atteint(600.0) == {"M1"}
+    assert asyncio.run(m._gain_atteint(600.0)) == {"M1"}
+
+
+def test_la_lecture_directe_prime_sur_la_table_quand_elle_repond():
+    """C est tout l objet du changement : la chaine repond a la cadence du cycle, la table a 10 s.
+    Mesure §3.95 : voir le marche a 2 s au lieu de 20 vaut +2,64 pts a coffre < 100 SOL."""
+    import asyncio
+    lignes = [{"mint": "M1", "pair": "P1", "prix_entree": 100.0, "ts_entree": 500.0}]
+    m = _moteur(cfg={"prise_gain_x": 1.25, "tenue_secondes": 240.0, "prise_gain_direct": True})
+
+    def q(sql, params=()):
+        if "MAX(prix_sol)" in sql:
+            return [{"p": 100.0}]          # la table n a RIEN vu monter
+        return lignes
+    m._q = q
+
+    async def direct(pools):
+        return {"P1": 130.0}               # la chaine, elle, voit le sommet
+    m._prix_direct = direct
+    assert asyncio.run(m._gain_atteint(600.0)) == {"M1"}, "le sommet vu sur la chaine est ignore"
+
+
+def test_si_la_lecture_directe_echoue_on_retombe_sur_la_table():
+    """Une panne reseau ne doit pas supprimer la prise de gain, seulement sa reactivite."""
+    import asyncio
+    lignes = [{"mint": "M1", "pair": "P1", "prix_entree": 100.0, "ts_entree": 500.0}]
+    m = _moteur(cfg={"prise_gain_x": 1.25, "tenue_secondes": 240.0, "prise_gain_direct": True})
+
+    def q(sql, params=()):
+        if "MAX(prix_sol)" in sql:
+            return [{"p": 130.0}]          # la table, elle, a vu le sommet
+        return lignes
+    m._q = q
+
+    async def direct(pools):
+        raise RuntimeError("RPC injoignable")
+    m._prix_direct = direct
+    assert asyncio.run(m._gain_atteint(600.0)) == {"M1"}, "le repli sur la table n a pas joue"

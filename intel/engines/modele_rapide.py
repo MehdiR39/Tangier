@@ -981,7 +981,100 @@ class ModeleRapide:
                    float(l["mise_eur"] or 0), float(l["risque"] or 0), float(l["q"] or 0),
                    round(self._tenue() / 60)))
 
-    def _gain_atteint(self, now: float) -> set[str]:
+    async def _prix_direct(self, pools: list[str]) -> dict[str, float]:
+        """Le prix de CHAQUE pool lu DANS LA CHAINE, maintenant — pas dans la table a 10 s.
+
+        POURQUOI. `solana_prix_chaine` est ecrite toutes les **10,0 s** (mediane mesuree le 26/09).
+        Or `veille_rapide` a etabli sur 3 245 pools, a regle identique et seule la cadence changeant,
+        que voir le marche a 2 s au lieu de 20 vaut **+1,14 point par ticket [+0,27 ; +2,04]**, et
+        **+2,64 pts [+0,50 ; +4,65] sur les pools a coffre < 100 SOL** -- c est-a-dire EXACTEMENT la
+        population de `G+D`. La cause y est dite : 29 % des pools touchent +25 % entre 47 et 287 s,
+        declenchement median a 93 s ; a cadence lente on rate le sommet une fois sur deux.
+        Constate en vrai le 26/09 : sur un meme jeton, le carnet papier de G+D a pris son gain 21 s
+        apres l entree, le suiveur 205 s plus tard -- le pic etait invisible a 10 s.
+
+        CE QUE CA COUTE : un `getMultipleAccounts` par passage, et UNIQUEMENT quand une position est
+        ouverte. ~120 lectures par ticket, soit ~5 000 par jour a 45 tickets. Rien sur le quota.
+        Aucune cotation, aucune signature : on lit deux comptes de reserve, c est tout.
+
+        CETTE METHODE NE PEUT PAS EMPECHER UNE VENTE. Tout echec rend un dictionnaire VIDE, et
+        `_gain_atteint` retombe alors sur la table. La vente a l echeance, elle, ne depend d aucune
+        des deux : elle est decidee sur `ts_entree` dans `_sortir`.
+        """
+        if not pools:
+            return {}
+        try:
+            import base58  # noqa: PLC0415
+            from intel.engines.prix_chaine import OFF_BASE_TA, TAILLE_POOL, reserve_virtuelle  # noqa: PLC0415
+            from intel.execution import solana as sol  # noqa: PLC0415
+            import base64 as _b64  # noqa: PLC0415
+        except Exception:  # noqa: BLE001
+            return {}
+        rpc = sol.rpc_url()
+        if not rpc:
+            return {}
+
+        async def _rpc(methode, params):
+            try:
+                r = await self.client.post(
+                    rpc, json={"jsonrpc": "2.0", "id": 1, "method": methode, "params": params},
+                    timeout=10)
+                return (r.json() or {}).get("result")
+            except Exception:  # noqa: BLE001
+                return None
+
+        if not hasattr(self, "_comptes"):
+            self._comptes: dict[str, tuple] = {}
+            self._illisibles: dict[str, int] = {}
+        plan, comptes = [], []
+        for pool in pools:
+            if pool not in self._comptes:
+                if self._illisibles.get(pool, 0) >= 3:
+                    continue
+                res = await _rpc("getAccountInfo",
+                                 [pool, {"encoding": "base64", "commitment": "processed"}])
+                data = ((res or {}).get("value") or {}).get("data")
+                if not data:
+                    self._illisibles[pool] = self._illisibles.get(pool, 0) + 1
+                    continue
+                try:
+                    d = _b64.b64decode(data[0])
+                    if len(d) < TAILLE_POOL:
+                        raise ValueError("taille")
+                    self._comptes[pool] = (
+                        base58.b58encode(d[OFF_BASE_TA:OFF_BASE_TA + 32]).decode(),
+                        base58.b58encode(d[OFF_BASE_TA + 32:OFF_BASE_TA + 64]).decode(),
+                        reserve_virtuelle(d))
+                except Exception:  # noqa: BLE001
+                    self._illisibles[pool] = 99
+                    continue
+            base_ta, quote_ta, v = self._comptes[pool]
+            plan.append((pool, v))
+            comptes += [base_ta, quote_ta]
+        if not plan:
+            return {}
+        res = await _rpc("getMultipleAccounts",
+                         [comptes, {"encoding": "jsonParsed", "commitment": "processed"}])
+        vals = (res or {}).get("value") or []
+        out: dict[str, float] = {}
+        for k, (pool, v) in enumerate(plan):
+            j = 2 * k
+            if j + 1 >= len(vals) or not vals[j] or not vals[j + 1]:
+                continue
+            try:
+                # LE SECOND COMPTE DOIT ETRE DU SOL (§3.82) : sans cette verification on diviserait
+                # par la reserve d un autre jeton et le multiple serait n importe quoi.
+                if vals[j + 1]["data"]["parsed"]["info"].get("mint") != sol.SOL_MINT:
+                    continue
+                b = float(vals[j]["data"]["parsed"]["info"]["tokenAmount"]["uiAmountString"])
+                q = float(vals[j + 1]["data"]["parsed"]["info"]["tokenAmount"]["uiAmountString"])
+            except Exception:  # noqa: BLE001
+                continue
+            if b > 0:
+                out[pool] = (q + v) / b        # le prix PumpSwap, reserve virtuelle comprise
+        return out
+
+    async def _gain_atteint(self, now: float) -> set[str]:
         """Les mints dont le prix du pool a touche `prise_gain_x` fois le prix d entree.
 
         VIDE POUR LA PRODUCTION, et il faut que ca reste vide : `BANDE + PAUSE` tient 240 s SANS
@@ -1010,15 +1103,37 @@ class ModeleRapide:
         if x <= 1.0:
             return set()
         vus: set[str] = set()
-        for l in self._q(
-                "SELECT mint, pair, prix_entree, ts_entree FROM mr_lignes"
-                " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL"
-                " AND prix_entree > 0 AND ts_entree > ?", (now - self._tenue(),)):
+        lignes = list(self._q(
+            "SELECT mint, pair, prix_entree, ts_entree FROM mr_lignes"
+            " WHERE mode='live' AND statut='OUVERTE' AND tx_achat IS NOT NULL"
+            " AND prix_entree > 0 AND ts_entree > ?", (now - self._tenue(),)))
+        if not lignes:
+            return vus
+
+        # LE PRIX EST LU DANS LA CHAINE D ABORD, dans la table ensuite. La table est ecrite toutes
+        # les 10 s et fait rater un sommet sur deux (§3.95) ; la chaine repond a la cadence du
+        # cycle. En cas d echec de la lecture directe, `direct` est vide et chaque ligne retombe
+        # sur la table -- on ne perd que la reactivite, jamais la vente.
+        direct: dict[str, float] = {}
+        if bool(self._cfg("prise_gain_direct", False)):
+            try:
+                direct = await self._prix_direct([str(l["pair"]) for l in lignes])
+            except Exception as exc:  # noqa: BLE001
+                log.warning("prise de gain: lecture directe indisponible (%s) — on lit la table",
+                            str(exc)[:60])
+                direct = {}
+
+        for l in lignes:
+            cible = x * float(l["prix_entree"])
+            px = direct.get(str(l["pair"]))
+            if px is not None and px >= cible:
+                vus.add(str(l["mint"]))
+                continue
             r = self._q(
                 "SELECT MAX(prix_sol) p FROM solana_prix_chaine WHERE pair_id = ? AND ts >= ?",
                 (str(l["pair"]), float(l["ts_entree"] or 0)))
             haut = float(r[0]["p"] or 0) if r else 0.0
-            if haut >= x * float(l["prix_entree"]):
+            if haut >= cible:
                 vus.add(str(l["mint"]))
         return vus
 
@@ -1027,7 +1142,14 @@ class ModeleRapide:
         from intel.execution import solana as sol
         cle = self._cfg("cle_fichier", None)
         rpc, proprio = sol.rpc_url(), sol.signer_address(cle)
-        gagnants = self._gain_atteint(now)
+        # LA PRISE DE GAIN NE DOIT JAMAIS EMPECHER LA VENTE A L ECHEANCE. Elle lit le reseau, donc
+        # elle peut echouer ; on l isole pour que la suite de `_sortir` s execute quoi qu il arrive.
+        try:
+            gagnants = await self._gain_atteint(now)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("prise de gain en echec (%s) — les ventes a l echeance continuent",
+                        str(exc)[:80])
+            gagnants = set()
         a_vendre = list(self._q(
             "SELECT mint, ts_entree FROM mr_lignes WHERE mode='live' AND statut='OUVERTE'"
             " AND tx_achat IS NOT NULL AND ts_entree <= ?", (now - self._tenue(),)))

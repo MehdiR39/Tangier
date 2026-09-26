@@ -1665,6 +1665,19 @@ suiveur_gd:
   fenetre_entree_s: 13
   tenue_secondes: 240
   prise_gain_x: 1.25
+  # LIRE LE PRIX DANS LA CHAINE, PAS DANS LA TABLE. `solana_prix_chaine` est ecrite toutes les
+  # 10,0 s (mediane mesuree le 26/09) ; la chaine repond a la cadence du cycle, soit 2 s ici.
+  # MESURE §3.95, appariee sur 3 245 pools (meme regle, seule la cadence change) : voir le marche a
+  # 2 s au lieu de 20 vaut **+1,14 pt/ticket [+0,27 ; +2,04]**, et **+2,64 pts [+0,50 ; +4,65] a
+  # coffre < 100 SOL** -- la definition meme de G+D. Cause : 29 % des pools touchent +25 % entre 47
+  # et 287 s, declenchement median a 93 s ; a cadence lente on rate le sommet une fois sur deux.
+  # CONSTATE EN VRAI le 26/09 : sur un meme jeton, le carnet papier de G+D a pris son gain 21 s
+  # apres l entree, le suiveur 205 s plus tard. Le pic etait invisible a 10 s.
+  # COUT : un `getMultipleAccounts` par passage, UNIQUEMENT quand une position est ouverte, soit
+  # ~120 lectures par ticket. Aucune cotation, aucune signature.
+  # NE PEUT PAS EMPECHER UNE VENTE : tout echec retombe sur la table, et la vente a l echeance ne
+  # depend d aucune des deux. Trois tests le verrouillent.
+  prise_gain_direct: true
   # 0 = AUCUN PLAFOND, comme pour la production. Mido, 26/09 : « je veux pas de plafond nulle part ».
   max_perte_jour_eur: 0
   max_ordres_jour: 0
