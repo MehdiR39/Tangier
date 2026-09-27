@@ -1,1785 +1,337 @@
-# Tangier Intel tunables. Deep-merged over intel/settings.py DEFAULT_CONFIG.
-# Secrets and endpoints are NOT here: see .env (INTEL_* variables, docs/EXPLOITATION.md).
-
-portfolio:
-  positions:
-    # Tokens are configured by CONTRACT ADDRESS only. quantity / cost_basis_usd / entry_ts
-    # are optional and only used for PnL context in alerts (null = unknown).
-    - address: "0xd18528b39da6464b3662c331a52181ecb15b1e18"
-      label: SAYLORMOON
-      quantity: null
-      cost_basis_usd: null
-      entry_ts: null
-    - address: "0xaa0b48defde440b8445ba45db88cb076cf261e18"
-      label: TAIWAN
-      quantity: null
-      cost_basis_usd: null
-      entry_ts: null
-    - address: "0x6b1d42927b1a84ec28fa88d4fc6fa7af404966be"
-      label: PAIR
-      quantity: null
-      cost_basis_usd: null
-      entry_ts: null
-
-engine:
-  portfolio_cycle_seconds: 86400   # EVM mis en veille le 14/09 23h : sa passe lit 45 Go et bloquait tout le moteur, Telegram compris
-  # These tokens are tradeable for a median of six minutes, so the cycle length is what decides
-  # how late a decision arrives. An evaluation costs 2.9 s since migration 6 — capacity is no
-  # longer the constraint, the appointment is.
-  scanner_cycle_seconds: 86400
-  scanner_deep_cycle_seconds: 86400
-
-scoring:
-  # Derived from measurement on 2026-09-04, not from judgement: 3 942 evaluations paired with the
-  # price 24 h later, weights chosen on the first half of the period and confirmed on the second.
-  # Top quartile doubled 11.7 % of the time against a 3.8 % base rate; the previous weighting
-  # (asymmetry .30 / traction .25 / survival .20 / distribution .15 / narrative .10) scored 1.0 %,
-  # worse than picking at random. asymmetry and narrative are gone: both measured as harmful.
-  # These keys REPLACE the defaults, they are not merged with them.
-  weights:
-    organic_volume: 0.35
-    distribution: 0.30
-    smart_money: 0.15
-    traction: 0.10
-    survival: 0.10
-
-hard_filters:
-  min_liquidity_usd: 20000
-  min_liquidity_to_mc: 0.03
-  liquidity_to_mc_reject_min_age_hours: 24
-  max_top10_excluded_system_pct: 0.50
-  max_insider_cluster_pct: 0.40
-  asymmetry_penalty_x_from_fmm: 50
-
-first_meaningful_market:
-  bucket_seconds: 300
-  min_unique_traders: 25
-  min_trades: 50
-  min_cum_quote_inflow_usd: 10000
-  min_liquidity_usd: 20000
-  persistence_buckets: 3
-
-scanner:
-  moonshot_alert_threshold: 70
-  stage1:
-    max_age_hours: 336
-    min_liquidity_usd: 20000
-    max_market_cap_usd: 5000000
-    min_volume_24h_usd: 5000
-  stage3:
-    # public RPC: keep the first pass of a new candidate short (~8h of history) so new gems
-    # are scored within minutes; the history loop completes older history afterwards.
-    # Slots go to never-scored candidates with the strongest momentum (2026-09-03 lesson:
-    # the queue was monopolised by already-scored tokens and a ×7 was never analysed).
-    # 5 per cycle was sized for an evaluation that cost 355 s. It costs 2.9 s since the covering
-    # indexes of migration 6 (2026-09-05), so the 4-minute cycle budget is the real limit now.
-    max_candidates_per_cycle: 60
-    refresh_per_cycle: 5
-    backfill_blocks: 300000
-
-alerts:
-  # DEBRAYE le 10/09 a 07h40. Le resume quotidien se declenche a 7 h UTC et interroge
-  # token_snapshots par jeton avec ORDER BY ts DESC LIMIT 1 ; sur une base de 22,5 Go cette lecture
-  # n en finit pas et BLOQUE LA BOUCLE de l ordonnanceur -- le moteur est reste muet de 07h00 a
-  # 07h40, Telegram compris, et chaque redemarrage relancait le meme resume toujours du.
-  # A rallumer quand token_snapshots aura l index (chain_id, token_address, ts) (S5.28).
-  daily_digest_enabled: false
-  enabled: true
-  min_severity: WATCH
-  lp_drop_pct: 0.15
-  # 30k, pas 100k : une ligne de 20 € ne déplace un pool de 37 k$ que de 0,06 %.
-  scanner_min_liquidity_usd: 30000
-
-states:
-  candidate_min_liquidity_usd: 30000
-
-decisions:
-  enabled: true
-  size_eur: 20
-  min_moonshot_buy: 70
-
-# T+1 watcher — switched ON by the operator on 2026-09-06 ("Active oui"). It writes BUY decisions
-# of 5 EUR when a pool has >= 27 swaps in the minute after its first trade (the one entry rule that
-# held out of sample). The execution section stays dry_run: nothing leaves the wallet until
-# execution.mode is deliberately set to live, separately.
-t1:
-  # ARRETE le 09/09 a 19h30. Le drapeau de pause pose a 11h42 a ete leve par une commande /resume
-  # sur Telegram a 14h13 ; l arret doit donc vivre dans la configuration, pas dans un drapeau que
-  # n importe quel message peut annuler. Ce carnet rendait -0,735 par euro sur 24 h, avec 24 tickets
-  # detruits sur 32 et 16 invendables -- la liquidite est retirable sur cette chaine, ce qui n est
-  # pas le cas des jetons Solana issus de pump.fun (0 invendable sur 30). Aucune position reelle n
-  # est ouverte au moment de l arret. Remettre true pour reprendre. Journal §3.42.
-  enabled: false
-  # Experience close le 08/09/2026 : dix tickets de 5 EUR pour savoir si la confirmation en
-  # deuxieme minute fait tomber le taux d invendables sous 40 %. Resultat sur les 8 tickets reels
-  # joues depuis 12h06 : 3 invendables, soit 38 %, pour -15,70 EUR. Le critere est tenu de justesse
-  # sur un echantillon trop petit pour conclure ; la confirmation reste en place et la question est
-  # reposee sur la serie ouverte. Reference avant elle : 100 % sur cinq tickets, 46 % sur vingt-huit.
-  # Voir JOURNAL_RECHERCHE.md §3.27.
-  # Limite de tickets RETIREE le 08/09/2026 a la demande de l operateur : « s il y a une limite sur
-  # le nombre de tickets enleve-la, tu m as parle de 100 EUR ». Un compteur de tickets coupe une
-  # serie gagnante et ne protege de rien quand la serie perd vite. Le garde-fou est desormais le
-  # plafond de pertes du jour, comme sur Solana. Remettre un nombre ici rebranche le compteur.
-  buy_budget: 0
-  # Plafond horaire de tickets. 0 = aucun. Le code prenait 20 par defaut faute de cle ici ;
-  # la cle est ecrite explicitement pour que la valeur soit visible, et mise a 0 le 08/09.
-  max_per_hour: 0
-  # Plafond de pertes reelles par jour, en euros. 0 = aucun plafond.
-  # Pose a 100 le 08/09 au soir, puis RETIRE le meme soir sur decision de l operateur : il avait
-  # demande qu on enleve les limites, et ce plafond en etait une de plus -- Robinhood avait deja
-  # perdu 99,75 EUR reels dans la journee, il se serait arrete au ticket suivant.
-  # Le mecanisme reste branche et ne compte que les lignes kind='PORTFOLIO' (§5.11) : mettre un
-  # nombre ici le rallume. Il ne reste aujourd hui aucun garde-fou automatique sur ce carnet en
-  # dehors de la taille du ticket (5 EUR) et du solde du portefeuille.
-  max_daily_loss_eur: 0
-  budget_since_ts: 1788869200
-  # Confirmation en deuxieme minute, ajoutee le 2026-09-08 apres cinq tickets invendables d affilee
-  # (-25,32 EUR, aucune vente aboutie). Le diagnostic : on n achetait pas des pieges mais des pools
-  # deja finis -- mediane de 12 echanges apres notre achat sur les lignes invendables, contre 296
-  # sur les lignes vendues, et rien a T+1 ne separait les deux.
-  # Mesure sur 1 365 pools suivis minute par minute : parmi ceux qui passent la barre 27-60, exiger
-  # 30 echanges pendant la DEUXIEME minute garde 257 pools dont 0 % s arretent, et ecarte 64 pools
-  # dont 72 % s arretent. C est le seul filtre teste qui vise ce defaut precis.
-  # Le prix : une minute de retard, donc une entree plus haute sur les pools qui montent. Le
-  # simulateur ne peut pas l arbitrer honnetement (il annonce 82 % de gagnants a T+1 la ou le
-  # carnet reel perdait avec 46 % d invendables), seule une serie reelle le dira.
-  # Mettre 0 pour revenir a l achat immediat a T+1.
-  confirm_minute2: 30
-  # Plafond sur le compteur d entree, ajoute le 2026-09-07 apres une journee reelle perdante.
-  # Au-dela de 60 echanges dans la premiere minute, le pool est un bundle qui retire sa liquidite
-  # aussitot : sur 84 pools ETH que ce livre n a PAS achetes (donc sans effet de notre part),
-  # 77 % de ceux sous 60 echanges vivaient encore cinq minutes apres, contre 11 % au-dessus.
-  # Nos propres achats du jour : 6 sous le plafond +57,82 EUR, 13 au-dessus -59,22 EUR.
-  # L historique des 45 jours precedents disait l inverse : c est une tactique qui a change,
-  # pas une loi. Mettre 0 pour retirer le plafond.
-  max_trades: 60
-
-# 2026-09-07: les pools cotes en USDG perdent (historique -6 EUR sur 5, carnet reel -73 EUR sur 42,
-# 24 % de gagnants) la ou les pools ETH gagnent (+159 EUR sur 106). On n achete que les pools ETH.
-# Le passage en reel se fait ici: mode: live (et la cle dans .env). Les deux sont necessaires.
-execution:
-  # live depuis le 2026-09-07 sur ordre de l'operateur ("lance tout"), portefeuille 0x2a33086d...c908
-  # verifie (0.186 ETH). Plafonds inchanges: 25 EUR/ordre, 40 ordres et 200 EUR/jour, 5 % slippage.
-  # REEL ARRETE le 15/09 a la demande de l operateur (« arrete le reel »), comme telegram_rapide.
-  mode: paper
-  # ARRET DE L EXECUTEUR EVM, pose le 09/09 a 21h10.
-  #
-  # Contexte : un plafond de positions comptait le papier (§5.18, §5.21). Le carnet du scanner
-  # comptait ses quatorze lignes VIRTUAL contre son plafond de quinze et refusait donc TOUT achat
-  # depuis le 07/09 -- 91 refus « 20 positions ouvertes >= plafond 15 ». En corrigeant le compte
-  # j ai retire, sans le vouloir, le seul frein d un carnet en mode live sur Robinhood Chain, la ou
-  # le resultat mesure est de -0,72 par euro et ou l operateur avait arrete l autre carnet le matin
-  # meme.
-  #
-  # Ce drapeau retablit l etat EFFECTIF (aucun achat EVM) avec du code juste plutot qu avec un bug.
-  # Il ne touche PAS au carnet Solana : `solana_watcher` n emprunte pas ce chemin.
-  # Le retirer est la decision de l operateur, pas la mienne.
-  kill_switch: true
-  cycle_seconds: 5          # une decision T+1 vaut des secondes: 30 s d attente coutait le debut de la pompe
-  # Il y a DEUX deploiements Uniswap v4 sur cette chaine. Le routeur par defaut (0xf8b30c1b...) sert le
-  # PoolManager 0xe5a881e6..., pas le notre (0x8366a39c...): les 5 premiers achats reels du 2026-09-07
-  # ont tous echoue a l estimation (PoolNotInitialized). Celui-ci est le routeur que les bots utilisent
-  # sur nos pools (164 000 swaps/24 h), poolManager() = 0x8366a39c..., simulation OK avec et sans hook.
-  router: "0x8876789976decbfcbbbe364623c63652db8c0904"
-  # Ce que le pool rend en moins par rapport a la cotation calculee (taxe du token/hook a l achat).
-  # Mesure le 2026-09-07 sur 90 issues (simulation rejouee + livre reel) : l esperance par ticket
-  # de 5 EUR vaut +1,30 EUR a 10 % de taxe, +0,60 EUR a 20 %, +0,25 EUR a 25 %, et devient negative
-  # vers 28 %. Le plafond de 10 % refusait donc des achats encore rentables ; 20 % garde huit points
-  # de marge sous le point mort, mesure sur une seule journee.
-  max_hook_tax_pct: 20
-  allowed_quotes:
-    - "0x0000000000000000000000000000000000000000"
-
-# Livre Solana, active a blanc le 2026-09-07. Il decouvre les lancements, mesure leur premiere
-# minute par transaction (ce que Robinhood ne permettait pas : le champ expediteur y donne le
-# routeur pour 98 % des echanges), et applique la meme sortie x2 ou T+5 min.
-#
-# Les seuils sont volontairement NON calibres : min_buyers a 0 n achete rien. Les seuils de
-# Robinhood (27 a 60 echanges) n ont aucun sens ici, ou les premieres mesures donnent 186 a 2 834
-# echanges dans la premiere minute. Ils seront fixes sur les donnees de cette nuit, pas au jugement.
-#
-# Passer en reel demande deux gestes separes, comme sur l autre chaine : une cle dans
-# SOLANA_PRIVATE_KEY, et mode: live ci-dessous. Aucun portefeuille Solana n existe a ce jour.
-solana:
-  enabled: true
-  # Reglage tire de 235 lancements observes sur 12 h (intel/research/solana_backtest.py).
-  # Le signal : les echanges par acheteur dans la premiere minute. Sous 15, on gagne ; au-dessus,
-  # on perd, et c est la que se trouve la moitie des lancements. Le plateau entre 5 et 15 rend le
-  # seuil peu sensible a sa valeur exacte, ce qui vaut mieux qu un pic.
-  #   <= 5 : +0,67 EUR/ticket · <= 10 : +0,69 · <= 15 : +0,68 · <= 25 : +0,53 · <= 40 : +0,42
-  # Sortie x2 ou T+15. Le balayage des durees a un sommet net a un quart d heure, et il gagne sur
-  # les quatre criteres a la fois -- rendement +1,06 EUR/ticket, 61 % de gagnants, quasi identique
-  # sur les deux moities de la periode (+1,08 puis +1,04), et 80 % du gain subsiste apres retrait
-  # des cinq meilleures lignes. Au-dela la degradation est reguliere : +0,64 a une heure, +0,37 a
-  # deux heures, et la robustesse tombe a 42 %, signe que le gain restant tient dans quelques coups
-  # rares. En deca, T+5 ne rend que +0,72. Les donnees couvrent ces durees : 211 lignes sur 237
-  # sont suivies au moins une heure apres l entree.
-  # Ecarter pump.fun ne change rien (+0,68 dans les deux cas) : filtre inutile, on le garde.
-  # live depuis le 2026-09-08. Portefeuille dedie HY4wrwep...ZfyL, alimente a 0,5 SOL : MetaMask
-  # n exporte pas la cle privee Solana, seulement celle des chaines EVM, donc le bot ne peut pas
-  # travailler sur le compte de l operateur et dispose du sien. Il ne risque que ce qu on y met.
-  # ARRET DES ACHATS REELS, pose le 10/09 a 00h05.
-  #
-  # La raison n est pas un reglage, c est une mesure faite sur la chaine de l operateur. Son trading
-  # MANUEL sur Solana rend +102 EUR sur trois jours (un jeton a x3,13, un autre a -21 %). Le 08/09 a
-  # 10h07 il a vire 1,98 SOL -- 188 EUR -- de son portefeuille Trust vers celui de ce moteur. Ce
-  # portefeuille en vaut 72 aujourd hui.
-  #
-  # Le carnet rend -0,157 par euro sur 44 tickets et sept jours ; une part importante de cette perte
-  # vient de defauts que j ai introduits : le stop simule rendant le seuil au lieu du prix (§3.59),
-  # `prepare_sell` bloquant toute vente 35 minutes (§5.12), un plafond comptant le papier (§5.18,
-  # §5.21). Ce ne sont pas des accidents de marche.
-  #
-  # LA COLLECTE CONTINUE INCHANGEE : `solana_prix_chaine`, `solana_suivi`, `solana_judgements` et
-  # les vingt strategies a blanc tournent a l identique. On n apprend rien de moins en n achetant
-  # plus -- 527 courbes ont ete collectees pour 44 tickets. On cesse seulement de payer.
-  #
-  # A remettre a `live` quand le filtre « trop propre » (§3.66) aura ete confirme en avant, ou quand
-  # l operateur le decide. Une ligne suffit.
-  mode: paper
-  # Ticket porte a 20 EUR le 2026-09-08. Le cout de la taille, mesure en cotant toutes les tailles
-  # au meme instant sur les pools reellement achetes, est lineaire et minuscule : 0,12 % a 10 EUR,
-  # 0,37 % a 20, 1,10 % a 50. La taille n est donc pas le frein, le portefeuille l est -- 98 EUR,
-  # soit quatre tickets simultanes, d ou le plafond de positions ouvertes.
-  # RAMENE A 5 EUR le 09/09 a 21h50. Le carnet rend -0,157 par euro sur 44 tickets et sept jours ;
-  # a 20 EUR le ticket cela fait -65 EUR par jour pour 111 EUR en caisse, soit moins de deux jours
-  # d autonomie. A 5 EUR la collecte est IDENTIQUE -- meme flux de lancements juges, meme courbes
-  # dans `solana_prix_chaine`, meme apprentissage -- pour quatre fois plus de temps devant nous.
-  # C est la seule variable qui achete du temps sans rien couter en information.
-  # A remonter le jour ou le filtre « trop propre » (§3.66) aura ete confirme en avant, pas avant.
-  size_eur: 5.0
-  max_open_positions: 4
-  # Le filtre des quatre-vingt-dix premieres secondes (§3.66, intel/engines/trop_propre.py).
-  # 2 = ecarter des deux signes sur trois ; 3 = seulement les cas extremes ; false pour desactiver.
-  filtre_trop_propre: true
-  trop_propre_seuil: 2
-  # Cadence de la boucle qui tient le carnet : executer les decisions et surveiller les positions.
-  # SEPAREE de poll_seconds, qui regle la decouverte. Avant le 09/09 les deux etaient confondues et
-  # la surveillance ne passait qu apres le jugement des lancements, soit toutes les 35 a 95 s. Pour
-  # un stop de perte c est une eternite : AMDuck a un sommet a x1,11 et une sortie a x0,06 avec un
-  # stop cense couper a x0,7. Journal §3.34.
-  # PORTE DE 5 A 20 SECONDES le 09/09 a 18h50, en urgence. A 5 s la boucle cotait chaque position
-  # ouverte douze fois par minute et, avec les deux cotations du filtre d aller-retour a chaque
-  # achat, saturait l API Jupiter : USELESSLAPTOP, montee a x1,53, a essuye VINGT-SIX refus de vente
-  # consecutifs en erreur 429 « Rate limit exceeded » et n a pas pu sortir a son sommet. Un stop plus
-  # reactif qui empeche de vendre est pire que pas de stop du tout. Journal §3.55.
-  book_poll_seconds: 20
-  # LA VEILLE RAPIDE (intel/engines/veille_rapide.py). Ce qui bloquait, c etait la COTATION, pas la
-  # lecture : `run_carnet` demande au routeur ce que vaut chaque position, donc on ne peut pas le
-  # faire tourner vite. Le PRIX, lui, se lit dans les deux comptes de reserve du pool par notre
-  # propre RPC, pour rien. Cette boucle lit a 2 s et se contente de REVEILLER le carnet quand un
-  # seuil est franchi : aucune vente, aucune cotation, et `reveil_min_secondes` interdit de
-  # reveiller la meme position plus souvent que `book_poll_seconds` -- la charge Jupiter du pire
-  # cas est donc exactement celle d aujourd hui.
-  # Mesure appariee (memes 3 245 pools, meme regle, seule la cadence change, §3.95) : 20 s -> 2 s
-  # vaut +1,14 pt par ticket [+0,27 ; +2,04], et +2,64 pts [+0,50 ; +4,65] a coffre < 100 SOL.
-  # Rejouee en deux moities +1,27 / +1,02, et les SEPT jours de la periode positifs. Cause : 29 %
-  # des pools touchent +25 % entre 47 et 287 s, declenchement median a 93 s.
-  # Ne rend PAS gagnante une selection perdante : tous pools confondus on reste a -1,09 %.
-  veille_rapide:
-    enabled: true
-    # 2 s -> 1 s le 17/09. Il y a DEUX delais entre le franchissement du seuil et la vente : le temps
-    # de le VOIR (notre cadence, qu on controle) et le temps d EXECUTER (~1 s, un slot Solana plus la
-    # construction et l envoi, incompressible). A 2 s de cadence le total va jusqu a 3 s, a 1 s il
-    # tombe a 2 s. Mesure sur 3 245 pools, detection sur nos lectures et remplissage au vrai prix du
-    # marche : passer d un remplissage a 2 s a un remplissage a 1 s vaut +0,23 point par ticket
-    # [+0,06 ; +0,40] sur l ensemble, +0,80 pt sur les pools filtres (la, l intervalle contient zero).
-    # Faible, mais le cout est nul -- deux fois plus d appels sur 1 a 4 positions ouvertes -- et aucun
-    # mecanisme ne peut rendre la lecture plus rapide nuisible. En dessous de 1 s il n y a plus rien :
-    # 0,5 s et 0,0 s donnent le meme chiffre que 0,5 s, le plancher est l execution, pas la lecture.
-    pas_secondes: 1
-    reveil_min_secondes: 20     # jamais deux reveils de la meme position plus rapproches que ca
-  # Le prix lu dans les reserves du pool, des la creation (intel/engines/prix_chaine.py).
-  # DexScreener n indexe pas ces pools avant ~T+1,5 min et se rafraichit toutes les 30 a 60 s : la
-  # zone ou agit l argent informe n a jamais ete observee, et toute rejouee de sortie batie dessus
-  # est deux fois trop pessimiste (§3.61, §3.65). Ce collecteur n achete rien.
-  prix_chaine:
-    enabled: true
-    pas_secondes: 10        # cadence de lecture ; le moteur decide toutes les 20 s
-    fenetre_minutes: 15     # on suit un lancement pendant ce temps apres sa creation
-    # Combien de fois on redemande le pool avant d abandonner un lancement. A 6 essais et une
-    # cadence de 10 s, on renonçait au bout de 60 s -- alors que la fenetre d entree de la
-    # strategie Telegram court jusqu a T+180 s. Audit du 12/09 sur 3 h : 10 lancements sur 153
-    # n ont jamais ete juges, et les 10 pools EXISTAIENT, simplement indexes trop tard par
-    # getProgramAccounts. C etait la seule perte de flux de tout l entonnoir, 7 %.
-    # 20 essais couvrent les 200 s utiles ; le surcout est d une cinquantaine d appels par heure.
-    tentatives: 20
-  # Le suivi de LONGUE duree (intel/engines/suivi_long.py) : 24 h par lancement au lieu de 30 min,
-  # cadence relachee avec l age (60 s puis 300 s puis 900 s), source DexScreener. Ne coute que des
-  # lectures. Sert a tester « acheter la survie a T+1 h et tenir des heures » (§3.68).
-  suivi_long:
-    enabled: true
-    heures: 24
-    pas_secondes: 30        # cadence de la boucle ; chaque jeton n est relu qu a sa propre cadence
-  # Suivi du prix de TOUT lancement juge, achete ou non, pendant N minutes apres le jugement.
-  # Le carnet juge 58 lancements par heure et n en achete que 0,8 : sans ce suivi on n apprend que
-  # sur 1,4 % de ce qu on voit, et chaque question de seuil reste sans reponse faute d echantillon.
-  # Avec, on rejoue n importe quelle regle d entree sur des centaines de lancements au lieu de
-  # vingt, sur le POOL exact qu on a juge -- ce que le collecteur de recherche ne peut pas faire
-  # puisqu il suit un pool par jeton et pas forcement le notre (§3.43). Coute quelques appels
-  # DexScreener par cycle, qui rend 25 jetons a la fois. 0 desactive. Journal §3.44.
-  suivi_minutes: 30
-  # Plancher releve de 5 a 125 le 2026-09-08, decide avec l operateur. Mesure sur les 254
-  # lancements observes : +0,45 EUR par euro engage et 73 % de gagnants au-dessus de 125 acheteurs
-  # distincts, contre +0,24 et 65 % au-dessus de 5. Trois verifications avant d y toucher :
-  #   - le plancher ameliore les SEPT regles de sortie testees, pas seulement celle en production,
-  #     donc il ne tient pas a un couple de parametres ;
-  #   - au-dessus de 125 acheteurs aucun lancement ne depasse 15 echanges par acheteur : le
-  #     plancher englobe le filtre anti-bundle, qui reste en place par prudence ;
-  #   - il laisse 1,2 occasion par heure en direct, contre 4,3 avant : reduit, jamais affame.
-  # Sur les cinq achats reels du 08/09 il aurait garde haMSTR et ANSEMCOIN et ecarte Dukky et
-  # CATECOIN, soit +3,55 EUR au lieu de -18,32. Reserve assumee : la tranche au-dessus de 125 ne
-  # compte que 22 lancements, et c est elle qui porte l avantage. Revenir a 5 annule le filtre.
-  # Abaisse de 125 a 100 le 2026-09-08 apres une heure a 125 sans une seule occasion : le plancher
-  # haut ne laissait passer que 1,2 lancement par heure, et l avantage qu il apporte (+0,45 par euro
-  # contre +0,36) repose sur 22 lignes contre 34. A 100 le rythme double, 1,9 par heure, et
-  # l esperance HORAIRE est meilleure : 1,9 x 0,36 contre 1,2 x 0,45. Le plancher exclut toujours
-  # les deux perdants reels du 08/09 (Dukky 91 acheteurs, CATECOIN 86).
-  # Ramene de 100 a 75 le 2026-09-08 a 14h : deux heures et demie a 100 pour vingt-quatre
-  # lancements juges et zero ticket. Toutes les rejections disaient « acheteurs < 100 », maximum
-  # observe 82 : c est notre plancher qui bloquait, pas le marche.
-  # Avec le plafond de densite, le plancher 75 rend +0,359 par euro et 69 % de gagnants -- soit
-  # exactement ce que donnait le plancher 100 SANS plafond -- pour 40 % de tickets en plus :
-  # 1,88 par heure au lieu de 1,38, donc les vingt tickets en onze heures au lieu de quinze.
-  # ABAISSE DE 75 A 50 le 09/09, decide avec l operateur devant le rythme d achat reel.
-  #
-  # L entonnoir mesure sur 12 h : le flux de migrations livre 43,8 lancements par heure -- dont
-  # seulement 38 sur 526 etaient aussi visibles chez DexScreener, donc l abonnement fait bien son
-  # travail -- 58 sont juges par heure, et le PLANCHER D ACHETEURS en ecarte 88,5 % a lui seul.
-  # Restent 0,58 passage par heure, dont la moitie echoue a l execution : 0,17 position ouverte par
-  # heure, la ou l estimation faite au moment de prendre l abonnement annoncait 4 a 6.
-  #
-  # Ce que le plancher rapporte n est PAS demontre, et ce qu il coute l est. Sur les 134 lancements
-  # mesures a la bonne echelle de comptage, il va meme dans le mauvais sens : aucun plancher
-  # -0,061 par euro, a 75 -0,092, a 100 -0,113 -- monotone, donc pas un accident de grille. En le
-  # restreignant aux lancements qui passent aussi densite et capitalisation il ne reste que 13
-  # lignes, 2 a 5 par tranche : impossible de trancher, et c est justement pour ca qu il faut plus
-  # de tickets.
-  #
-  # CRITERE ECRIT D AVANCE, a verifier sur les 30 prochains tickets reels :
-  #   - le resultat par euro ne doit pas etre pire que -0,10 ;
-  #   - la part des lignes perdant plus de la moitie du ticket ne doit pas depasser 25 %.
-  # Si l un des deux echoue, on remonte a 75 et on l ecrit. Bascule : remettre 75 ici.
-  #
-  # Effet secondaire qui compte autant que le premier : a 0,17 ticket par heure il faut une semaine
-  # pour reunir 30 lignes, donc on ne peut RIEN apprendre. Multiplier le rythme par trois ou quatre
-  # est aussi ce qui rend les mesures suivantes possibles.
-  # REMIS A 75 le 09/09 a 13h. La recherche systematique (72 000 combinaisons choisies sur la
-  # premiere moitie de la periode et jugees sur la seconde, jamais regardee) retient >= 75 : la
-  # variante a 50 est NEGATIVE hors echantillon, -0,134 par euro. Je l avais baissee trois heures
-  # plus tot sur une base bien plus faible -- une tendance monotone sur 134 lancements, sans
-  # validation hors echantillon. Journal §3.45.
-  # PORTE A 99999 EN URGENCE le 09/09 a 18h55 : aucun achat, le carnet continue de vendre.
-  # Jupiter nous plafonne (429) et USELESSLAPTOP, montee a x1,54, ne peut pas sortir apres plus de
-  # trente refus de vente. Chaque tentative d achat consomme deux a trois cotations et prive les
-  # ventes du quota restant. On coupe la source pour rendre les sorties possibles. Remettre 75 pour
-  # rouvrir. Journal §3.55.
-  min_buyers: 75
-  max_trades_per_buyer: 15
-  # Plafond de densite, ajoute le 2026-09-08. La densite dit autre chose que le plancher
-  # d acheteurs : a plancher egal, garder les lancements sous 600 echanges dans la premiere minute
-  # ameliore les quatre mesures d un coup -- 75 % de gagnants contre 69, +0,437 par euro contre
-  # +0,348, mediane +0,630 contre +0,459, et +0,371 contre +0,266 une fois le meilleur dixieme
-  # retire. Cout : 12 % des occasions, 1,50 par heure au lieu de 1,70. Mettre 0 pour le retirer.
-  max_trades_first_minute: 600
-  # Nombre de pages de 1 000 signatures remontees pour reconstituer la premiere minute d un pool.
-  # Porte de 6 a 12 le 08/09/2026 : au-dela de ce budget la remontee n atteint plus la creation du
-  # pool et la mesure devient incomplete. Le code refuse desormais d acheter dans ce cas au lieu de
-  # compter ce qu il a sous la main -- c est ce silence qui a fait acheter NASFROG a 4 % du prix
-  # auquel la regle l avait ecarte six minutes plus tot (journal §3.25).
-  signature_pages: 12
-  # Le jeton vient-il de s effondrer ? Le plafond de capitalisation ci-dessus n a ni plancher ni
-  # memoire : il laisse passer un jeton a 5 k$ sans pouvoir dire s il est petit ou s il valait 50 k
-  # une minute plus tot. Deux cas mesures le 08/09/2026 a une heure d intervalle -- NASFROG achete
-  # 26x sous le prix auquel la regle l avait ecarte, WTW achete 4,4x sous le prix d un autre pool du
-  # MEME mint onze secondes plus tot. On refuse d acheter a moins de la moitie du meilleur prix vu
-  # sur le meme jeton dans le quart d heure. Journal §3.25 et §3.26.
-  collapse_memory_seconds: 900
-  max_collapse_ratio: 2.0
-  min_liquidity_usd: 0
-  # Plafond de capitalisation a l entree, ajoute le 2026-09-08 a 20h40 sur une hypothese de
-  # l operateur : un jeton deja gros ne bouge plus assez pour couvrir les frais. Mesure sur 174
-  # lancements, et le balayage est MONOTONE, ce qui est ce qui le rend credible :
-  #     aucun plafond  51 % gagnants  +0,046 par euro  robustesse -0,005
-  #     moins de 100 k 52 %           +0,045           -0,008
-  #     moins de  50 k 55 %           +0,088           +0,042
-  #     moins de  25 k 59 %           +0,192           +0,155
-  # Par tranches : au-dessus de 50 k$ la strategie perd (-0,074 par euro, 50 % de gagnants), en
-  # dessous elle gagne (+0,169, 71 %). On retient 50 k et non 25 k : le 25 k mesure mieux mais ne
-  # repose que sur 27 lancements, et retenir le meilleur chiffre d un balayage est l erreur du matin.
-  # Nos achats du jour avaient des liquidites de 118 k, 223 k, 227 k et jusqu a 1 043 k pour LAPTOP.
-  # Mettre 0 pour retirer le plafond.
-  # RELEVE DE 50 000 A 150 000 le 09/09 a 14h30. Le plafond de 50 k datait du 08/09, mesure sur le
-  # collecteur a l ancienne echelle, et n avait jamais ete revalide. Les donnees du moteur, a la
-  # bonne echelle, disent l inverse : la tranche 50-150 k est la SEULE positive dans les deux
-  # moities de la periode (+0,043 par euro, 48 % de gagnants), quand 25-50 k fait -0,018 et
-  # < 25 k fait -0,134. Mon plafond coupait donc exactement la meilleure tranche.
-  # Effet mesure sur 24 h de jugements : le rythme passe de 0,29 a 0,71 passage par heure.
-  # On ne va pas au-dela de 150 k : il n y a aucune mesure pour le justifier, et 34 des 59
-  # lancements ecartes sont au-dessus de 500 k, la population « trop grosse pour bouger ».
-  # REMIS A 50 000 le 09/09 a 18h45. Je l avais releve a 150 k trois heures plus tot en m appuyant
-  # sur une mesure de la tranche 50-150 k faite AVANT de decouvrir que les sorties simulees doivent
-  # etre confirmees par deux releves (§3.54) : elle etait donc possiblement un artefact du bruit de
-  # prix. Effet mesure du relevement : 5 tickets en 2,5 h pour -24,17 EUR, soit -0,242 par euro et
-  # un rythme de 2,8 tickets par heure -- ce qui projette -233 EUR par jour. Multiplier le rythme
-  # d une strategie negative, c est perdre plus vite. On revient au reglage anterieur en attendant
-  # une mesure refaite proprement.
-  max_market_cap_usd: 50000
-  # PLANCHER de capitalisation, ajoute le 09/09. La regle avait un plafond et aucun plancher : elle
-  # achetait donc en plein dans la pire tranche du marche. Mesure sur 129 lancements du moteur, a la
-  # bonne echelle de comptage, croises avec les courbes de prix du collecteur :
-  #
-  #   tranche        n    gagnants   par euro    1re moitie   2e moitie
-  #   < 25 k$       58      21 %      -0,134       -0,163       -0,112
-  #   25-50 k$      50      40 %      -0,018       +0,019       -0,091
-  #   50-150 k$     21      48 %      +0,043       +0,055       +0,037
-  #
-  # La tranche basse est mauvaise dans LES DEUX moities, sur le plus gros echantillon des trois, et
-  # l ecart de taux de gagnants (21 % contre 40-48) est massif. C est le seul resultat de la journee
-  # qui tienne le hors-echantillon -- et il ne s agit pas de choisir une bonne tranche mais d en
-  # retirer une clairement mauvaise, ce qui demande beaucoup moins de foi dans l echantillon.
-  #
-  # Prudence assumee : le plafond de 50 k a ete fixe hier sur une mesure du collecteur, a l ancienne
-  # echelle et sur une autre periode, et les donnees d aujourd hui la contredisent en partie. Deux
-  # changements de ce parametre en deux jours sur quelques dizaines de lancements, c est le signe
-  # que l echantillon ne porte pas ces reglages. On ne touche a RIEN d autre tant que `sol_regime`
-  # n a pas plusieurs jours. Mettre 0 retire le plancher. Journal §3.38.
-  min_market_cap_usd: 25000
-  # 0 = aucun plafond horaire. Etait a 6 ; retire le 08/09 avec les autres limites portant sur le
-  # nombre de tickets. Le frein reel est le portefeuille : quatre tickets de 20 EUR simultanes
-  # epuisent les 98 EUR disponibles, voir max_open_positions ci-dessus.
-  max_per_hour: 0
-  # Abaisse de 2,0 a 1,5 le 2026-09-08 a 18h, sur nos PROPRES releves et contre le backtest.
-  # Le suivi du sommet, ajoute le meme jour, a montre que l objectif de x2 ne s est jamais
-  # declenche : sur huit tickets, les sommets plafonnent a x1,82 et les positions redescendent
-  # jusqu a l echeance des quinze minutes. Trois lignes sont montees au-dessus de x1,4 puis ont
-  # tout rendu -- ZAPE de +57 % a -96 %, NIKEY de +50 % a -14 %.
-  #
-  # Simulation des objectifs sur ces memes huit lignes, en utilisant les sommets releves toutes
-  # les trente secondes par la valeur vendable reelle :
-  #     x1,3 -> +5,54    x1,4 -> +11,50    x1,5 -> +17,47    x1,8 -> -18,91    x2,0 -> -46,23
-  # Le plateau de x1,3 a x1,5 tient sur les memes trois lignes, ce n est pas un maximum fragile.
-  #
-  # Le backtest dit l inverse (x2 gagnant sur les quatre criteres, voir §3.22 du journal) mais il
-  # porte sur une autre journee et n a jamais vu un objectif se ne declencher jamais. Quand le
-  # backtest et le reel se contredisent, le reel gagne : c est la lecon du matin, ou un simulateur
-  # annoncait 82 % de gagnants pendant que le livre perdait avec 46 % d invendables.
-  #
-  # Reserve : huit lignes, dont deux sans sommet mesure. Remettre 2.0 annule.
-  take_profit_multiple: 1.5
-  # Stop de perte, ajoute le 2026-09-08 a 19h30. Le carnet avait un objectif de gain et une limite
-  # de temps, rien pour couper une position qui tombe : DLSS5 tenue jusqu a l echeance pour x0,11,
-  # ZAPE pour x0,04, FTFS pour x0,01 apres -99 % en cinq minutes (verifie par le routeur ET par
-  # DexScreener, 1 786 ventes contre 513 achats). Environ 40 EUR perdus sur trois lignes qu un stop
-  # a -30 % aurait limitees a 6 EUR chacune.
-  # Mesure sur les 47 lancements de reference : a objectif egal, le gain par euro passe de +0,123 a
-  # +0,183 et la robustesse de +0,079 a +0,147. Seul reglage du jour sur lequel le backtest et le
-  # reel concordent. Mettre 0 pour retirer le stop.
-  stop_loss_multiple: 0.7
-  # PORTE DE 15 A 30 MINUTES le 09/09 a 19h15. C est le seul parametre du projet qui pointe dans la
-  # meme direction sur les QUATRE mesures, sur les courbes du suivi avec sorties confirmees par deux
-  # releves (§3.54) :
-  #             tout    moitie 1   moitie 2   sans le meilleur dixieme
-  #   T+15     -0,20     +0,22      -0,63          -1,08
-  #   T+30     +0,53     +1,07       0,00          -0,27
-  # Vingt-quatre lancements : ce n est pas une preuve, et rien n est positif au test de robustesse.
-  # Mais c est cohérent sur toutes les colonnes, ça ne coute qu un parametre, et ca rejoint l
-  # observation de l operateur sur les ventes trop precoces.
-  # CRITERE ECRIT D AVANCE : sur les 20 prochains tickets, le resultat par euro doit etre meilleur
-  # que les -0,157 mesures a T+15 cet apres-midi. Sinon retour a 900.
-  max_hold_seconds: 1800
-  # Deux reglages distincts, et les confondre coute des achats.
-  #   `max_impact_pct` refuse une COTATION trop mauvaise : c est le garde-fou de qualite.
-  #   `slippage_pct` absorbe la DERIVE entre la cotation et l atterrissage de la transaction.
-  # Mesure du 09/09 sur 37 tentatives d achat : les 29 confirmees ont un impact cote median de
-  # 2,01 % (max 5,23), et les 8 echouees un impact cote de 1,96 % en mediane -- PHOUSE 1,93 %,
-  # Jacob 1,77 %, wcat 1,72 %. La cotation etait donc BONNE dans tous les cas ; la transaction
-  # echoue en erreur Jupiter 0x1771 parce que le prix bouge de plus de 3 % dans les secondes qui
-  # separent la cotation de l atterrissage. C est de la latence, pas du prix.
-  #
-  # On ouvre donc la tolerance de derive et on RESSERRE le garde-fou de qualite : accepter plus de
-  # derive n est pas accepter une plus mauvaise cotation. La tolerance est un plafond, pas un cout :
-  # Jupiter remplit au meilleur prix disponible et ne s en sert que pour decider s il annule.
-  # Critere ecrit d avance : sur les dix prochaines tentatives, le taux d echec doit tomber sous
-  # 20 % (il est a 50 % depuis hier soir, 4 sur 8, et 2 sur 2 sur les dernieres). Et le prix
-  # d entree reellement paye, lu sur la chaine, doit rester a moins de 5 % de la cotation ; au-dela
-  # c est qu on se fait prendre en sandwich et il faut redescendre. Journal §3.36.
-  slippage_pct: 15.0
-  max_impact_pct: 6.0
-  # Plafond du cout d un ALLER-RETOUR a notre taille, en pourcent. Avant d acheter, on cote la
-  # revente immediate de ce qu on recevrait : si ressortir coute plus que ce plafond, on n entre pas.
-  #
-  # Mesure du 09/09 sur 25 pools suivis, cotation seule, aucun ordre : un aller-retour de 20 EUR
-  # coute 2,9 % en mediane (1er quartile 1,1 %, 3e quartile 4,5 %). Mais SIX pools sur vingt-cinq
-  # coutent plus de 10 %, CINQ plus de 25 %, et le pire ne rend que 1,3 % de la mise. Sur ceux-la on
-  # peut acheter et pas ressortir.
-  #
-  # Ce chiffre colle a ce qui detruit le carnet : sept tickets sur vingt-huit anaeantis (25 %) contre
-  # cinq pools sur vingt-cinq invendables (20 %). Aucune regle de SORTIE ne repare ca -- ni le stop,
-  # ni la boucle a 5 s, ni les frais de priorite -- parce que la contrepartie n existe pas. La seule
-  # reponse est de ne pas entrer, et ca se sait avant, pour une cotation de plus.
-  #
-  # 8 % laisse passer les trois quarts des pools (3e quartile a 4,5 %) et ecarte toute la queue.
-  # CRITERE ECRIT D AVANCE : sur les 20 prochains tickets, la part des lignes perdant plus de la
-  # moitie de la mise doit tomber sous 10 % (elle est a 22 %). Sinon la thinness n etait pas la
-  # cause. Mettre 0 retire le filtre. Journal §3.47.
-  max_aller_retour_pct: 8.0
-  sell_slippage_pct: 25.0
-  # Frais de priorite, en lamports (1 000 000 = 0,001 SOL, environ 0,10 EUR).
-  # Ajoute le 09/09 : les transactions partaient SANS frais de priorite, donc elles attendaient leur
-  # tour d inclusion, et pendant cette attente le prix bougeait. Jupiter comparait alors le montant
-  # recu au seuil calcule a la cotation, ne le trouvait plus, et annulait en erreur 0x1771 -- quatre
-  # ordres sur six le 09/09 (Jacob, wcat, PHOUSE deux fois) avec des cotations pourtant bonnes,
-  # entre 1,7 et 2 % d impact. Payer pour atterrir vite coute moins cher que de ne pas atterrir :
-  # 0,10 EUR contre un ticket de 20 EUR qui ne se place pas.
-  # Vaut aussi pour la VENTE, et la ca compte davantage : le stop de perte ne sert a rien si l ordre
-  # met dix secondes a etre inclus pendant que le jeton s effondre (§3.34).
-  # Critere ecrit d avance : sur les dix prochaines tentatives, le taux d echec doit tomber sous
-  # 20 %. Mettre 0 retire les frais de priorite. Journal §3.40.
-  # 500 000 lamports = 0,048 EUR par ordre, cinq fois le defaut de Jupiter (99 999), soit 0,24 %
-  # d un ticket de 20 EUR. Verifie contre l API : un ENTIER est applique tel quel, alors qu un
-  # niveau nomme (« high ») fait appliquer 59 431, MOINS que le defaut -- la premiere version de ce
-  # reglage reduisait donc la priorite en croyant l augmenter (§3.49).
-  priority_fee_lamports: 500000        # LA VENTE garde 500 000 : une vente ratee coute une position coincee
-  # L ACHAT descend a 100 000 le 19/09 sur accord de Mido. Mesure sur nos 184 transactions reelles :
-  # on payait 500 000 lamports fixes, soit 4 407 000 microlamports par unite de calcul, alors que sur
-  # les 150 derniers blocs du programme PumpSwap la mediane du marche est de ZERO et le 99e centile
-  # de 199 989 -- nous payions 22 fois le concurrent le plus agressif. A 100 000 on en paie encore
-  # 4,4 fois. Gain mesure : 0,42 pt par aller-retour, soit 3,82 EUR sur les 92 tickets du 18/09.
-  # Un achat rate ne coute rien ; c est la seule jambe ou l on peut se le permettre.
-  priority_fee_lamports_achat: 100000
-  # Plus de plafond de tickets : il arretait aussi une serie gagnante, et de toute facon aucune
-  # ligne de code ne le lisait -- il ne protegeait rien. Remplace par une limite de PERTE, qui ne
-  # coupe que si ca perd vraiment et laisse courir tant que ca marche. Mettre 0 pour tout enlever.
-  max_daily_loss_eur: 100
-
-  # Ecoute des creations de pool en direct, ajoutee le 2026-09-08 apres l abonnement Helius
-  # Developpeur. Mesure du jour : la chaine gradue une vingtaine de jetons par heure sur PumpSwap,
-  # la decouverte promotionnelle de DexScreener n en montre que 4,3. On en ratait plus des trois
-  # quarts, et le rythme est ce qui empeche de savoir si la strategie gagne.
-  #
-  # Le filtre a ete trouve en capturant quatre migrations et en croisant leurs comptes : le compte
-  # 39azUYFW... apparait dans toutes, et croise avec pump.fun il ne rend que 1,3 transaction par
-  # minute -- contre 3 780 pour pump.fun seul (45,6 M de credits/mois, hors forfait) et 26 544 pour
-  # PumpSwap seul (448 M). Le cout arrondit a zero.
-  #
-  # La source vient EN PLUS de DexScreener, jamais a sa place : chaque jeton garde la trace de
-  # savoir si l autre source l avait aussi, sans quoi on ne pourrait pas mesurer ce qu elle apporte.
-  stream:
-    enabled: true
-    accounts:
-      - "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"   # programme pump.fun
-      - "39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg"  # compte present dans toutes les migrations
-    instructions: ["Migrate", "CreatePool", "Initialize2"]
-    # Mesure du 12/09 : 0,2 Mo par tranche de 290 s, soit 25 a 40 k credits par mois sur un forfait
-    # de 10 millions. Le garde-fou de volume ne sert donc plus a rien, et la pause coutait 1,7 % du
-    # temps d ecoute -- c est-a-dire des graduations ratees, la seule ressource rare de ce projet.
-    # Verifie le meme jour : 17 jetons gradues sur 17 sont captes, on ne rate rien.
-    seconds_per_cycle: 590   # ecoute quasi continue
-    pause_seconds: 1         # 1 s de trou toutes les 10 min, soit 0,17 % du temps
-    max_mb_per_cycle: 30
-
-# Purge de la base. Ajoutee le 2026-09-08 apres que la base a atteint 22,2 Go : la verification
-# d integrite qu elle declenche au demarrage a laisse le moteur muet vingt minutes, positions
-# ouvertes et Telegram silencieux.
-#
-# Deux causes, arithmetiques toutes les deux :
-#   - la purge supprimait 60 jetons par passage, quatre fois par jour, soit 240, alors que le
-#     scanner en decouvre environ 3 400 par jour. Depassee d un facteur quatorze.
-#   - elle abandonnait des que le scanner tenait le verrou d ingestion, et les cycles du scanner
-#     durent 440 a 594 secondes en s enchainant : elle ne l obtenait quasiment jamais et rendait
-#     la main en 0,0 seconde. Elle l attend desormais (voir scheduler.retention_cycle).
-#
-# Chaque jeton est supprime dans SA PROPRE transaction, donc un lot plus gros allonge le travail
-# total sans allonger la duree d un verrou -- c est ce qui rend 500 acceptable la ou 60 ne l etait
-# pas. Une purge longue qui verrouille la base avait tue une boucle le 2026-09-08 au matin.
-retention:
-  # ETEINTE le 10/09 a 07h20. Sa selection lit les 22,4 Go de la base a chaque passe, et elle
-  # passait toutes les 30 minutes : le moteur restait muet, Telegram compris. A rallumer quand la
-  # selection sera bornee (§5.28). La base ne grossit plus beaucoup : le carnet Solana est a blanc.
-  enabled: false
-  prune_interval_seconds: 1800
-  max_tokens_per_prune: 500
-  scan_tokens_per_prune: 8000
-  dead_token_days: 2
-  holder_snapshot_days: 7
-  pair_snapshot_days: 14
-  prune_budget_seconds: 180
-
-# Achats et ventes a la main depuis Telegram (/achat, /vente, /manuel). Ces lignes portent leur
-# propre model_version et n entrent dans aucune mesure de strategie : le bot ne les vend jamais,
-# et le resultat manuel se lit separement de celui des robots.
-manuel:
-  # Plafond par ordre, en euros. Un message Telegram declenche ici une depense reelle : le plafond
-  # est la seule chose qui separe une faute de frappe d une perte. 0 interdirait tout achat.
-  # Plafond d impact de prix a l achat, propre au manuel. Celui du robot est a 6 % : il achete sans
-  # regarder, donc il doit etre prudent. A la main c est l operateur qui decide, d ou 25 % ici.
-  # Un impact de 100 % n est pas un arbitrage : il signifie qu il n y a aucune contrepartie et que
-  # la mise est perdue a l instant de l achat. Mettre 100 pour tout autoriser malgre tout.
-  max_impact_pct: 100
-  # 0 = aucun plafond, retire le 09/09 a la demande de l operateur (« enleve-moi le seuil sur le
-  # manuel, je suis bloque a 100 »). La limite reelle devient le solde du portefeuille manuel, qui
-  # est de toute facon la perte maximale possible : ce qui n y est pas ne peut pas etre depense.
-  max_ordre_eur: 0
-  # Refus d acheter un pool dont on ne peut pas ressortir, comme le carnet automatique (§3.47).
-  # 0 desactive la verification -- a la main on peut vouloir entrer quand meme.
-  max_aller_retour_pct: 0
-  paliers: [1.5, 2.0, 3.0, 5.0]
-  palier_bas: 0.5
-  # VENTE AUTOMATIQUE des lignes manuelles EVM, demandee le 09/09 au soir pour DOGSHIT : « tu vends
-  # cette pose si elle fait un gros gain cette nuit ». Deux tranches, comme l operateur trade
-  # lui-meme (2dDDte sorti en trois fois) : la moitie a x2, le reste a x4, rapporte a la mise.
-  # Le suivi ecrit une DECISION que l executeur EVM ramasse et dimensionne sur le solde reel ;
-  # chaque tranche n est emise qu une fois. L arret d urgence ne bloque plus les ventes.
-  vente_auto:
-    # DESARMEE le 10/09 au matin : l operateur a dit de ne pas vendre. Remettre true pour rearmer.
-    enabled: false
-    moitie_a: 2.0
-    tout_a: 4.0
-  # LES PORTEFEUILLES DE L OPERATEUR, pour que /manuel montre ce qu il DETIENT et pas seulement ce
-  # que le registre a enregistre. Le 09/09 a minuit, six portefeuilles dont trois ouverts par le
-  # moteur : ses PURR sur Trust, son SOL, son ETH n apparaissaient nulle part. Adresses publiques
-  # seulement -- lecture. « qui » dit qui detient la cle.
-  eth_eur: 2280.0
-  portefeuilles:
-    - {nom: "Trust Solana",   chaine: solana,    qui: "toi",        adresse: "4f1ShTjEDMRby6Zt5cYYDx7bmy1V8ZxwJWEL5Kg5ksA5"}
-    - {nom: "Trust EVM",      chaine: robinhood, qui: "toi",        adresse: "0xBE41FD70105b7FA4f632a43d4Ecb24f485ed174C"}
-    - {nom: "Phantom",        chaine: solana,    qui: "toi",        adresse: "Dc7hibeE7JqnLE1eaQaX4zvdWkFeFbFpAm5sxx1JCULX"}
-    - {nom: "MediTrading",    chaine: solana,    qui: "moteur+toi", adresse: "sygsohR7ZsXJJ5QCtmFhE7Y24Qsbj155dkK6GqTnxs2"}
-    - {nom: "Robot EVM",      chaine: robinhood, qui: "moteur+toi", adresse: "0x2a33086d2fce255f61ac1a3000bf944397c9c908"}
-    - {nom: "Robot Solana",   chaine: solana,    qui: "moteur",     adresse: "HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL"}
-
-# Vendre chaque jeton detenu des qu il touche un NOUVEAU SOMMET HISTORIQUE. Regle donnee par
-# l operateur le 11/09 : « parmi toutes les crypto dont on dispose, des qu elles atteignent un
-# nouveau plus haut tu vends », PACK excepte.
-#
-# Le sommet est le VRAI sommet : amorce une fois par jeton sur l historique journalier complet du
-# pool, jamais « le plus haut vu depuis qu on regarde » -- sinon la premiere hausse de 1 % vendrait
-# tout. Le prix est la mediane des paires ou le jeton est en base : une paire aberrante ferait
-# vendre pour de bon (S5.30).
-#
-# On ne vend QUE la ou la cle existe : MediTrading et les deux portefeuilles du robot. Sur les
-# portefeuilles Trust de l operateur, alerte Telegram seulement.
-ath:
-  # COUPE le 11/09 a la demande de l operateur (« ne l applique pas »), apres avoir tourne moins
-  # d une heure et n avoir vendu ni alerte sur rien. Remettre true pour reactiver.
-  enabled: false
-  pas_secondes: 30        # verification continue, pour ne pas rater une occasion la nuit
-  min_eur: 5.0            # sous ce montant on ne s occupe pas de la poussiere
-  marge_pct: 0.0          # 0 = le moindre depassement compte
-  exclus:
-    - "0x27495511b8A2e163efC75d788706a40Dd100Bc27"   # PACK, exclu a la demande de l operateur
-
-# Vendre une ligne par tranches, a des multiples du PRIX D ENTREE reel lu sur la chaine.
-# Demande de l operateur le 11/09 : sur STOCKLANA seulement, 75 % a x3 et le reste a x4, verifie
-# toutes les cinq secondes. Remplace la regle du plus haut historique (`ath`), coupee.
-#
-# Le multiple est mesure sur ce que le ROUTEUR donne pour la tranche qu on s apprete a vendre,
-# impact de notre propre ordre compris : x3 veut dire qu on encaisse trois fois la mise par jeton.
-# DexScreener ne conviendrait pas -- il se rafraichit toutes les 30 a 60 s, donc verifier a 5 s sur
-# sa cotation reviendrait a relire douze fois la meme valeur perimee (S3.61).
-paliers_vente:
-  # COUPE le 13/09 : l operateur a demande de vendre tout sauf DOGSHIT, STOCKLANA compris.
-  # La ligne n existe plus, la regle x3 / x4 n a plus d objet.
-  enabled: false
-  pas_secondes: 5
-  lignes:
-    - nom: STOCKLANA
-      jeton: "C5tGuxaPnbxHHP6RTpAQs34x8TN8A9ZfJxcfizd2WF3u"
-      chaine: solana
-      decimales: 6
-      # achat du 11/09 17:09:28 : 0,4436 SOL pour 439 519,5347 jetons
-      entree_sol_par_jeton: 0.000001009206
-      tranches:
-        - {multiple: 3.0, part_pct: 75}
-        - {multiple: 4.0, part_pct: 100}
-
-# ---------------------------------------------------------------------------
-# Acheter un lancement qui a un Telegram, le revendre quatre minutes plus tard.
-#
-# Mesure du 12/09 sur 2 560 courbes (intel/research/croise.py), coupees en deux par date de
-# naissance. Moitie de JUGEMENT seule, jamais regardee pendant la recherche :
-#
-#     avec Telegram   n=95    69 % de gagnants   mediane +4,3 %   +0,174 par euro
-#     population      n=1280  48 % de gagnants   mediane -0,3 %   +0,061 par euro
-#
-# Zero tirage sur 20 000 ne fait aussi bien. Tient sans sa meilleure ligne (+0,154), sur 8 tranches
-# de 6 h sur 11, avec 60 s de retard a l entree (+0,151) et avec 10 % de peage (+0,077).
-#
-# POUR PASSER EN REEL IL FAUT DEUX ACTES : mettre `mode: live` ET deposer une cle dans
-# `cle_fichier`. Tant que l un des deux manque, ce moteur n envoie aucun ordre.
-telegram_rapide:
-  enabled: true
-  # REEL ARRETE le 15/09 a la demande de l operateur (« arrete le reel »). Mesure qui le justifie,
-  # simulation complete du 12 au 14/09 (1 180 jetons) avec le cout d execution MESURE en chaine :
-  # propre +0,004/euro avant cout, -0,006 apres ; Telegram +0,010 avant, -0,069 apres. Aucun des
-  # deux carnets n a d esperance positive. Le carnet reel : -436 EUR sur 229 tickets.
-  # Le papier continue : memes decisions, aucun ordre, pour mesurer sans payer.
-  mode: paper                  # paper | live
-  pas_secondes: 10
-  # 50 -> 160 EUR le 14/09, apres alimentation du portefeuille (+506,47 EUR, solde 706,88 EUR).
-  #
-  # LE CHIFFRE VIENT D UN OPTIMUM, PAS D UNE PREFERENCE. Notre ordre s execute contre les reserves
-  # du pool : plus il est gros, plus il pousse le prix a l achat et le casse a la vente. Ce cout
-  # monte avec la taille pendant que l avantage par euro reste constant, donc le gain total monte,
-  # plafonne, puis s effondre. Calcule sur la distribution reelle des reserves de nos pools
-  # (mediane 77,7 SOL), avec l avantage mesure de +0,0724 par euro sur 59 tickets reels -- celui
-  # qui INCLUT la mauvaise journee du 14/09 ; sans elle il vaudrait +0,1427 :
-  #
-  #     mise     peage median   avantage net   EUR par jour
-  #      50 EUR       1,33 %        +0,0724         +72,40
-  #     100 EUR       2,65 %        +0,0593        +118,53
-  #     140 EUR       3,68 %        +0,0489        +136,86
-  #     160 EUR       4,20 %        +0,0437        +139,92   <-- sommet
-  #     200 EUR       5,22 %        +0,0335        +134,01
-  #     300 EUR       7,69 %        +0,0088         +50,71
-  #     340 EUR          --          0,0000              0   l impact mange tout
-  #
-  # Le sommet est PLAT entre 140 et 200 EUR : la precision n a pas d importance dans cette bande.
-  # Au-dela de 340 EUR la strategie devient perdante par construction, pas par malchance.
-  #
-  # Un « optimum » apparent a 750 EUR a ete ECARTE : a cette taille le garde-fou ne laisse passer
-  # que 26 % des jetons, uniquement les pools geants, et le peage median baisse parce qu on change
-  # de population -- pas parce que c est meilleur. Or sur le carnet reel les pools au-dessus de
-  # 150 SOL rapportent -0,020. Appliquer un avantage mesure sur une population a une autre est
-  # l erreur qui a tue trois decouvertes cette semaine.
-  #
-  # POURQUOI 120 ET NON 160, alors que le sommet est a 160. Parce que le sommet est PLAT et que
-  # l avantage est encore imprecis (intervalle -0,058 a +0,208). Les deux mises comparees sur toute
-  # la plage d incertitude :
-  #
-  #     hypothese sur l avantage        120 EUR      160 EUR     ecart
-  #     sans le 14/09      (+0,1427)   +298,46      +364,88     +66,43
-  #     avec le 14/09      (+0,0724)   +129,74      +139,92     +10,19   <-- le cas retenu
-  #     deux fois pire     (+0,0300)    +27,98        +4,24     -23,73
-  #     avantage nul        (0,0000)    -44,02       -91,76     -47,73
-  #     borne basse        (-0,0580)   -183,22      -277,36     -94,13
-  #
-  # Au cas retenu, 160 EUR ne rapporte que 10 EUR de plus par jour -- 7 % du gain -- et perd
-  # nettement plus partout ailleurs. Le seuil de bascule le dit mieux encore :
-  #     120 EUR devient perdant si l avantage tombe sous +0,0183 (soit -75 % du mesure)
-  #     160 EUR devient perdant si l avantage tombe sous +0,0287 (soit -60 %)
-  # On achete donc 15 points de marge avant bascule pour 7 % de gain abandonne.
-  #
-  # Le capital envoye n est pas perdu pour autant : a 120 EUR il porte 5 lignes simultanees au lieu
-  # de 3, donc aucun achat refuse faute de fonds aux heures de fort flux.
-  #
-  # 120 -> 20 EUR le 14/09, sur decision de l operateur apres une nouvelle serie perdante. Le
-  # raisonnement est le bon et il est deja ecrit plus haut : ON APPREND AU NOMBRE DE TICKETS, PAS
-  # AU NOMBRE D EUROS. Les 35 tickets qui manquent pour trancher l avantage arrivent a la meme
-  # date a 20 EUR qu a 120, et une journee comme celle du 14/09 y coute 49 EUR au lieu de 293.
-  #
-  # 20 -> 120 EUR le meme jour, avec le filtre « trois signes » active en meme temps. Les quatre
-  # combinaisons, avantage du groupe filtre mesure sur nos 35 tickets reels (+0,128 par euro),
-  # impact du passage a 120 EUR retire (l ordre pese alors 3,2 % du pool median au lieu de 0,5) :
-  #
-  #     combinaison               tickets/j   EUR/jour   journee 14/09   jours pour 100
-  #     sans filtre ·  20 EUR        22,0      +18,29       -78,62           1,5
-  #     AVEC filtre ·  20 EUR        12,8      +32,73       -44,58           2,6
-  #     sans filtre · 120 EUR        22,0      +39,46      -471,71           1,5
-  #     AVEC filtre · 120 EUR        12,8     +155,39      -267,46           2,6
-  #
-  # J avais recommande « filtre a 20 EUR » : elle domine « sans filtre a 20 » sur les deux criteres
-  # a la fois, et ne parie que sur une chose. L operateur a choisi 120 apres avoir lu ce tableau et
-  # la reserve qui l accompagnait -- que le filtre a UN JOUR d existence et que l avantage de base
-  # n est pas etabli avant 100 tickets. C est sa decision, elle est prise en connaissance de cause.
-  #
-  # 120 -> 60 EUR le 14/09 au soir. L OPERATEUR A POSE LA QUESTION QUE JE N AVAIS JAMAIS TRAITEE :
-  # « il reste 475 EUR, trois positions a 120 qui vont a zero et on a plus rien ». Tous mes calculs
-  # precedents maximisaient une ESPERANCE, et une esperance ne voit pas la ruine : une strategie
-  # gagnante peut tuer le capital avant d avoir eu le temps de gagner, et alors elle n a plus de
-  # support pour s exprimer.
-  #
-  # Tirage de 20 000 semaines dans la distribution REELLE de nos tickets, en partant de 475 EUR,
-  # avec arret des que le capital ne permet plus de jouer (gain net, hors capital de depart) :
-  #
-  #     mises TG/propre   ruine   gain median   gain/jour   pire 5 %
-  #     120 / 30 EUR      9,8 %      +2 647       +378        -424
-  #      90 / 30 EUR      4,9 %      +2 625       +375        +262
-  #      60 / 30 EUR      1,9 %      +2 563       +366      +1 211   <-- retenu
-  #      40 / 20 EUR      0,2 %      +1 710       +244        +877
-  #
-  # 84 EUR de gain median abandonnes sur la semaine -- 3 % -- pour faire passer le mauvais scenario
-  # de -424 a +1 211 EUR et diviser le risque de ruine par cinq. Ce n est pas un arbitrage, c est
-  # un cadeau qu il fallait juste penser a demander.
-  #
-  # LA RAISON EST MECANIQUE : le gain vient surtout du carnet propre, 166 tickets par jour, que ce
-  # changement ne touche pas. Telegram n en fait que 13 : il porte tout le risque de ruine sans
-  # porter l essentiel du gain. Descendre plus bas coute vraiment, parce qu il faudrait alors
-  # descendre aussi le carnet propre (1 710 au lieu de 2 563 a 40/20).
-  mise_eur: 60.0
-  # Le vrai frein n est pas ce nombre, c est le SOLDE : avant chaque achat reel le moteur verifie
-  # que le portefeuille peut payer la mise plus la reserve, et se tait sinon. La capacite suit donc
-  # les fonds toute seule, sans qu il faille revenir ici a chaque virement (operateur, 12/09 :
-  # « c est pas grave je vais alimenter »). Ce nombre ne sert plus qu a borner le pire cas.
-  max_lignes_simultanees: 6
-  reserve_sol: 0.02            # gardee pour les frais des ventes en cours
-  # LA BANDE DE TAILLE DE POOL, appliquee le 13/09 sur decision de l operateur. Mesure sur 212
-  # jetons Telegram coupes en deux : 60-85 SOL donne +0,441 / +0,274 (sans best +0,238, hasard
-  # 0,0 %) contre +0,176 / +0,179 pour tout prendre. Confirme sur nos 29 tickets reels : les 19 de
-  # la bande ont gagne 141,48 EUR, les 10 hors bande en ont perdu 31,71.
-  # Sous 60 SOL le pool median fait 1,5 SOL et notre ordre y vaut 29 % d impact. Au-dessus de
-  # 100 SOL on gagne 3 fois sur 4 et on ne gagne rien. 0 = pas de borne.
-  # RETIRE le 13/09 apres analyse rigoureuse. La bande avait ete choisie en regardant les deux
-  # moities ; choisie honnetement sur la seule moitie de recherche elle vaut 40-100 SOL, et jugee
-  # sur l autre moitie elle rapporte MOINS que tout prendre en euros totaux (0,116 et 0,122 contre
-  # 0,128), parce qu elle jette 40 % du flux pour un gain par euro qui ne compense pas. Test du
-  # hasard a 6,6 %, sous le seuil habituel. Le groupe hors bande vaut zero a l incertitude pres.
-  # 0 = pas de borne.
-  pool_min_sol: 0
-  pool_max_sol: 0
-  # ---- SECONDE REGLE, ajoutee le 13/09 : « ne pas acheter ce qui monte deja » ----
-  # Balayage systematique sur 3 447 lancements coupes en deux :
-  #     tout          n=3 447   recherche -0,006  JUGEMENT +0,028  hasard 100 %
-  #     hausse <= 0   n=1 322   recherche +0,050  JUGEMENT +0,118  hasard  0,1 %
-  # Elle porte sur 39 % du flux au lieu de 6 % pour Telegram, donc cinq fois plus d euros au total.
-  # MAIS sa forme est inverse : 37 % de gagnants, mediane -12 %, meilleur ticket x30 -- une loterie.
-  # D ou une mise separee et plus petite, et des comptes separes dans les messages.
-  # COUPEE le 13/09 au soir, deux heures apres son activation. Le signal est reel sur le PRIX des
-  # reserves, mais il vit dans des pools qu on ne peut pas acheter : pool median 0,3 SOL, soit 28
-  # EUR, ou un ordre de 10 EUR vaut 36 %% du pool. Une fois exigee une taille achetable :
-  #     pool >= 0       JUGEMENT +0,148   sans best +0,105   (theorique, non executable)
-  #     pool >= 1,5 SOL JUGEMENT +0,076   sans best +0,027
-  #     pool >= 5 SOL   JUGEMENT +0,046   sans best -0,006
-  # Les trois premiers candidats reels ont ete refuses a 61, 73 et 81 %% d impact. Le backtest est
-  # un majorant : il ignore qu on ne peut pas transiger la ou il mesure (discipline, S6).
-  regle_hausse: false
-  hausse_max: 0.0          # on achete si le prix a l entree est <= au premier releve
-  mise_hausse_eur: 10.0    # mise pour un signal « n a pas monte » (50 EUR pour Telegram)
-  # ---- TROISIEME REGLE, EN OBSERVATION A BLANC depuis le 13/09 au soir ----
-  # « petite capitalisation ET gros pool » : un jeton dont la liquidite est enorme par rapport a ce
-  # qu il vaut. Sortie d un balayage de 1 866 combinaisons, SEULE a survivre au seuil corrige pour
-  # le test multiple : 0 sur 100 000 tirages contre un seuil de 0,0027 %%.
-  #     sortie 4 min  recherche +0,210  JUGEMENT +0,325  sans best +0,150
-  #     sortie 5 min  recherche +0,334  JUGEMENT +0,367  sans best +0,205
-  #     sortie 6 min  recherche +0,191  JUGEMENT +0,504  sans best +0,320
-  # Quatre quarts de periode positifs, et independante de Telegram (2 de ses 125 jetons en ont un).
-  # ELLE RESTE A BLANC tant qu elle n a pas tenu sur des jetons neufs : n=125 sortis de 1 866
-  # essais, meme corrige un survivant peut etre une coincidence. C est la verification qui a manque
-  # a la regle de hausse, activee trop vite et coupee deux heures apres.
-  # COUPEE le 14/09 : la decouverte etait un ARTEFACT DE DONNEE. Les pools « geants » qui la
-  # portaient ont un second jeton qui n est pas du SOL, donc `reserve_sol` comptait des unites
-  # d autre chose -- 2 060 964 « SOL » soit 200 M EUR pour un jeton a 43 000 $. Verifie sur la
-  # chaine. Les deux conditions sont en realite incompatibles : 0 des 14 jetons a gros pool de la
-  # nuit avait une capitalisation sous 166 000 $. La regle n a d ailleurs jamais tire en 9 h.
-  # Le collecteur verifie desormais que le second compte est bien du WSOL (prix_chaine.py).
-  # MORTE, verifie le 14/09 apres assainissement complet (intel.research.pools_propres : les 4 587
-  # pools de l historique etiquetes sur la chaine, 9,9 % non adosses au SOL ; offre reelle de
-  # chaque jeton, qui n est PAS constante -- 7,6e8 a 2e9). Rejugee sur 2 656 tickets executables,
-  # coupure sur la date de naissance, sortie a 4, 5 et 6 min :
-  #     regle complete          0 ticket dans les deux moities, aux trois sorties
-  #     mcap < 166 k$ seule     -0,012 en jugement   (NEGATIVE : sens inverse de la decouverte)
-  #     pool >= 468 SOL seule   -0,008 en jugement
-  # Et l arithmetique dit pourquoi les deux conditions ne peuvent pas coexister : sur un pool a
-  # produit constant, mcap / pool_sol = offre / reserve_base. Ce ne sont pas deux signaux mais une
-  # seule variable structurelle. Ne pas reactiver : ces trois reglages ne sont gardes que pour que
-  # le journal (S3.74) reste lisible.
-  regle_mcap: false
-  mcap_max_usd: 166000
-  # ---- QUATRIEME REGLE, ACTIVEE le 14/09 : le filtre « TROIS SIGNES » (S3.79) ----
-  # Trois verifications faites AVANT T+90 s sur les reserves que le collecteur lit deja, donc
-  # aucun appel de plus et aucune latence :
-  #     P  le prix a l entree est au-dessus de son premier releve, d au moins +0,7 %
-  #     C  il n est JAMAIS descendu sous ce premier releve
-  #     L  la liquidite du pool a grossi d au moins +0,35 %
-  # On n achete que si les TROIS sont vrais. Le verdict note lesquels manquent (ex. « P-L »).
-  #
-  # L INVERSION EST LE POINT. Sur la population generale ces signes designent les lancements qui
-  # se font VIDER cinq fois plus (S3.66) : monter tout droit sans jamais reculer ressemble a une
-  # mise en scene. Chez les jetons porteurs d un Telegram, le meme profil designe les BONS.
-  #
-  # Contraste entre ce qui est garde et ce qui est jete, quatre echantillons :
-  #     nos tickets REELS     35 a +0,128  contre  25 a -0,079    +0,206
-  #     simules Telegram      26 a +0,202  contre  36 a -0,082    +0,285
-  #       dont recherche      11 a +0,227  contre  20 a -0,163    +0,389
-  #       dont JUGEMENT       15 a +0,184  contre  16 a +0,018    +0,166
-  # Meme signe partout, jugement compris. Hasard porte sur le contraste : 1,8 % tout reuni.
-  #
-  # Jour par jour il change de +15 et +3 EUR les deux bons jours et de +202 EUR le mauvais : il
-  # coupe la traine sans rogner les ailes, l inverse de tous les filtres enterres cette semaine.
-  # COUT : 58 % des achats conserves, donc pres de deux fois plus de temps pour trancher
-  # l avantage de base.
-  #
-  # RESERVE, ecrite le jour meme de l activation : ce filtre a UN JOUR d existence. Il ne s applique
-  # qu a la methode `telegram`. Un historique trop court ne fait PAS refuser -- « pas mesurable »
-  # n est pas « pas propre », et les confondre fausserait le comptage de ce que le filtre ecarte.
-  regle_propre: true
-  # ---- CINQUIEME REGLE, ACTIVEE le 14/09 : le carnet « PROPRE », SANS Telegram ----
-  # Les memes trois signes, mais appliques aux jetons qui n ont PAS de Telegram. Question posee par
-  # l operateur apres l activation du filtre : marche-t-il ailleurs ? Reponse mesuree, et elle
-  # renverse la hierarchie :
-  #
-  #     categorie                  n      garde              jette            contraste   hasard
-  #     TELEGRAM                 206   81 a +0,190      125 a +0,147            +0,043     33,6 %
-  #     sans Telegram          2 436  977 a +0,014    1 459 a -0,047            +0,061      0,08 %
-  #     twitter, sans TG       1 469  615 a +0,018      854 a -0,053            +0,070      0,94 %
-  #     site, sans TG          1 194  493 a +0,026      701 a -0,055            +0,080      1,00 %
-  #
-  # Le filtre capte une propriete GENERALE du marche, pas un trait propre a Telegram -- et sur les
-  # seuls jetons Telegram il n est meme pas significatif (206 tickets, moities qui basculent). Hors
-  # Telegram il l est franchement, sur 2 436 tickets et avec des moities stables (+0,060 / +0,064).
-  #
-  # RENDEMENT MOINDRE, FLUX DIX FOIS PLUS GROS. +0,023 par euro contre +0,128 chez Telegram, mais
-  # 166 tickets par jour contre 13. Et son pool median est de 370 SOL contre 78 : a 30 EUR notre
-  # ordre y pese 0,09 % et le peage ne bouge quasiment pas avec la taille -- c est l inverse du
-  # carnet Telegram, ou l impact fixe l optimum a 120 EUR.
-  #
-  # LA MISE, mesurée sur les six jours de collecte (chiffres SANS le 10/09, journee dominee par un
-  # ticket x316 sur un pool de 2,5 SOL, invendable en pratique) :
-  #     10 EUR  +0,0153 par euro   +24,32/jour
-  #     20 EUR  +0,0205            +64,44
-  #     30 EUR  +0,0230           +107,81   <-- retenu, meilleur par euro ET meilleur sans best
-  #     50 EUR  +0,0219           +170,71
-  #
-  # PLAFOND DEDIE. Ce carnet porte dix fois plus de tickets pour cinq fois moins par euro : sans
-  # borne il remplirait les six lignes et affamerait les achats qui rapportent le plus. Il ne peut
-  # donc pas occuper plus de `max_lignes_propre` lignes a la fois.
-  regle_propre_seule: true
-  mise_propre_eur: 30.0
-  max_lignes_propre: 3
-  mcap_pool_min_sol: 468
-  mise_mcap_eur: 50.0      # mise FICTIVE : cette regle ne signe jamais
-  max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
-  # Heures UTC ou l on n achete pas. 20h-24h UTC porte le plus de lancements (726 sur 3 jours) et
-  # le moins de Telegram (3,2 %, contre 10,4 % entre 08h et 12h) : population de createurs
-  # differente. La rentabilite y est negative des deux cotes de la coupure (-0,207 puis -0,039) et
-  # l ecarter ameliore les deux moities. Mesure sur 23 jetons seulement -- a remesurer quand la
-  # collecte aura double. Liste vide = on achete a toute heure.
-  # VIDE : on achete a toute heure. L operateur avait demande de MESURER l effet de l heure, pas de
-  # couper les achats ; je l avais applique de moi-meme le 12/09 a 21h, il l a annule. La mesure
-  # reste ci-dessus, disponible s il decide un jour de s en servir.
-  heures_exclues: []
-  peage_pct: 2.0               # aller-retour, pour le calcul a blanc seulement
-  # Les messages de cette strategie vont dans le canal « Trading DEX » de l operateur, pas dans le
-  # fil qui porte les alertes du portefeuille : a soixante tickets par jour, les melanger rendrait
-  # les deux illisibles. Une VENTE QUI ECHOUE part meme si `alertes` est coupe.
-  alertes: true
-  # Ou arrivent les messages. Un identifiant negatif est un canal ou un groupe ; un identifiant
-  # positif est une conversation privee, et il vaut alors l identifiant de l utilisateur.
-  canal: "1047701515"
-  # Le robot qui signe l envoi : « TradingDEX », alias @shamsouR_bot, celui sous lequel l operateur
-  # recoit deja ses messages. On ne nomme QUE l endroit ou lire le jeton, jamais le jeton lui-meme,
-  # ce fichier etant versionne. `TELEGRAM_BOT_TOKEN_BIS` est dans le `.env` depuis un mois.
-  jeton_variable: TELEGRAM_BOT_TOKEN_BIS
-  jeton_fichier: /app/data/.telegram_token_tradingdex   # secours si la variable disparait
-  slippage_achat_pct: 20.0
-  slippage_vente_pct: 25.0
-  # PLAFOND D ECART ENTRE LA COTATION ET NOTRE PROPRE LECTURE DU POOL, ajoute le 14/09.
-  #
-  # `slippage_achat_pct` ne protege pas de ca : il borne la derive entre la cotation et
-  # l atterrissage de la transaction, PAS l ecart entre cette cotation et le vrai prix du marche.
-  # Si le routeur cote 60 % trop cher, on signait sans broncher.
-  #
-  # Mesure du 14/09 sur 60 tickets reels -- prix effectif lu dans la transaction confirmee
-  # (SOL depenses / jetons recus) contre prix du pool au meme instant :
-  #     ecart median +5,8 %  ·  p75 +16,9 %  ·  p90 +32,8 %  ·  max +74,0 %
-  #
-  # Et les trois plus grosses pertes de la journee sont trois achats payes trop cher :
-  #     gptstonks  +59,4 %  ->   -90,15 EUR
-  #     BEMJAK     +47,3 %  ->   -87,37 EUR
-  #     IRONMIKE   +27,8 %  ->   -42,89 EUR
-  # Ce n etait pas le signal qui etait mauvais, c etait le prix d entree.
-  #
-  #     seuil de refus   refuses   total des 60 tickets
-  #     aucun (avant)       0 %          -52,58 EUR
-  #     plus de 30 %       10 %         +110,83 EUR
-  #     plus de 20 %       18 %         +130,02 EUR   <- retenu
-  #     plus de 15 %       25 %         +100,20 EUR
-  #     plus de 10 %       40 %          -54,25 EUR   (jette trop, l avantage part avec)
-  #
-  # Ce controle ne coute AUCUN appel reseau : le prix du pool est deja lu toutes les dix secondes
-  # par le collecteur, et c est precisement sa valeur -- il ne depend d aucune promesse du routeur.
-  # 0 = desactive.
-  max_ecart_pool_pct: 20.0
-  max_impact_pct: 15.0
-  # « peut-on ressortir ? » : on cote la revente AVANT d acheter. Cinq pools sur vingt-cinq sont
-  # invendables a notre taille (mesure du 09/09) et causent 25 % des tickets aneantis. La mesure qui
-  # justifie cette strategie lit des reserves, qui ne disent rien de la contrepartie.
-  max_aller_retour_pct: 15.0
-  # `null` = le portefeuille DU ROBOT (cle prise dans l environnement), pas « aucune cle ». Mettre
-  # ici un chemin de fichier designerait un autre portefeuille. Le portefeuille manuel de
-  # l operateur n est pas utilise : une erreur du robot ne doit pas pouvoir y toucher.
-  cle_fichier: null
-  # VENTE SUR CASCADE, ajoutee le 15/09 (intel/engines/vente_cascade.py). Lit le pool de chaque
-  # position ouverte toutes les secondes et vend tout de suite si le prix tombe de `seuil_pct` sous
-  # son plus haut des `fenetre_s` dernieres secondes.
-  #
-  # Mesure qui la justifie, carnet reel : un vidage est une cascade de quelques secondes, pas une
-  # vente. Prix obtenu selon notre delai (carnet propre) : 1,6 s -46 % · 3,2 s -49 % · 10 s -68 %.
-  # Le moteur lisait toutes les 10 s et vendait a 240 s : il encaissait tout.
-  #
-  # LE SEUIL, sur les lectures a 10 s pendant la detention :
-  #     chute    vidages vus    bons jetons vendus pour rien   cout median sur ceux-la
-  #     15 %       20 / 22           33 / 123 (27 %)                -14 %
-  #     20 %       20 / 22           22 / 123 (18 %)                -14 %
-  #     30 %       20 / 22           12 / 123 (10 %)                -10 %
-  # 30 % attrape autant de vidages et vend trois fois moins de bons jetons. Estimation du gain :
-  # le carnet propre passe d environ -0,03 a environ 0 par euro. Ca arrete la perte, ca ne cree pas
-  # l avantage. A remesurer sur les transactions (`tg_cascade` note chaque declenchement).
-  #
-  # mode : off | papier (note sans vendre) | live (vend)
-  vente_cascade:
-    mode: papier
-    seuil_pct: 30.0
-    fenetre_s: 10.0
-    periode_s: 1.0
-    slippage_pct: 40.0          # sortir a -40 % vaut mieux que rester a -90 %
-    priorite_lamports: 200000   # 0,0002 SOL : rien a cote de ce qu une seconde coute pendant un crash
-    reessai_s: 2.0
-    max_essais: 5
-
-# ---------------------------------------------------------------------------
-# Collecte BNB Chain, LECTURE SEULE. N achete rien, ne signe rien, aucune cle BNB.
-#
-# Raison d etre : on ne peut PAS rejouer l historique de four.meme, parce que les liens Telegram
-# y vivent dans leur base de donnees et que le createur peut les ajouter apres coup -- un backtest
-# y lirait le futur. La seule sortie est de fabriquer la donnee propre : voir la creation sur la
-# chaine, puis relever les liens NOUS-MEMES a T+60 et horodater ce relevé. Apres deux ou trois
-# jours l historique ainsi constitue est honnete. Voir intel/engines/bnb_collecte.py.
-bnb_collecte:
-  # ARRETE le 13/09 sur une conclusion FAUSSE, et relance le 14/09.
-  #
-  # Le 13/09 j avais ecrit : « 6 766 creations, 53 928 releves, ZERO lien social a tous les ages,
-  # l information n existe pas au moment de decider ». Ce zero ne disait rien de BNB : il disait
-  # que la source interrogee ne porte pas cette information. Pour un jeton four.meme encore sur sa
-  # courbe, DexScreener renvoie bien une paire -- les 54 228 releves en ont une -- mais sa reponse
-  # n a AUCUN bloc `info` : ni prix, ni liquidite, ni reseaux. Verifie cle par cle le 14/09.
-  #
-  # La bonne source est l API de four.meme. Sondage du 14/09 sur 90 jetons :
-  #     Telegram 40 a 44 %   twitter 87 a 89 %   site 64 a 71 %
-  #     (Solana, pour comparaison : 3,7 %, 42 %, 20 %)
-  #
-  # CE QUI NE VEUT PAS DIRE QUE LA REGLE Y MARCHERA -- au contraire, c est la question ouverte. Sur
-  # Solana la force du signal tient en partie a sa RARETE : 3,7 % des jetons le portent. Un lien
-  # present sur 40 % des jetons ne trie presque rien. Il faut donc la collecte horodatee pour
-  # mesurer, et non l intuition.
-  #
-  # ET L HORODATAGE RESTE VITAL : ces liens sont dans la base de four.meme, modifiables apres coup.
-  # Ecart mesure entre 8-24 h (40,0 %) et plus de 24 h (44,4 %) -- faible mais non nul, et la
-  # tranche qui compte, moins de 2 h, manquait faute de collecte.
-  enabled: false
-  pas_secondes: 20
-  rpc: "https://bsc.publicnode.com"   # `bsc-dataseed` refuse eth_getLogs (limit exceeded)
-  max_blocs: 200                      # apres un arret, on ne rattrape pas au-dela
-
-# ---------------------------------------------------------------------------
-# La phase AVANT graduation. LECTURE SEULE, n achete rien, aucune cle.
-#
-# pump.fun cree 30 600 jetons par jour sur sa courbe de bonding, dont 1 100 seulement graduent --
-# et nous ne touchons que ces 1 100. C est pourtant sur la GRADUATION que porte l effet publie
-# (Kamat 2026 : le Telegram multiplie par 8,94 la probabilite de graduer).
-#
-# Premiere mesure visee, sans aucun suivi de prix : quelle part des jetons CREES porte un Telegram ?
-# On sait deja que 6,5 % des DIPLOMES en portent un. Le rapport donne le multiplicateur.
-# Sondage du 13/09 sur 45 creations : 2,2 %, donc x2,9. Trop peu pour conclure.
-pump_courbe:
-  enabled: false
-  pas_secondes: 20
-  slots_par_cycle: 40     # ~16 s de chaine par cycle : on echantillonne, on ne recense pas
-  max_slots: 300          # apres un arret on ne rattrape pas au-dela
-  # 0,35 -> 0,60 le 14/09. Sur 18 h la collecte n a lu que 3 327 fiches sur 10 128, dont 54
-  # portaient un Telegram. Le test direct « une creation avec Telegram gradue-t-elle plus ? »
-  # a donc donne 2 graduations sur 54, soit un intervalle de 0,5 % a 13 % autour de 3,70 % --
-  # incapable de distinguer le taux de base (3,82 %) du multiplicateur x4,5 annonce par la
-  # litterature. Ce n est pas un resultat, c est un manque d echantillon.
-  part_lue: 0.60          # part des creations dont on lit la metadonnee (IPFS sature au-dela)
-  # 15 -> 45 min le 14/09. Mesure du meme jour sur 152 graduations appariees : mediane 8 min,
-  # mais p75 a 25 min et p90 a 119 min. A 15 min on tronquait 33 % des graduations, et le
-  # rendement de ces lignes etait solde au prix de la 15e minute au lieu de leur graduation --
-  # ce qui rend toute mesure d une strategie « acheter sur la courbe » pessimiste sans qu on
-  # sache de combien. A 45 min on en couvre ~82 %.
-  suivi_minutes: 45       # duree de suivi du prix SUR LA COURBE apres creation
-  # BUDGETS DE TEMPS, ajoutes le 14/09 apres un GEL du collecteur. `_fiche` essaie neuf passerelles
-  # IPFS a 15 s chacune -- 135 s au pire pour un seul jeton -- et rien ne majorait le total. Apres
-  # le passage de part_lue de 0,35 a 0,60, un cycle a mis 233 s puis le suivant s est fige :
-  # collecteur muet 25 minutes, SANS AUCUNE ERREUR au journal, parce qu une attente infinie ne leve
-  # rien. La production n a pas ete touchee (les cycles sont independants) mais la mesure etait
-  # perdue, et rien ne l aurait signale.
-  # Ce qui n est pas lu dans le budget n est jamais lu : c est voulu. La mesure est un SONDAGE,
-  # perdre des lectures au hasard ne la biaise pas ; perdre tous les cycles la tuerait.
-  budget_blocs_s: 40      # lecture des blocs
-  budget_social_s: 25     # lecture des metadonnees IPFS
-  budget_prix_s: 30       # suivi des prix sur la courbe
-
-# ---------------------------------------------------------------------------
-# MODELE RAPIDE : « au plus bas » ET bande de risque 0,20-0,35, sortie a 240 s.
-#
-# POURQUOI IL EXISTE. Le moteur ne savait faire qu une regle -- Telegram a T+60 avec stop a -30 %
-# et prise de gain a +50 % -- alors qu une dizaine de regles tournaient en papier sans pouvoir etre
-# essayees. Rejouee sur la periode ou elle a vraiment tourne, la regle Telegram donne -7,73 % par
-# ticket et le carnet reel a fait -6,44 % : les deux concordent, elle est bien perdante.
-#
-# CE QUI EST BRANCHE ICI :
-#   depuis_min == 0        le prix a 45 s EST son plus bas depuis la naissance (journal §3.116) ;
-#                          gains >= +50 % multiplies par 2,32 (p < 0,0001), catastrophes inchangees
-#                          (x1,20, p = 0,232). Seule variable du projet qui separe la vie du danger.
-#   0,20 <= risque < 0,35  la bande de probabilite de vidage (§3.100).
-#   sortie a 240 s         SANS stop ni prise de gain. Mesure : sur la meme regle, tenir aveuglement
-#                          donne +7,24 % ; le stop seul ramene a +2,11 %, la prise de gain seule a
-#                          +5,10 %, les deux a +0,62 %. Ils coutent 6,6 points par ticket.
-#
-# CE QU ON VIENT MESURER, et c est le POINT : pas gagner au premier coup, mais obtenir les faits que
-# le papier ne donne pas -- le cout d execution d AUJOURD HUI (le 2,62 date du 12-15/09 et n est
-# qu extrapole depuis), si les ordres atterrissent, si l on se fait sandwicher. L operateur a
-# explicitement accepte de perdre jusqu a ~150 EUR pour ces faits.
-#
-# HONNETETE : la regle a ete gelee le 18/09 a 11h30 et n a AUCUN ticket hors echantillon. Ses
-# +5,30 % par ticket sont les chiffres qui l ont fait choisir, pas une validation -- c est
-# exactement ce qu affichait la bande (+3,90 %) avant de mourir. Son verdict tombe a 1 200 tickets.
-#
-# IL FAUT TROIS CHOSES POUR QU IL ACHETE : `enabled: true`, `mode: live`, et une cle presente.
-# Tant que l une manque, il decide, enregistre dans `mr_lignes`, et n envoie RIEN.
-modele_rapide:
-  enabled: true
-  # PASSAGE EN REEL le 18/09 sur autorisation explicite de l operateur (« fait le, le .env contient
-  # deja les cles et t as l autorisation »). Objectif ASSUME : mesurer ce que le papier ne donne
-  # pas -- le cout d execution d AUJOURD HUI, si les ordres atterrissent, si l on se fait
-  # sandwicher -- et non gagner au premier coup. Portefeuille au moment du passage : 1,8886 SOL,
-  # soit ~174 EUR. Le plafond de perte de 150 EUR est celui que l operateur a accepte.
-  # DEBRANCHE le 20/09 a 19h30 sur instruction de Mido : « en attendant debranche la prod et
-  # travaille ». Le moteur continue de DECIDER et d ENREGISTRER -- on ne perd pas le flux de
-  # donnees -- mais il n envoie plus aucun ordre. Zero euro engage a partir d ici.
-  #
-  # POURQUOI. J ai bascule le modele en production sur une recette que Mido n avait pas choisie :
-  # il avait dit « on bascule la meilleure », les meilleures (FORET 75s, 6/6 criteres) ne sont pas
-  # branchables a 47 s, et j ai substitue le seul candidat deployable -- qui score **2 sur 6**,
-  # perd -2,15 EUR/ticket et dont la courbe n est jamais remontee sur 358 tickets. Je me suis
-  # appuye sur UN chiffre (+1,42 sigma sur 268 tickets, 14 h) en ignorant la grille a six criteres
-  # que j avais construite le jour meme pour empecher exactement ce choix. Cout : -45,75 EUR en
-  # une heure. Pour remettre en reel : `mode: live`.
-  #
-  # REMIS EN REEL le 21/09 a 09h50 sur instruction de Mido (« Passe en reel »), avec la regle
-  # `bande` -- BANDE + PAUSE. CE QUI EST PROUVE ET CE QUI NE L EST PAS, pour que personne n ait a
-  # le rededuire : sa QUEUE est prouvee (test hypergeometrique exact, p = 0,000 a 0,040 : elle
-  # attrape les gros gains plus qu un tirage au sort de meme taille) et son rapport gains/pertes
-  # passe de 1,00 a 1,35 avec la bande puis a 1,80 avec la pause. Son NIVEAU ne l est PAS :
-  # +1,27 sigma sur son propre ecart-type (20,55), pas les +2 exiges ; il faudrait ~266 tickets,
-  # soit ~4,8 jours, pour trancher. On ne bascule donc pas sur une certitude, on bascule sur la
-  # seule regle qui ait montre un gain et parce que le compteur de couts d execution ne tourne
-  # qu en reel -- c etait la raison donnee par Mido : « sinon on aura plus les couts ».
-  #
-  # NETTOYAGE PREALABLE, meme jour 09h47 : deux positions REELLES etaient restees ouvertes 14 h
-  # parce que `_sortir` et `_compter` etaient conditionnes au mode courant (corrige, voir
-  # modele_rapide.py). Vendues -10,28 et -9,53 EUR ; a leur age de sortie prevu elles valaient
-  # +2,00 et +7,75 EUR brut. Cout du defaut : ~29 EUR.
-  #
-  # PORTEFEUILLE AU MOMENT DU PASSAGE : 0,65895 SOL, soit 67,88 EUR a 103,02 EUR/SOL. NOTER que
-  # `max_perte_jour_eur: 150` est alors SUPERIEUR au portefeuille : le plafond ne se declenchera
-  # jamais, c est le solde qui s epuisera d abord. Laisse tel quel volontairement -- j ai deja
-  # impose un plafond que Mido n avait pas demande et il a arrete le carnet en pleine journee.
-  # Ce chiffre lui appartient.
-  mode: live                   # paper | live
-  # LE CUMUL TELEGRAM REPART D ICI. Instant de mise en service de la methode courante :
-  # 21/09/2026 09h56 (Paris). Mido, le jour meme : « remets les chiffres a partir qu on a mis en
-  # place la nouvelle strat » -- un total qui melange `BANDE + PAUSE` aux 650 tickets des regles
-  # precedentes, dont une qui a perdu 45,75 EUR en une heure, ne peut pas dire si ce qui tourne
-  # AUJOURD HUI gagne. A CHANGER EN MEME TEMPS QUE `regle` OU `modele`, jamais separement : le
-  # total doit toujours porter sur UNE seule regle. Mettre 0 pour retrouver tout l historique.
-  # L ancien carnet n est pas efface pour autant -- il reste entier dans `mr_lignes`.
-  # ON NE REMET PAS A ZERO QUAND SEUL LE MODELE CHANGE. Mido, 26/09 : « on a pas change de strat, on
-  # change le modele ». Il a raison et la regle etait mal ecrite : ce qui doit rester continu, c est
-  # LA STRATEGIE -- `bande + pause`, tenue 240 s -- et elle est la meme avant et apres. Le modele est
-  # une piece interne, pas une methode : remettre le total a zero a chaque reentrainement le rendrait
-  # illisible, alors qu il existe justement pour dire si ce qu on fait gagne SUR LA DUREE.
-  #
-  # CE QU IL FAUT REMETTRE A ZERO, EN REVANCHE : un changement de REGLE (`regle`) ou de mise. C est
-  # le sens de sa demande du 21/09 (« on a toujours les chiffres anciens 256/658 ») -- elle portait
-  # sur le remplacement d une STRATEGIE par une autre, pas sur un reentrainement.
-  #
-  # 21/09 09h56 = mise en service de `bande + pause` en reel (§3.169). Le passage au modele frais le
-  # 26/09 a 12h38 NE COUPE PAS le compteur : meme strategie, autre modele.
-  cumul_depuis: 1789977360
-  # LE COUT AVEC LEQUEL LA PAUSE JUGE « -30 % », part fixe. Le moteur lisait `cout_reduit` du
-  # carnet papier, qui vaut 1,54 % en moyenne -- une hypothese optimiste (depot recupere, priorite
-  # baissee) ecrite avant qu on mesure le peage. Le peage REEL, lu sur 404 tickets d argent reel,
-  # est de 3,88 %. Un jeton ayant perdu 32 % apparaissait donc a -29,7 % et ne declenchait pas la
-  # pause : la regle deployee etait plus permissive que la regle mesuree, et les tickets accumules
-  # ne jugeaient donc pas la bonne regle. Constate le 22/09, trois achats de nuit hors regle,
-  # -15,69 EUR.
-  # A RECALIBRER A CHAQUE CHANGEMENT DE MISE, ce n est pas une constante universelle. Le terme
-  # d impact du pool est PROPORTIONNEL a la mise, donc la part fixe doit baisser quand la mise
-  # monte, sinon le peage total est surestime et la pause se declenche trop souvent.
-  #   mise 10 EUR : peage mesure 4,04 % - impact 0,178 % -> part fixe 0,03862
-  #   mise 20 EUR : peage mesure 3,88 % - impact 0,356 % -> part fixe 0,03524   <-- en service
-  # Les deux peages viennent du registre des couts, pas d une hypothese (le fixe pese deux fois
-  # plus a 10 EUR, d ou les 4,04 % contre 3,88 %).
-  # Verifie au deploiement a 10 EUR : accord EXACT avec la reference sur 1 259 tickets
-  # (ecart max 0,00) et +3,2 % de declenchements.
-  # RECALIBRE LE 26/09 POUR LA MISE DE 25 EUR. Ce seuil DOIT bouger avec la mise, sinon la pause ne
-  # juge plus « -30 % » sur le bon cout et se declenche a cote -- c est exactement l erreur du 22/09
-  # (le moteur lisait `cout_reduit` a 1,54 % quand le peage reel etait 3,88 %, d ou trois achats de
-  # nuit hors regle et -15,69 EUR).
-  # Seule la part FIXE se dilue : 0,1251 EUR/ticket, mesure sur 752 tickets reels a deux mises.
-  #     0,03524 - 0,1251 x (1/20 - 1/25) = 0,03399
-  # 27/09 : mise revenue a 20 EUR -> retour a la valeur MESUREE a 20 EUR ci-dessus.
-  pause_cout_fixe: 0.03524
-  # AU-DELA DE COMBIEN DE SILENCE DU CARNET PAPIER LA PAUSE BLOQUE-T-ELLE. La pause cherche les
-  # clotures des 30 dernieres minutes ; si `papier_combo` n ecrit plus, elle n en trouve aucune et
-  # l ancien code lisait ca comme « rien ne s est effondre, on peut acheter ». Le garde-fou
-  # disparaissait donc exactement pendant les pannes -- la coupure Helius du 21/09 a dure 102 min.
-  # Desormais : source muette au-dela de ce delai => on n achete pas. C est l absence
-  # d INFORMATION qui bloque, pas l absence de perte.
-  pause_fraicheur: 900
-  # LA REGLE EN SERVICE. `bas_bande` a d abord ete branchee sur la foi de +5,30 % par ticket, mais
-  # ce chiffre portait sur TOUTE la periode alors que la BANDE qu elle contient etait deja morte
-  # hors echantillon depuis son gel du 17/09 18h30. Coupe a cette date : -7,10 % par ticket et
-  # -16,91 % sans ses trois meilleurs, soit PIRE que le temoin (-3,57 %). Trois tickets reels
-  # perdus (-27,20 EUR) avant que l operateur ne pose la question qui l a revele.
-  #
-  # Sur cette meme periode hors echantillon, la moins mauvaise est `risque` : -0,11 % par ticket
-  # sur 408 tickets. Aucune n est positive -- on ne choisit pas une gagnante, on choisit celle qui
-  # coute le moins cher pendant qu on mesure l EXECUTION, qui est le seul but de cette reprise.
-  #
-  # Valeurs : risque | bas_bande | bas
-  regle: bande
-  # ================================================================================================
-  # 19/09 — LA FORET ALEATOIRE REMPLACE LE MODELE LIGHTGBM, ET LA MISE PASSE DE 20 A 10 EUR.
-  # Accord de Mido apres qu il ait pose la bonne question : « ce qu'on a en prod fait du gros
-  # negatif ». Il avait raison, et j exigeais des preuves pour CHANGER tout en n en exigeant aucune
-  # pour GARDER. Objectif fixe par lui : rester en prod pour apprendre, en perdant le moins possible.
-  #
-  # POURQUOI LA FORET. Le cout constant (pool + inexplique) est de 2,36 %, mesure sur 112 tickets
-  # reels decomposes au centime (`cout_registre.py`). Une regle dont le rendement BRUT est sous ce
-  # seuil perd mecaniquement, quoi qu on fasse. Sur les lignes a fort volume :
-  #     foret aleatoire   brut +3,41 %   459 tickets/jour   +1,45 sigma
-  #     risque (sortant)  brut +2,32 %   457 tickets/jour   +1,22 sigma
-  # Meme volume, donc meme apprentissage, mais la foret est la seule au-dessus du cout constant.
-  # Elle n est PAS prouvee (1,45 sigma) : c est le moins mauvais pari, pas une certitude.
-  #
-  # POURQUOI 10 EUR ET NON 20. Les frais de reseau sont FIXES (0,091 EUR/ticket), donc miser plus
-  # les dilue et l optimum calcule est a 27 EUR. Mais le pari est defavorable :
-  #     passer de 10 a 20 EUR rapporte +21,7 EUR/jour si la foret a un vrai edge
-  #                          et coute  -26,7 EUR/jour si elle n en a pas.
-  # A 1,45 sigma, « elle n en a pas » reste serieux. Le nombre de TICKETS ne depend pas de la mise :
-  # on achete la meme information pour moitie moins cher. Mido : « pourquoi 20 a la place de 10 ? ».
-  #
-  # CRITERE D ARRET, ECRIT AVANT DE BRANCHER (l erreur du frein etait de le fixer apres) :
-  #   - on coupe si la perte cumulee depuis ce changement atteint -150 EUR ;
-  #   - on coupe si, a 500 tickets reels, le rendement brut de la foret est sous 2,36 % ;
-  #   - on reevalue a 500 tickets dans tous les cas.
-  # Rien de tout cela ne se renegocie apres coup.
-  # ================================================================================================
-  # ================================================================================================
-  # BASCULE DU 20/09 au soir : LE MODELE SE REENTRAINE TOUTES LES 6 H.
-  #
-  # CE QUI A ETE MESURE, et c est la seule mesure en EUROS REELS du projet (§3.166, `arbitre_prod`).
-  # Sur les 268 tickets que le moteur a REELLEMENT achetes, la recette reentrainee en garde 244 et
-  # fait passer le carnet de -0,1248 a +0,0276 EUR/ticket. Ecart +0,1525 ; intervalle 95 % de
-  # -0,062 a +0,367 ; soit **+63 EUR/jour, intervalle -26 a +153**. Les 24 tickets qu elle ecarte
-  # valent -1,675 EUR piece. C est +1,42 sigma : NON PROUVE.
-  #
-  # POURQUOI ON BASCULE QUAND MEME, et la decision est celle de Mido, pas la mienne. Le risque n est
-  # pas symetrique : elle ne remplace pas le jugement du moteur, elle ECARTE 9 % de ce qu il prend.
-  # Si c est du bruit on trade 9 % moins et on ne perd rien ; si c est reel c est +63 EUR/jour.
-  # J avais oppose a ce raisonnement que « 2 sigma » n etait pas franchi -- mais 2 sigma est un
-  # seuil de PREUVE, pas un seuil de DECISION, et pour un changement dont le pire cas est borne
-  # c est l esperance qui tranche. Mido : « on bascule en prod la meilleure et pas de critere
-  # d arret ». Puis, apres que je lui aie signale qu il en existait un ci-dessus et que je m etais
-  # trompe en disant le contraire : « je m en fous du critere d arret du modele en prod, passe ».
-  # Le critere ecrit plus haut portait sur le modele FIGE ; il ne s applique plus a ce qui suit.
-  #
-  # CE QUI EST VERIFIE AVANT CHAQUE ECRITURE DU FICHIER (`prod_reentraine.py`) : l export sklearn
-  # -> JSON est rejoue contre sklearn sur 2 000 lignes, et rien n est ecrit si une seule decision
-  # differe. Dernier controle : ecart max 8,33e-16, 100 % de decisions identiques.
-  # L original du 15/09 est conserve : `foret_vidage_fige_15-09.json`. Y revenir = remettre les
-  # deux lignes ci-dessous a leur valeur d avant.
-  # ================================================================================================
-  # ================================================================================================
-  # BANDE + PAUSE, branchee le 21/09 sur decision de Mido.
-  #
-  # POURQUOI ELLE, ET POURQUOI MAINTENANT. Mido : « on doit mettre une methode en prod, sinon on
-  # aura plus les couts, et c est la seule qui a prouve de rapporter pour le moment ». Les deux
-  # raisons sont justes. Le registre des couts se nourrit des tickets REELS -- sans production il
-  # se fige (648 tickets, 20/09 19h13) et plus aucune strategie n est evaluable, puisque toutes
-  # sont jugees avec ce cout. Et c est la seule ligne du projet qui rapporte.
-  #
-  # CE QUI EST PROUVE, ET CE QUI NE L EST PAS -- les deux doivent etre dits.
-  #   PROUVE   elle SELECTIONNE mieux que le hasard : 25,2 % de gros gains contre 10 % au marche,
-  #            p = 0,000 sur 5 000 tirages a nombre de tickets egal. Ce n est pas de la chance.
-  #   NON PROUVE  qu elle GAGNE de l argent : +2,52 EUR/ticket sur 107 tickets, mais sa dispersion
-  #            propre est de 20,55 EUR -- huit fois son avance. Soit +1,27 sigma, et un bootstrap
-  #            dont l intervalle 95 % va de -1,21 a +6,47 (9,8 % des tirages sous zero). Il
-  #            faudrait 266 tickets, soit ~5 jours de plus, pour trancher.
-  #
-  # CE QUE J AI EU FAUX HIER, et qui explique pourquoi cette ligne avait ete ecartee : le critere
-  # « positive sans ses 3 meilleurs tickets ». Sur un marche ou 5 % des jetons portent 315 % du
-  # rendement (§3.156), il exige qu une strategie gagne SANS le mecanisme qui fait gagner. Mido :
-  # « sur des memecoins tu t attends a quoi, que ta selection fasse 100 % ? ». Le bon test est
-  # celui des gros coups contre le hasard, et elle le passe a p = 0,000.
-  #
-  # LA REGLE, ET LE PIEGE QU ELLE PORTE. `risque` doit venir de `modele_vidage.json` -- l export
-  # LightGBM -- parce que c est LUI qui definit la bande dans `papier_combo`. Brancher la foret
-  # donnerait un `risque` sur une autre echelle et [0,20 ; 0,35[ designerait d autres jetons, sans
-  # qu aucune erreur ne se voie.
-  #
-  # ET LA PAUSE LIT LE CARNET PAPIER, pas nos propres tickets : la regle mesuree se declenche sur
-  # le flux ENTIER de la bande, y compris les tickets qu elle a elle-meme ecartes. Un moteur qui ne
-  # regarderait que ses achats verrait moins de clotures et prendrait plus de tickets -- ce ne
-  # serait plus la meme regle. C est aussi le blocage circulaire deja constate sur le frein.
-  #
-  # POUR REVENIR EN ARRIERE : `regle: risque` et `pause_enabled: false`.
-  # ================================================================================================
-  age_decision: 45
-  tenue_secondes: 240
-  traits_75: false
-  pause_enabled: true
-  pause_secondes: 1800
-  pause_seuil: -0.30
-  # ================================================================================================
-  # 26/09 — LE MODELE PASSE A `B · MODELE FRAIS`, SUR DECISION DE MIDO, AVANT SON ECHEANCE.
-  #
-  # CE QUI EST MESURE. Sur la fenetre ou les deux sont HORS ECHANTILLON (2 227 tickets depuis le gel
-  # du 22/09), B gagne les SEPT criteres de `table_std2::_criteres` et la production en gagne ZERO :
-  #     EUR/ticket  +0,189 -> +2,297  ·  EUR/jour  +4,31 -> +67,07
-  #     2e moitie   -1,477 -> -0,243  ·  part portee par le top 3  1 035 % -> 69 %
-  #     part de l avance qui survit a ses 3 meilleurs : 0,00 -> 0,32
-  # Et B franchit les trois conditions de son gel : (a) +2,108 EUR/ticket sur les memes tickets,
-  # (b) positive, (c) p = 0,0037 contre le decalage circulaire. La production ne franchit pas (c).
-  #
-  # CE QUI NE L EST PAS, ET QUI EST DIT ICI PLUTOT QU APRES COUP :
-  #   - **l echeance du gel n etait PAS atteinte** : 101 tickets sur 200, 3,5 jours sur 14, et
-  #     `challenger.py` disait ATTENDRE. Mido a tranche deux fois. C est une decision prise CONTRE
-  #     le verdict du process, et elle est ecrite comme telle.
-  #   - l ecart n est pas significatif : IC95 de -2,31 a +3,22, p(B pas mieux) = 0,37.
-  #   - l ecart repose sur CINQ tickets ; celui de la production sur UN.
-  #   - le modele de B a une AUC PIRE sur les trois cibles. On ne decide pas sur l AUC -- Mido :
-  #     « le seul critere c est est-ce qu on gagne » -- mais le fait est note.
-  #   - sa selection AVANT pause est moins bonne (-0,987 contre -0,730) : tout son avantage passe
-  #     par la PAUSE (+2,232 sur +1,975), c est-a-dire par la partie qu on n explique pas.
-  #
-  # POUR REVENIR EN ARRIERE : remettre les trois lignes ci-dessous a `modele_vidage.json`,
-  # `bande: [0.20, 0.35]` et `combo_db: /app/db/papier_combo.sqlite`, ET `cumul_depuis`.
-  # ================================================================================================
-  # 27/09 08h — RETOUR A L ANCIEN MODELE. La bascule du 26/09 12h38 est annulee.
-  #
-  # POURQUOI, ET CE N EST PAS « parce que la nuit a ete mauvaise ». La nuit l a ete (-100,27 EUR sur
-  # 10 tickets, 8 perdants), mais le marche aussi (-1,823 EUR/ticket) et l ANCIEN modele aurait
-  # perdu egalement (-3,343 contre -7,074 pour le nouveau, sur le bras temoin).
-  #
-  # LA RAISON EST MECANIQUE. Decomposition de l ecart depuis la bascule :
-  #     selection (avant pause)   ancien -2,572  ·  nouveau -2,588   -> IDENTIQUES
-  #     apres la pause            ancien -4,177  ·  nouveau -8,840
-  #     ecart total -4,664 :  selection -0,016  ·  PAUSE -4,648
-  # **Les deux modeles selectionnent exactement aussi bien.** Tout l ecart vient de la PAUSE.
-  # Et c est le meme calcul qui, la VEILLE, donnait l avantage au nouveau : +2,232 par la pause,
-  # -0,257 par la selection. Mesure deux fois, deux signes opposes.
-  #
-  # DONC LA DIFFERENCE ENTRE CES DEUX MODELES N A JAMAIS ETE UNE DIFFERENCE DE SELECTION : c est un
-  # effet de calendrier de la pause -- quels effondrements elle voit, a quels instants elle bloque.
-  # Coherent avec le fait etabli que la pause n a AUCUNE information (P(crash|crash) = 0,364 contre
-  # 0,391 apres un ticket sain) : l ecart entre deux flux qui la nourrissent differemment est du
-  # bruit par construction.
-  #
-  # ON REVIENT DONC NON PARCE QUE L ANCIEN GAGNE, MAIS PARCE QUE LA BASCULE N ETAIT PAS JUSTIFIEE :
-  # `challenger.py` disait ATTENDRE (101 tickets sur 200) et on est passe outre. Le gel reprend son
-  # cours, `papier_challenger` continue de scorer B en papier -- on ne perd AUCUNE information, on
-  # retire seulement l exposition reelle.
-  modele: /app/data/recherche/balayage/modele_vidage.json
-  # LA BANDE CHANGE EN MEME TEMPS QUE LE MODELE, JAMAIS SEPAREMENT. Un modele reentraine
-  # redistribue ses scores : garder [0,20 ; 0,35] designerait d autres jetons et ce ne serait plus
-  # la regle mesuree. Ces bornes sont celles que `challenger.py` a calculees sur les QUANTILES
-  # [0,451 ; 0,914] qu occupait la bande en service.
-  # REVENUE A LA BANDE DU MODELE EN SERVICE le 27/09 : la bande DOIT changer avec le modele, jamais
-  # separement -- des scores differents ne designent pas les memes jetons aux memes bornes.
-  bande: [0.20, 0.35]
-  # ET LA SOURCE DE LA PAUSE CHANGE AVEC. Elle doit voir le flux entier de la bande DE CE MODELE ;
-  # `papier_combo` ne porte que les scores de l ancien. Sans ce changement, la pause surveillerait
-  # les clotures d une AUTRE bande que celle ou l on achete -- la regle mesuree perdrait sa pause,
-  # et la bande sans pause perd 106 EUR/jour (mesure du 26/09 sur 3 032 tickets).
-  # ET LA SOURCE DE LA PAUSE REVIENT AVEC : elle doit voir le flux de la bande DE CE MODELE.
-  combo_db: /app/db/papier_combo.sqlite
-  # LE PIED DU MESSAGE NOMME LA STRATEGIE, PAS LE MODELE. Meme raison que `cumul_depuis` : la
-  # strategie n a pas change, seule une piece interne. Ecrire « B FRAIS » la ferait passer pour une
-  # methode neuve et casserait la lecture du total, qui court depuis le 21/09.
-  nom_court: "BANDE + PAUSE"
-  # La ligne d achat, elle, peut dire quel modele decide -- c est une information utile au ticket,
-  # pas un changement de methode.
-  nom_regle: "bande + pause"
-  # `auto` : le seuil vient du FICHIER, recalcule a chaque entrainement. Un seuil fige ici
-  # garderait une proportion de tickets differente a chaque reentrainement, et deriverait en
-  # silence -- la derive exacte mesuree sur les gels (§3.158 : 40 tickets gardes contre 110).
-  seuil_risque: auto      # lu dans le fichier ; la regle `bande` ne s en sert pas, le frein si
-  # LE FREIN DU MARCHE : DEBRANCHE le 18/09 a 19h30 Paris, apres 24 h en production. Mido : « mec
-  # c est toi qui a dit le frein fonctionne ». Il avait raison de le demander, et la verification
-  # lui donne raison sur le fond.
-  #
-  # CE QUI M AVAIT CONVAINCU N ETAIT PAS UN TEST. Le commit qui l a branche annonce « HORS
-  # ECHANTILLON de la bande (458 tickets) : sans frein +0,54 %, AVEC frein +2,27 % ». Hors
-  # echantillon de la BANDE -- pas du frein. Et le meme commit dit « la fenetre de 20, choisie sur
-  # les donnees ». J ai donc juge le frein sur les tickets qui l avaient fait choisir. Coupe a la
-  # date de son propre gel (18/09 15h00 UTC), le contraste est net :
-  #
-  #                                 tickets   sans frein   avec frein     ecart
-  #     AVANT son gel (ce qui m a convaincu)  1383   -0,25 %   +1,25 %   +1,49 pt
-  #     APRES son gel (le juge propre)          82   -1,47 %  -10,38 %   -8,91 pt
-  #
-  # C est le MEME motif que `BAS + BANDE` (+9,02 % avant, -7,10 % apres), la troisieme fois dans ce
-  # projet. En deux moities, le frein coute -23,50 pt puis -0,99 pt : negatif des deux cotes, il
-  # n aide jamais. Un tirage au hasard de meme taille fait aussi mal dans 2,7 % des cas.
-  #
-  # ET L ARGUMENT QUI LE TENAIT EN PROD ETAIT FAUX. J avais ecrit : « le frein ne fait que
-  # s abstenir, au pire il reduit le volume, il ne peut pas creer de perte nouvelle ». Non :
-  # s abstenir n est PAS neutre, parce qu on n ecarte pas au hasard. Ecarter un sous-ensemble qui
-  # contient preferentiellement des gagnants cree bien une perte. **Aucune abstention selective
-  # n est gratuite** -- c est vrai de tout filtre, pas seulement de celui-ci.
-  #
-  # Le gel `frein_taux.py` continue de le juger en PAPIER, jusqu a 1 500 tickets, sans rien couter.
-  # 82 tickets ne tranchent pas une question ; ils suffisent a ne pas laisser un pari sur l argent
-  # reel quand la seule raison de l avoir pris s est revelee fausse.
-  frein_enabled: false
-  frein_fenetre: 20
-  frein_seuil: 0.50            # frontiere NATURELLE : plus de perdants que de gagnants         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
-  pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
-  fenetre_minutes: 15
-  # 19/09 : 20 -> 10 EUR. 22/09 : 10 -> 20 EUR sur decision de Mido (« augmente la mise en prod
-  # a 20 »). Ce qui l autorisait ce jour-la et pas la veille : le portefeuille est passe de 67,88
-  # a 186,68 EUR. L engagement maximal observe -- 3 positions simultanees sur 37 tickets -- passe
-  # de 30 a 60 EUR, soit 32 % du solde au lieu de 76 %. Et `max_perte_jour_eur: 150` redevient
-  # OPERANT, alors qu il etait au-dessus du portefeuille et donc inutile jusqu ici.
-  # NOTER : monter la mise n achete AUCUNE information. Les 266 tickets qui trancheront la regle
-  # n arrivent pas plus vite ; seul double ce qu on perd si la reponse est non. C est un choix
-  # d exposition, assume comme tel, pas un choix de mesure.
-  # PENSER A `pause_cout_fixe` : le seuil de la pause depend de la mise (voir son commentaire).
-  #
-  # ================================================================================================
-  # 26/09 : 20 -> 25 EUR, sur decision de Mido apres calcul de l optimum.
-  #
-  # L OPTIMUM VIENT DE DEUX TERMES QUI TIRENT EN SENS INVERSE, mesures sur 752 tickets reels qui ont
-  # tourne A DEUX MISES (10 puis 20 EUR) -- donc separables, pas supposes :
-  #     part FIXE            0,1251 EUR/ticket  (reseau) -> se DILUE quand on monte
-  #     part PROPORTIONNELLE 2,534 %            (commissions) -> ne bouge jamais
-  #     part IMPACT          2 x ordre_SOL / (coffre + V) -> CROIT avec la mise
-  #     cout total :  20 EUR 3,623 %  ·  25 EUR 3,614 %  ·  30 EUR 3,647 %  ·  50 EUR 3,943 %
-  # Optimum analytique = racine(fixe x EUR_par_SOL x coffre / 2) = 23,2 EUR pour un coffre median
-  # de 89 SOL. Le fichier `data/cout_optimum.json`, calcule independamment, place le creux a 20 EUR.
-  #
-  # ET C EST VRAI POUR LES QUATRE REGLES DU PROJET, parce qu elles achetent toutes des pools qui
-  # viennent de naitre et que ceux-la font tous ~90 SOL : marche 25 EUR · bande 23 · bande fraiche
-  # 23 · G+D 22. Pour justifier 70 EUR il faudrait des pools de ~800 SOL -- ce ne seraient plus des
-  # lancements, donc plus cette strategie.
-  #
-  # CE QUE CE CHANGEMENT N EST PAS. Entre 20 et 30 EUR la courbe est PLATE (0,03 point) : passer a
-  # 25 ne rend pas plus efficace, ca mise 25 % de plus a la meme efficacite. Le gain espere monte
-  # de 25 %, la perte aussi. C est un choix d exposition, comme le 22/09, pas un gain de rendement.
-  #
-  # AU-DELA DE ~30 EUR IL Y A UNE CONTRAINTE DURE, pas une optimisation : cinq pools sur vingt-cinq
-  # deviennent INVENDABLES a notre taille (mesure du 09/09). Ne pas monter plus haut sans la
-  # remesurer.
-  #
-  # `max_perte_jour_eur` reste a 150 : il se declenchera donc ~25 % plus facilement. Assume.
-  # 27/09 : 25 -> 20 EUR, decision de Mido. La mise la plus haute etait sur la strategie qui rapporte
-  # le moins par ticket (reel : BANDE + PAUSE +6,2 % de la mise hors modele B, G+D +11,4 %). G+D reste
-  # a 20 (ses pools font parfois 5-6 SOL, une mise plus grosse y paie plus d impact). 20 EUR = demi-Kelly
-  # a 500 EUR de capital. `pause_cout_fixe` revient a sa valeur MESUREE a 20 EUR (0,03524).
-  mise_eur: 20.0
-  # Le taux SOL/EUR est LU SUR LE MARCHE a chaque achat (sol.sol_eur), jamais fige : le 08/09 un
-  # taux en dur de 180 EUR alors que le SOL valait 96 engageait 2,67 EUR pour un ticket annonce a 5.
-  # Si le taux est illisible, l achat est REPORTE plutot que mal dimensionne.
-  slippage_achat_pct: 20.0
-  slippage_vente_pct: 25.0
-  max_impact_pct: 15.0         # au-dela, l ordre est refuse AVANT envoi et ne coute rien
-  # ================================================================================================
-  # LES DEUX GARDES D ENTREE, BRANCHES LE 19/09 a 20h50 sur accord de Mido.
-  # Ils existaient depuis le 14/09 et tournaient sur `telegram_rapide` ; ce moteur-ci, celui qui
-  # engage l argent reel, ne les passait pas a `prepare_buy`, dont les defauts valent 0 = DESACTIVE.
-  #
-  # POURQUOI. La dissection du cout du 19/09 au soir (§3.156) : le marche donne +2,68 % par ticket,
-  # l execution en prend 3,71 %. Il manque UN point, et ces deux gardes attaquent exactement les
-  # deux facons de perdre a l ACHAT.
-  #
-  # ECART A LA COTATION -- le routeur cote parfois bien au-dessus du prix reel du pool. Mesure du
-  # 14/09 sur 60 tickets : median +5,8 %, p90 +32,8 %, max +74 %, et les trois plus grosses pertes
-  # du jour etaient des achats payes 28 a 59 % trop cher.
-  #     sans plafond    0 % refuses    -52,58 EUR
-  #     plus de 30 %   10 % refuses   +110,83 EUR
-  #     plus de 20 %   18 % refuses   +130,02 EUR   <- retenu a l epoque
-  #     plus de 10 %   40 % refuses    -54,25 EUR   (jette trop, l avantage part avec)
-  # Ne coute AUCUN appel : le prix du pool est deja lu toutes les 10 s par le collecteur.
-  #
-  # ================================================================================================
-  # 26/09 — PORTE A 40 %, PARCE QUE CE QUE CE GARDE MESURE A CHANGE DE SENS AVEC LA STRATEGIE.
-  #
-  # Mido : « la protection on l avait mise en place pour une autre strat qui achetait beaucoup de
-  # tickets, il me semble ». Il avait raison, et la mesure le confirme -- le signe s INVERSE au
-  # passage a `bande + pause` (valeur des tickets refuses, recalculee AU PRIX REELLEMENT COTE) :
-  #     AVANT bande+pause (14-20/09)   9 refus   -1,489 EUR/ticket   total  -13,40   le garde GAGNE
-  #     DEPUIS bande+pause (21/09)     9 refus   +1,208 EUR/ticket   total  +10,88   le garde COUTE
-  #
-  # LE MECANISME, et il est lisible. Le seuil a ete calibre le 14/09 sur une strategie qui achetait
-  # des jetons CALMES : la, une cotation 30 % au-dessus du pool signifie « on te sandwiche, tu paies
-  # trop cher ». `bande + pause` achete l INVERSE -- la bande est VOLONTAIREMENT la zone volatile --
-  # et pour ces jetons-la le meme ecart signifie « ca decolle en ce moment ». Le garde n a pas
-  # change ; ce qu il mesure, si.
-  #
-  # POURQUOI ON NE MESURE PAS PLUS LONGTEMPS. Se tromper ici coute ~2 EUR/jour : 1,7 refus par jour,
-  # un mauvais ticket a 20 EUR de mise. Immobiliser la decision douze jours pour un pari a deux
-  # euros n a pas de sens -- et c est le reproche que Mido m a fait trois fois le 26/09.
-  #
-  # CE QUI N EST PAS PROUVE, ecrit avant : 9 tickets, et le total tient a DEUX d entre eux
-  # (+38,14 et +16,07). Sans eux c est negatif. On change sur un MECANISME plus une borne de perte,
-  # pas sur une preuve.
-  # POUR REVENIR EN ARRIERE : remettre 20.0. Les refus restent enregistres avec leur surcout dans
-  # `mr_lignes.motif`, donc la mesure continue toute seule dans les deux sens.
-  max_ecart_pool_pct: 40.0
-  # PEUT-ON RESSORTIR ? On cote la revente AVANT d acheter. Mesure du 09/09 sur 25 pools suivis :
-  # l aller-retour coute 2,9 % en median, mais SIX pools sur vingt-cinq coutent plus de 10 % et
-  # CINQ plus de 25 % -- sur ceux-la on peut acheter et pas sortir, a notre taille. Ils causent
-  # 25 % des tickets aneantis. L impact affiche ne les voit pas : il est symetrique en moyenne, et
-  # c est precisement sur les pools asymetriques qu il ne dit rien. Coute une cotation.
-  max_aller_retour_pct: 15.0
-  # CRITERE D ARRET, FIXE AVANT DE BRANCHER -- DEUX conditions, pas une :
-  #   1. le cout mesure par `cout_registre.py` a baisse d au moins 0,5 point a 200 tickets reels ;
-  #   2. la part des FUSEES gardees (brut > +50 %) n a pas baisse.
-  # La seconde a ete ajoutee apres coup, le 19/09 a 21h, et elle manquait : les deux gardes filtrent
-  # l impact, donc indirectement la taille du pool -- et les fusees naissent dans les PETITS pools
-  # (coffre median 74 SOL contre 128 pour les tickets gardes). Un garde-fou qui fait baisser le cout
-  # en supprimant ce qui rapporte serait une victoire comptable et une defaite reelle. Mesure du
-  # 19/09 : sur 172 tickets reels, le seuil de 15 % aurait refuse 12 tickets (7 %) valant +0,62 EUR
-  # au total -- donc neutre -- mais un tiers des fusees. C est cette proportion qu il faut surveiller.
-  # Ecrit d avance, pas renegociable.
-  # ================================================================================================
-  # PAS DE PLAFOND EN NOMBRE D ORDRES. J en avais mis un a 40 par analogie avec le carnet
-  # Telegram, sans que l operateur l ait demande -- et il a bloque le carnet des 13h09 le 18/09,
-  # alors qu il venait de dire « laisse tourner, n arrete rien sans que je te dise ». Ce qu il a
-  # accepte, c est un BUDGET de 150 EUR, pas un compte d ordres. Une contrainte qu on ajoute soi-
-  # meme et qui arrete ce que l operateur veut voir tourner est une contrainte de trop.
-  #
-  # `max_ordres_jour: 0` desactive ce plafond. La seule protection reste la perte sur 24 h
-  # glissantes -- celle-la, il l a explicitement approuvee.
-  max_ordres_jour: 0
-  # 0 = AUCUN PLAFOND. Mido, 26/09 : « je veux pas de plafond nulle part ». Le code traite
-  # explicitement 0 comme « desactive » (voir `cycle`) -- sans ce garde, 0 aurait bloque le moteur
-  # des la premiere minute negative de la journee, soit l inverse du reglage demande.
-  # CE QUI PROTEGE MAINTENANT, a la place : la TAILLE DE LA MISE. C est le sens du calcul de
-  # croissance du 26/09 -- une mise bien dimensionnee borne le dommage par construction, la ou un
-  # plafond ne fait que couper apres coup, souvent au pire moment (19/09 : 229 achats bloques un
-  # jour ou la journee etait positive).
-  max_perte_jour_eur: 0
-  cle_fichier: null
-
-# ---------------------------------------------------------------------------
-# RECUPERATION DES CAUTIONS DE COMPTE-JETON
-# Solana immobilise 0,002039 SOL a l ouverture de chaque compte-jeton.
-#
-# CE BLOC A AFFIRME LE CONTRAIRE DE LA REALITE, corrige le 18/09 apres lecture de la chaine.
-# Il disait que le moteur n a jamais ferme un compte, que 0,66 point y dormait par ticket, et que
-# les recuperer ramenait le cout de 2,62 a ~1,96 pts. Verification en lecture seule sur le
-# portefeuille apres 236 tickets reels : **0 compte-jeton vide, 1 compte au total**. Un compte
-# abandonne persiste indefiniment ; 236 d entre eux seraient encore la. La route d echange ferme
-# donc l ATA elle-meme, et le remboursement rentre dans le `sol_delta` de la vente -- or c est
-# exactement ce que `telegram_rapide._compter_sur_la_chaine` additionne pour produire `gain_eur`.
-# La caution est donc DEJA neutralisee a l interieur des 2,62 pts mesures.
-#
-# CONSEQUENCE : ce module ne recupererait RIEN, et il n existe aucun poste de frais reductible sans
-# contrepartie. Baisser la priorite fait echouer des ordres (§3.40, quatre sur six) et reduire
-# l impact demande de changer la strategie. Le 2,62 est un plancher, pas un point de depart.
-# Journal §3.109 et §3.111.
-#
-# Le module ne peut qu une chose : fermer un compte dont le solde est EXACTEMENT zero. Il ne peut
-# ni acheter, ni vendre, ni transferer, ni bruler. Il epargne les jetons d une position ouverte, et
-# n agit que sur un compte vu vide depuis au moins un quart d heure -- un achat en vol cree un
-# compte a solde nul pendant quelques secondes, le fermer ferait echouer l achat.
-#
-# Comme tout ce qui signe ici, il faut DEUX actes pour qu il agisse : `enabled: true` ci-dessous ET
-# `execution.mode: live`. En papier il se contente d afficher ce qu il fermerait.
-# ==================================================================================================
-# SUIVEUR G+D — une SECONDE instance du meme moteur, sur une AUTRE table, pour une AUTRE regle.
-#
-# POURQUOI IL EXISTE. Mido, 25/09 : `BANDE + PAUSE` a perdu 125,21 EUR sur la journee (20 tickets)
-# pendant que `G+D les trois` gagnait +17,87 (32 tickets). Mesure des correlations sur 9 jours
-# communs : `G+D 45s` et `G+D les trois` sont la MEME strategie (r = +0,919), et `BANDE + PAUSE` est
-# DECORRELEE des deux (r = -0,028 et +0,150). Le melange 50/50 donne le meilleur rapport gain/risque
-# du projet (+0,623 contre +0,486 et +0,500) -- moins d euros par jour, beaucoup moins de dispersion.
-# C EST LA DECORRELATION QU ON ACHETE, PAS DU RENDEMENT. Mido : « une bonne idee je suis in ».
-#
-# CE QU IL VAUT, AU CHIFFRE HONNETE. Le rapport de `papier_gd` affiche +4,64 %/ticket, mais cette
-# colonne (`net`) retire un cout FORFAITAIRE de 2,62 points. La colonne `net_reel`, qui utilise une
-# vraie cotation du routeur a la sortie, donne **+2,948 %/ticket sur 271 tickets, a +1,10 sigma**.
-# A 10 EUR de mise (les frais fixes pesent plus qu a 30) : ~+2,7 %/ticket, soit ~+0,27 EUR x 32
-# tickets/jour = **~+9 EUR/jour**, avec un ecart-type journalier de ~25 EUR. Des journees a -25 EUR
-# seront donc courantes. A 20 EUR : ~+19 EUR/jour, ecart-type ~51.
-# CE N EST PAS MIEUX QUE LA PRODUCTION : sur les memes 9 jours, au meme peage reel et a mise egale,
-# `BANDE + PAUSE` rend +62 EUR/jour et G+D +22. G+D vaut UN TIERS de la prod. Elle n est la que pour
-# la decorrelation.
-#
-# POURQUOI IL SUIT LE CARNET PAPIER AU LIEU DE RECALCULER LA REGLE. G+D demande la foule (acheteurs
-# uniques avant 45 s <= 74), le coffre (< 100 SOL) et la tendance (> 0) ; le moteur ne calcule AUCUNE
-# des trois. La foule exige de resoudre le saut de routeur dans le bloc -- 98 % des sorties du pool
-# vont a un routeur -- et un compteur naif est FAUX. `papier_gd_direct.py` fait tout cela en direct a
-# 45 s depuis le 16/09 : on lit sa decision, donc la regle executee est la sienne par construction.
-#
-# LA PRISE DE GAIN EST ARMEE ICI, ET SEULEMENT ICI. `prise_gain_x: 1.25` fait partie de la regle
-# GELEE de G+D -- **148 de ses 294 sorties sont des prises de gain**, la moitie. La production garde
-# `prise_gain_x` absent (donc 0, desarme) : elle tient 240 s sans stop ni prise de gain, et les deux
-# reflexes y coutent 6,6 points par ticket.
-#
-# LE RECOUVREMENT AVEC LA PRODUCTION, ET QUI CEDE. **79 % des jetons de G+D sont dans la bande
-# 0,20-0,35** (218 sur 276) : les deux regles visent la meme zone, et le 25/09 elles se sont disputee
-# 4 jetons. Or le P&L se lit sur le solde du portefeuille -- un jeton, une ligne. C est le SUIVEUR
-# qui cede (statut `CEDEE`, pour pouvoir chiffrer ce que la cession coute) ; la production n a pas
-# ete modifiee d une ligne.
-#
-# CRITERE ECRIT AVANT DE BRANCHER, pour ne pas le fixer apres comme sur le frein :
-#   - on coupe si la perte cumulee depuis le branchement atteint -100 EUR ;
-#   - a 150 tickets reels, on compare son `gain_eur` lu au portefeuille a +0,27 EUR/ticket (a 10 EUR
-#     de mise) ; sous ZERO a 150 tickets, on debranche ;
-#   - on ne juge JAMAIS sur une correlation a 9 jours : elle sera re-mesuree a 20 jours communs.
-#
-# DEUX ACTES POUR QU IL ACHETE, comme partout : `enabled: true` ET `mode: live`.
-suiveur_gd:
-  # ARME LE 25/09 au soir sur accord explicite de Mido (« une bonne idee je suis in »), a 10 EUR.
-  enabled: true
-  mode: live
-  # LA TABLE SEPAREE EST LA RAISON D ETRE DE CE BLOC. Le registre des couts (`cout_registre.py`,
-  # `cout_glissement.py`, `cout_reserve.py`, `calibration_live.py`) ne filtre que sur `mode='live'` :
-  # si G+D ecrivait dans `mr_lignes`, il moyennerait deux regles aux pools de tailles differentes et
-  # le 3,88 % qui evalue TOUTES les lignes de la page deriverait sans que personne ne le voie.
-  table: gd_lignes
-  regle: gd_suiveur
-  gd_db: /app/db/papier_gd.sqlite
-  # Si le carnet papier se fige, le suiveur se TAIT -- il n achete jamais a l aveugle. Meme raison
-  # que `pause_fraicheur` : les trois instances papier sont mortes le 18/09 sans que personne ne le
-  # voie pendant des heures.
-  gd_fraicheur: 900
-  # ================================================================================================
-  # 26/09 : 10 -> 20 EUR, sur decision de Mido (« augmente a 20 voir 25 comme l autre »).
-  #
-  # CE QUI A CHANGE DEPUIS LA MISE EN SERVICE D HIER SOIR. L argument qui justifiait 10 EUR etait le
-  # plafond de perte : a 25 EUR l ecart-type journalier de G+D (158 EUR) depassait son plafond de
-  # -100, donc le moteur se serait coupe presque chaque jour. **Les plafonds ont ete retires le
-  # 26/09 a la demande de Mido, cet argument n existe plus.**
-  #
-  # CE QUE DIT LE CALCUL DE CROISSANCE, a capital 500 EUR et prod figee a 25 EUR :
-  #     mise G+D   10 EUR -> +51 EUR/jour · croissance +41 · sigma/jour 110
-  #                20 EUR -> +76          · croissance +58 · sigma/jour 151
-  #                40 EUR -> +125         · croissance +74 · sigma/jour 257   <- maximum
-  # Le maximum est a 40, et on n y va PAS : a 40 EUR l ecart-type d UNE JOURNEE vaut la moitie du
-  # capital. Le sommet de la courbe est large (30-50 EUR quasi identiques), donc se placer bas coute
-  # peu et protege de l erreur d estimation -- d autant que ce Kelly est calcule sur 28 tickets.
-  #
-  # ET SURTOUT : le rendement par euro mise de G+D (+0,0538) est le MEME que celui de la production
-  # (+0,0521). Elle n est pas meilleure, elle est DECORRELEE (r = -0,03). Monter sa mise n achete
-  # donc pas un meilleur rendement, seulement de l exposition.
-  #
-  # LA VRAIE CONTRAINTE RESTE LE CAPITAL, et elle est dite ici : a 500 EUR, l ecart-type du total
-  # journalier passe de 110 a 151 EUR, soit 30 % du capital. Une journee a -3 sigma coute 453 EUR.
-  # Rien de tout cela n est un plafond automatique -- il n y en a plus -- c est la MISE qui est
-  # desormais le seul garde-fou.
-  #
-  # Son critere reel est inchange : 150 tickets, debranchement sous ZERO. Elle en a 28.
-  mise_eur: 20.0
-  # 10 EUR LE PREMIER JOUR, PAS 20, et ce n est pas de la prudence : le suiveur doit voir la decision
-  # du carnet papier dans les secondes qui suivent les 45 s, et cette course-la ne se teste pas hors
-  # ligne. Le premier jour a 10 EUR la prouve a moitie prix. Mido a accepte 20 ensuite.
-  pas_secondes: 2
-  age_decision: 45
-  # LA FENETRE D ENTREE EST FERMEE A 8 s (donc 47 -> 55 s), et c est le reglage le plus important de
-  # ce bloc. La regle gelee de G+D entre « au plus tot 47 s, au plus tard 55 s » parce qu entrer a
-  # 65 s coute -3,65 points par ticket -- tout son avantage. On ne peut pas garantir d avoir vu la
-  # decision du carnet papier des 47 s (son `t_dec` est un age nominal, pas un instant d ecriture, et
-  # son appel RPC pour la foule ajoute un delai non stocke). Avec `pas_secondes: 2` le suiveur a
-  # quatre chances de l attraper, et au-dela de 55 s il RENONCE au ticket au lieu de l acheter tard.
-  # ELARGIE DE 8 A 13 s LE 26/09 AU SOIR (fenetre 47 -> 60 s). MA VALEUR DE 8 s ETAIT PLUS COURTE
-  # QUE L INTERVALLE ENTRE DEUX LECTURES DE PRIX, donc elle perdait des tickets PAR CONSTRUCTION.
-  #
-  # CE QUI A ETE MESURE, apres que Mido a demande pourquoi le suiveur n achetait plus :
-  #   le collecteur lit chaque pool toutes les **10,0 s** (mediane ; 90e centile 11 s) ;
-  #   couverture d une fenetre partant de 47 s : 8 s -> 77 % · 11 s -> 93 % · 13 s -> 96 % ·
-  #   au-dela, plus rien a gagner (97 %).
-  #   RESULTAT : **31 % des tickets de G+D (15 sur 48) n etaient jamais juges par le moteur.**
-  #   Sur ces 15 : 0 absent du flux, 6 sans aucune lecture dans la fenetre, 9 avec une lecture
-  #   dedans mais rates quand meme -- parce que le moteur filtre sur l age de la DERNIERE lecture,
-  #   qui saute de 47 a 57 d un coup. Si le cycle tombe quand elle vaut 57, le pool est ecarte
-  #   alors qu une lecture a 47 existait. Une fenetre de 13 s couvre DEUX paliers, pas un.
-  #
-  # CE QUE CA COUTE, et pourquoi c est un bon echange : entrer jusqu a 60 s au lieu de 55. La
-  # penalite mesuree de G+D est -3,65 points entre 47 et 65 s, soit ~0,2 point par seconde -> ~1
-  # point, et seulement sur les tickets tardifs. Contre +19 points de couverture.
-  fenetre_entree_s: 13
-  tenue_secondes: 240
-  # ================================================================================================
-  # 26/09 : LE SEUIL PASSE DE x1,25 A x2,00, sur mesure a posteriori du gel.
-  #
-  # D OU VENAIT LE 1,25 : « seuil +25 % = milieu du plateau +20/+30 mesure, choisi pour ne pas coller
-  # a un point » (journal, 16/09). Methode correcte -- mais le plateau avait ete mesure sur les
-  # donnees d AVANT le gel. Mido : « verifie depuis la mise en prod que 1,25 etait le bon choix ».
-  #
-  # REJOUE SUR 383 TICKETS G+D POSTERIEURS AU GEL, suivis a 2 s (`papier_large` enregistre l age, le
-  # prix de franchissement ET le prix de la lecture SUIVANTE -- c est ce dernier qu on utilise,
-  # vendre au declencheur flattant de +2,5 pts/ticket, piege attrape le 16/09) :
-  #                         EUR/ticket   1re moitie   2e moitie
-  #     tenue 287 s             +0,469      -0,154      +1,086
-  #     x1,25 (en service)      +2,162      +1,846      +2,477
-  #     x1,50                   +3,614      +2,648      +4,572
-  #     x2,00                   +5,348      +5,097      +5,599
-  # Et sur les 3 DERNIERS JOURS seuls : 1,604 / 1,843 / 3,730 / 4,731. Quatre verifications
-  # independantes (deux periodes x deux moities) disent la meme chose.
-  #
-  # LE MECANISME est celui mesure le meme jour sur la bande : vendre a +25 % coupe les jetons qui
-  # allaient faire x2 ou x3, et c est la qu est tout l argent. Noter aussi que NE PAS prendre du tout
-  # est PIRE que x2 (+0,469 contre +5,348) : il y a bien un optimum, et il est vers x2.
-  #
-  # CE QUI N EST PAS ETABLI : seuls 1,25 / 1,5 / 2,0 sont enregistres par le carnet, donc l optimum
-  # pourrait etre a 1,8 ou 2,5 -- on ne peut pas le dire. Et les NIVEAUX sont gonfles (cout
-  # forfaitaire de 2,62 pts au lieu du peage reel de 3,88 %) ; seule la COMPARAISON entre seuils est
-  # valide, le meme cout s appliquant partout.
-  #
-  # POURQUOI ON PEUT TOUCHER A UNE REGLE GELEE : son critere pre-enregistre a ECHOUE ce matin
-  # (+4,30 %/ticket contre un seuil de +4,50 a 315 tickets). Le gel est termine, il ne protege plus
-  # rien. POUR REVENIR EN ARRIERE : remettre 1.25.
-  prise_gain_x: 2.00
-  # LIRE LE PRIX DANS LA CHAINE, PAS DANS LA TABLE. `solana_prix_chaine` est ecrite toutes les
-  # 10,0 s (mediane mesuree le 26/09) ; la chaine repond a la cadence du cycle, soit 2 s ici.
-  # MESURE §3.95, appariee sur 3 245 pools (meme regle, seule la cadence change) : voir le marche a
-  # 2 s au lieu de 20 vaut **+1,14 pt/ticket [+0,27 ; +2,04]**, et **+2,64 pts [+0,50 ; +4,65] a
-  # coffre < 100 SOL** -- la definition meme de G+D. Cause : 29 % des pools touchent +25 % entre 47
-  # et 287 s, declenchement median a 93 s ; a cadence lente on rate le sommet une fois sur deux.
-  # CONSTATE EN VRAI le 26/09 : sur un meme jeton, le carnet papier de G+D a pris son gain 21 s
-  # apres l entree, le suiveur 205 s plus tard. Le pic etait invisible a 10 s.
-  # COUT : un `getMultipleAccounts` par passage, UNIQUEMENT quand une position est ouverte, soit
-  # ~120 lectures par ticket. Aucune cotation, aucune signature.
-  # NE PEUT PAS EMPECHER UNE VENTE : tout echec retombe sur la table, et la vente a l echeance ne
-  # depend d aucune des deux. Trois tests le verrouillent.
-  prise_gain_direct: true
-  # 0 = AUCUN PLAFOND, comme pour la production. Mido, 26/09 : « je veux pas de plafond nulle part ».
-  max_perte_jour_eur: 0
-  max_ordres_jour: 0
-  # LA PAUSE DE LA BANDE N A RIEN A FAIRE ICI : G+D a sa propre pause de 30 min, et c est le carnet
-  # papier qui l applique deja avant d ecrire `pris=1`. L ajouter reviendrait a en empiler deux.
-  pause_enabled: false
-  # LE FREIN NON PLUS. C est un garde-fou de production qui ne fait pas partie de la regle gelee de
-  # G+D ; l activer executerait une regle PLUS restrictive que celle mesuree. Le plafond de perte
-  # journaliere ci-dessus est le garde-fou de l argent.
-  frein_enabled: false
-  traits_75: false
-  cle_fichier: null
-  alertes: true
-  # LES GARDE-FOUS D EXECUTION SONT REECRITS ICI EN CLAIR, avec les MEMES valeurs que la production,
-  # au lieu d etre laisses aux defauts du code : un garde-fou qui protege de l argent reel doit etre
-  # lisible dans le fichier, pas deduit d une signature de fonction.
-  slippage_achat_pct: 20.0
-  slippage_vente_pct: 25.0
-  max_impact_pct: 15.0
-  max_ecart_pool_pct: 20.0
-  max_aller_retour_pct: 15.0
-  modele: /app/data/recherche/balayage/modele_vidage.json
-  fenetre_minutes: 15
-  confirmation_secondes: 90
-  # Les deux instances parlent dans le MEME canal : sans etiquette un 🟢 serait inattribuable, et
-  # c est sur ces messages que l operateur suit son argent.
-  etiquette: "🅶"
-  nom_regle: "G+D · foule + coffre + tendance"
-  nom_court: "G+D"
-  # L INSTANT DE LA MISE EN SERVICE, en epoch : 25/09 a 23h40 heure de PARIS. Le conteneur tourne en
-  # UTC (verifie : 21h54 UTC = 23h54 Paris), donc une heure lue dans les logs est a +2 de l heure de
-  # l operateur. La date du pied de message est DERIVEE de cette valeur, jamais ecrite en dur -- une
-  # date figee dans le texte survivrait au changement de methode et mentirait sans le signaler.
-  # A CHANGER EN MEME TEMPS QUE `regle`, jamais separement : un total doit porter sur UNE regle.
-  cumul_depuis: 1790372400
-
-recuperation:
-  # ACTIVEE le 19/09 09h30 sur accord de Mido : 92 comptes vides trouves, 14,46 EUR recuperes a la main
-  # (§3.148). Le module ne sait faire que CloseAccount sur un compte a solde exactement nul.
-  enabled: true
-  pas_secondes: 1800            # boucle lente : rien ne presse, et ca evite de gener les ordres
-  max_transactions_par_passage: 3   # 3 x 20 comptes = 60 fermetures par passage au maximum
+ Secrets and endpoints are NOT here.*# =====================================================================================
+ Secrets and endpoints are NOT here.*# TANGIER INTEL — reglages. Ce fichier ne contient que les VALEURS.
+ Secrets and endpoints are NOT here.*# Le POURQUOI de chaque reglage (mesures, dates, decisions de Mido) est conserve mot pour mot dans
+ Secrets and endpoints are NOT here.*#   docs/historique/intel.yaml.commente-2026-09-27.yaml
+ Secrets and endpoints are NOT here.*# et, pour les changements a venir, dans la section 0 de JOURNAL_RECHERCHE.md.
+ Secrets and endpoints are NOT here.*# Secrets et points d acces : .env (voir docs/EXPLOITATION.md). Relire = redemarrer le moteur.
+ Secrets and endpoints are NOT here.*# Changer une mise, un seuil ou un modele : decision de Mido (docs/EXPLOITATION.md, derniere section).
+ Secrets and endpoints are NOT here.*# =====================================================================================
+ Secrets and endpoints are NOT here.*portfolio:
+ Secrets and endpoints are NOT here.*  positions:
+ Secrets and endpoints are NOT here.*    - address: "0xd18528b39da6464b3662c331a52181ecb15b1e18"
+ Secrets and endpoints are NOT here.*      label: SAYLORMOON
+ Secrets and endpoints are NOT here.*      quantity: null
+ Secrets and endpoints are NOT here.*      cost_basis_usd: null
+ Secrets and endpoints are NOT here.*      entry_ts: null
+ Secrets and endpoints are NOT here.*    - address: "0xaa0b48defde440b8445ba45db88cb076cf261e18"
+ Secrets and endpoints are NOT here.*      label: TAIWAN
+ Secrets and endpoints are NOT here.*      quantity: null
+ Secrets and endpoints are NOT here.*      cost_basis_usd: null
+ Secrets and endpoints are NOT here.*      entry_ts: null
+ Secrets and endpoints are NOT here.*    - address: "0x6b1d42927b1a84ec28fa88d4fc6fa7af404966be"
+ Secrets and endpoints are NOT here.*      label: PAIR
+ Secrets and endpoints are NOT here.*      quantity: null
+ Secrets and endpoints are NOT here.*      cost_basis_usd: null
+ Secrets and endpoints are NOT here.*      entry_ts: null
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*engine:
+ Secrets and endpoints are NOT here.*  portfolio_cycle_seconds: 86400   # EVM mis en veille le 14/09 23h : sa passe lit 45 Go et bloquait tout le moteur, Telegram compris
+ Secrets and endpoints are NOT here.*  scanner_cycle_seconds: 86400
+ Secrets and endpoints are NOT here.*  scanner_deep_cycle_seconds: 86400
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*scoring:
+ Secrets and endpoints are NOT here.*  weights:
+ Secrets and endpoints are NOT here.*    organic_volume: 0.35
+ Secrets and endpoints are NOT here.*    distribution: 0.30
+ Secrets and endpoints are NOT here.*    smart_money: 0.15
+ Secrets and endpoints are NOT here.*    traction: 0.10
+ Secrets and endpoints are NOT here.*    survival: 0.10
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*hard_filters:
+ Secrets and endpoints are NOT here.*  min_liquidity_usd: 20000
+ Secrets and endpoints are NOT here.*  min_liquidity_to_mc: 0.03
+ Secrets and endpoints are NOT here.*  liquidity_to_mc_reject_min_age_hours: 24
+ Secrets and endpoints are NOT here.*  max_top10_excluded_system_pct: 0.50
+ Secrets and endpoints are NOT here.*  max_insider_cluster_pct: 0.40
+ Secrets and endpoints are NOT here.*  asymmetry_penalty_x_from_fmm: 50
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*first_meaningful_market:
+ Secrets and endpoints are NOT here.*  bucket_seconds: 300
+ Secrets and endpoints are NOT here.*  min_unique_traders: 25
+ Secrets and endpoints are NOT here.*  min_trades: 50
+ Secrets and endpoints are NOT here.*  min_cum_quote_inflow_usd: 10000
+ Secrets and endpoints are NOT here.*  min_liquidity_usd: 20000
+ Secrets and endpoints are NOT here.*  persistence_buckets: 3
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*scanner:
+ Secrets and endpoints are NOT here.*  moonshot_alert_threshold: 70
+ Secrets and endpoints are NOT here.*  stage1:
+ Secrets and endpoints are NOT here.*    max_age_hours: 336
+ Secrets and endpoints are NOT here.*    min_liquidity_usd: 20000
+ Secrets and endpoints are NOT here.*    max_market_cap_usd: 5000000
+ Secrets and endpoints are NOT here.*    min_volume_24h_usd: 5000
+ Secrets and endpoints are NOT here.*  stage3:
+ Secrets and endpoints are NOT here.*    max_candidates_per_cycle: 60
+ Secrets and endpoints are NOT here.*    refresh_per_cycle: 5
+ Secrets and endpoints are NOT here.*    backfill_blocks: 300000
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*alerts:
+ Secrets and endpoints are NOT here.*  daily_digest_enabled: false
+ Secrets and endpoints are NOT here.*  enabled: true
+ Secrets and endpoints are NOT here.*  min_severity: WATCH
+ Secrets and endpoints are NOT here.*  lp_drop_pct: 0.15
+ Secrets and endpoints are NOT here.*  scanner_min_liquidity_usd: 30000
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*states:
+ Secrets and endpoints are NOT here.*  candidate_min_liquidity_usd: 30000
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*decisions:
+ Secrets and endpoints are NOT here.*  enabled: true
+ Secrets and endpoints are NOT here.*  size_eur: 20
+ Secrets and endpoints are NOT here.*  min_moonshot_buy: 70
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*t1:
+ Secrets and endpoints are NOT here.*  enabled: false
+ Secrets and endpoints are NOT here.*  buy_budget: 0
+ Secrets and endpoints are NOT here.*  max_per_hour: 0
+ Secrets and endpoints are NOT here.*  max_daily_loss_eur: 0
+ Secrets and endpoints are NOT here.*  budget_since_ts: 1788869200
+ Secrets and endpoints are NOT here.*  confirm_minute2: 30
+ Secrets and endpoints are NOT here.*  max_trades: 60
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*execution:
+ Secrets and endpoints are NOT here.*  mode: paper
+ Secrets and endpoints are NOT here.*  kill_switch: true
+ Secrets and endpoints are NOT here.*  cycle_seconds: 5          # une decision T+1 vaut des secondes: 30 s d attente coutait le debut de la pompe
+ Secrets and endpoints are NOT here.*  router: "0x8876789976decbfcbbbe364623c63652db8c0904"
+ Secrets and endpoints are NOT here.*  max_hook_tax_pct: 20
+ Secrets and endpoints are NOT here.*  allowed_quotes:
+ Secrets and endpoints are NOT here.*    - "0x0000000000000000000000000000000000000000"
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*solana:
+ Secrets and endpoints are NOT here.*  enabled: true
+ Secrets and endpoints are NOT here.*  mode: paper
+ Secrets and endpoints are NOT here.*  size_eur: 5.0
+ Secrets and endpoints are NOT here.*  max_open_positions: 4
+ Secrets and endpoints are NOT here.*  filtre_trop_propre: true
+ Secrets and endpoints are NOT here.*  trop_propre_seuil: 2
+ Secrets and endpoints are NOT here.*  book_poll_seconds: 20
+ Secrets and endpoints are NOT here.*  veille_rapide:
+ Secrets and endpoints are NOT here.*    enabled: true
+ Secrets and endpoints are NOT here.*    pas_secondes: 1
+ Secrets and endpoints are NOT here.*    reveil_min_secondes: 20     # jamais deux reveils de la meme position plus rapproches que ca
+ Secrets and endpoints are NOT here.*  prix_chaine:
+ Secrets and endpoints are NOT here.*    enabled: true
+ Secrets and endpoints are NOT here.*    pas_secondes: 10        # cadence de lecture ; le moteur decide toutes les 20 s
+ Secrets and endpoints are NOT here.*    fenetre_minutes: 15     # on suit un lancement pendant ce temps apres sa creation
+ Secrets and endpoints are NOT here.*    tentatives: 20
+ Secrets and endpoints are NOT here.*  suivi_long:
+ Secrets and endpoints are NOT here.*    enabled: true
+ Secrets and endpoints are NOT here.*    heures: 24
+ Secrets and endpoints are NOT here.*    pas_secondes: 30        # cadence de la boucle ; chaque jeton n est relu qu a sa propre cadence
+ Secrets and endpoints are NOT here.*  suivi_minutes: 30
+ Secrets and endpoints are NOT here.*  min_buyers: 75
+ Secrets and endpoints are NOT here.*  max_trades_per_buyer: 15
+ Secrets and endpoints are NOT here.*  max_trades_first_minute: 600
+ Secrets and endpoints are NOT here.*  signature_pages: 12
+ Secrets and endpoints are NOT here.*  collapse_memory_seconds: 900
+ Secrets and endpoints are NOT here.*  max_collapse_ratio: 2.0
+ Secrets and endpoints are NOT here.*  min_liquidity_usd: 0
+ Secrets and endpoints are NOT here.*  max_market_cap_usd: 50000
+ Secrets and endpoints are NOT here.*  min_market_cap_usd: 25000
+ Secrets and endpoints are NOT here.*  max_per_hour: 0
+ Secrets and endpoints are NOT here.*  take_profit_multiple: 1.5
+ Secrets and endpoints are NOT here.*  stop_loss_multiple: 0.7
+ Secrets and endpoints are NOT here.*  max_hold_seconds: 1800
+ Secrets and endpoints are NOT here.*  slippage_pct: 15.0
+ Secrets and endpoints are NOT here.*  max_impact_pct: 6.0
+ Secrets and endpoints are NOT here.*  max_aller_retour_pct: 8.0
+ Secrets and endpoints are NOT here.*  sell_slippage_pct: 25.0
+ Secrets and endpoints are NOT here.*  priority_fee_lamports: 500000        # LA VENTE garde 500 000 : une vente ratee coute une position coincee
+ Secrets and endpoints are NOT here.*  priority_fee_lamports_achat: 100000
+ Secrets and endpoints are NOT here.*  max_daily_loss_eur: 100
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*  stream:
+ Secrets and endpoints are NOT here.*    enabled: true
+ Secrets and endpoints are NOT here.*    accounts:
+ Secrets and endpoints are NOT here.*      - "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"   # programme pump.fun
+ Secrets and endpoints are NOT here.*      - "39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg"  # compte present dans toutes les migrations
+ Secrets and endpoints are NOT here.*    instructions: ["Migrate", "CreatePool", "Initialize2"]
+ Secrets and endpoints are NOT here.*    seconds_per_cycle: 590   # ecoute quasi continue
+ Secrets and endpoints are NOT here.*    pause_seconds: 1         # 1 s de trou toutes les 10 min, soit 0,17 % du temps
+ Secrets and endpoints are NOT here.*    max_mb_per_cycle: 30
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*retention:
+ Secrets and endpoints are NOT here.*  enabled: false
+ Secrets and endpoints are NOT here.*  prune_interval_seconds: 1800
+ Secrets and endpoints are NOT here.*  max_tokens_per_prune: 500
+ Secrets and endpoints are NOT here.*  scan_tokens_per_prune: 8000
+ Secrets and endpoints are NOT here.*  dead_token_days: 2
+ Secrets and endpoints are NOT here.*  holder_snapshot_days: 7
+ Secrets and endpoints are NOT here.*  pair_snapshot_days: 14
+ Secrets and endpoints are NOT here.*  prune_budget_seconds: 180
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*manuel:
+ Secrets and endpoints are NOT here.*  max_impact_pct: 100
+ Secrets and endpoints are NOT here.*  max_ordre_eur: 0
+ Secrets and endpoints are NOT here.*  max_aller_retour_pct: 0
+ Secrets and endpoints are NOT here.*  paliers: [1.5, 2.0, 3.0, 5.0]
+ Secrets and endpoints are NOT here.*  palier_bas: 0.5
+ Secrets and endpoints are NOT here.*  vente_auto:
+ Secrets and endpoints are NOT here.*    enabled: false
+ Secrets and endpoints are NOT here.*    moitie_a: 2.0
+ Secrets and endpoints are NOT here.*    tout_a: 4.0
+ Secrets and endpoints are NOT here.*  eth_eur: 2280.0
+ Secrets and endpoints are NOT here.*  portefeuilles:
+ Secrets and endpoints are NOT here.*    - {nom: "Trust Solana",   chaine: solana,    qui: "toi",        adresse: "4f1ShTjEDMRby6Zt5cYYDx7bmy1V8ZxwJWEL5Kg5ksA5"}
+ Secrets and endpoints are NOT here.*    - {nom: "Trust EVM",      chaine: robinhood, qui: "toi",        adresse: "0xBE41FD70105b7FA4f632a43d4Ecb24f485ed174C"}
+ Secrets and endpoints are NOT here.*    - {nom: "Phantom",        chaine: solana,    qui: "toi",        adresse: "Dc7hibeE7JqnLE1eaQaX4zvdWkFeFbFpAm5sxx1JCULX"}
+ Secrets and endpoints are NOT here.*    - {nom: "MediTrading",    chaine: solana,    qui: "moteur+toi", adresse: "sygsohR7ZsXJJ5QCtmFhE7Y24Qsbj155dkK6GqTnxs2"}
+ Secrets and endpoints are NOT here.*    - {nom: "Robot EVM",      chaine: robinhood, qui: "moteur+toi", adresse: "0x2a33086d2fce255f61ac1a3000bf944397c9c908"}
+ Secrets and endpoints are NOT here.*    - {nom: "Robot Solana",   chaine: solana,    qui: "moteur",     adresse: "HY4wrwepxv3JCMox1LG7K46Bj6TnP1xMHSk42ojEZfyL"}
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*ath:
+ Secrets and endpoints are NOT here.*  enabled: false
+ Secrets and endpoints are NOT here.*  pas_secondes: 30        # verification continue, pour ne pas rater une occasion la nuit
+ Secrets and endpoints are NOT here.*  min_eur: 5.0            # sous ce montant on ne s occupe pas de la poussiere
+ Secrets and endpoints are NOT here.*  marge_pct: 0.0          # 0 = le moindre depassement compte
+ Secrets and endpoints are NOT here.*  exclus:
+ Secrets and endpoints are NOT here.*    - "0x27495511b8A2e163efC75d788706a40Dd100Bc27"   # PACK, exclu a la demande de l operateur
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*paliers_vente:
+ Secrets and endpoints are NOT here.*  enabled: false
+ Secrets and endpoints are NOT here.*  pas_secondes: 5
+ Secrets and endpoints are NOT here.*  lignes:
+ Secrets and endpoints are NOT here.*    - nom: STOCKLANA
+ Secrets and endpoints are NOT here.*      jeton: "C5tGuxaPnbxHHP6RTpAQs34x8TN8A9ZfJxcfizd2WF3u"
+ Secrets and endpoints are NOT here.*      chaine: solana
+ Secrets and endpoints are NOT here.*      decimales: 6
+ Secrets and endpoints are NOT here.*      entree_sol_par_jeton: 0.000001009206
+ Secrets and endpoints are NOT here.*      tranches:
+ Secrets and endpoints are NOT here.*        - {multiple: 3.0, part_pct: 75}
+ Secrets and endpoints are NOT here.*        - {multiple: 4.0, part_pct: 100}
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*telegram_rapide:
+ Secrets and endpoints are NOT here.*  enabled: true
+ Secrets and endpoints are NOT here.*  mode: paper                  # paper | live
+ Secrets and endpoints are NOT here.*  pas_secondes: 10
+ Secrets and endpoints are NOT here.*  mise_eur: 60.0
+ Secrets and endpoints are NOT here.*  max_lignes_simultanees: 6
+ Secrets and endpoints are NOT here.*  reserve_sol: 0.02            # gardee pour les frais des ventes en cours
+ Secrets and endpoints are NOT here.*  pool_min_sol: 0
+ Secrets and endpoints are NOT here.*  pool_max_sol: 0
+ Secrets and endpoints are NOT here.*  regle_hausse: false
+ Secrets and endpoints are NOT here.*  hausse_max: 0.0          # on achete si le prix a l entree est <= au premier releve
+ Secrets and endpoints are NOT here.*  mise_hausse_eur: 10.0    # mise pour un signal « n a pas monte » (50 EUR pour Telegram)
+ Secrets and endpoints are NOT here.*  regle_mcap: false
+ Secrets and endpoints are NOT here.*  mcap_max_usd: 166000
+ Secrets and endpoints are NOT here.*  regle_propre: true
+ Secrets and endpoints are NOT here.*  regle_propre_seule: true
+ Secrets and endpoints are NOT here.*  mise_propre_eur: 30.0
+ Secrets and endpoints are NOT here.*  max_lignes_propre: 3
+ Secrets and endpoints are NOT here.*  mcap_pool_min_sol: 468
+ Secrets and endpoints are NOT here.*  mise_mcap_eur: 50.0      # mise FICTIVE : cette regle ne signe jamais
+ Secrets and endpoints are NOT here.*  max_par_jour: 0              # 0 = aucun plafond ; le frein reel est le portefeuille
+ Secrets and endpoints are NOT here.*  heures_exclues: []
+ Secrets and endpoints are NOT here.*  peage_pct: 2.0               # aller-retour, pour le calcul a blanc seulement
+ Secrets and endpoints are NOT here.*  alertes: true
+ Secrets and endpoints are NOT here.*  canal: "1047701515"
+ Secrets and endpoints are NOT here.*  jeton_variable: TELEGRAM_BOT_TOKEN_BIS
+ Secrets and endpoints are NOT here.*  jeton_fichier: /app/data/.telegram_token_tradingdex   # secours si la variable disparait
+ Secrets and endpoints are NOT here.*  slippage_achat_pct: 20.0
+ Secrets and endpoints are NOT here.*  slippage_vente_pct: 25.0
+ Secrets and endpoints are NOT here.*  max_ecart_pool_pct: 20.0
+ Secrets and endpoints are NOT here.*  max_impact_pct: 15.0
+ Secrets and endpoints are NOT here.*  max_aller_retour_pct: 15.0
+ Secrets and endpoints are NOT here.*  cle_fichier: null
+ Secrets and endpoints are NOT here.*  vente_cascade:
+ Secrets and endpoints are NOT here.*    mode: papier
+ Secrets and endpoints are NOT here.*    seuil_pct: 30.0
+ Secrets and endpoints are NOT here.*    fenetre_s: 10.0
+ Secrets and endpoints are NOT here.*    periode_s: 1.0
+ Secrets and endpoints are NOT here.*    slippage_pct: 40.0          # sortir a -40 % vaut mieux que rester a -90 %
+ Secrets and endpoints are NOT here.*    priorite_lamports: 200000   # 0,0002 SOL : rien a cote de ce qu une seconde coute pendant un crash
+ Secrets and endpoints are NOT here.*    reessai_s: 2.0
+ Secrets and endpoints are NOT here.*    max_essais: 5
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*bnb_collecte:
+ Secrets and endpoints are NOT here.*  enabled: false
+ Secrets and endpoints are NOT here.*  pas_secondes: 20
+ Secrets and endpoints are NOT here.*  rpc: "https://bsc.publicnode.com"   # `bsc-dataseed` refuse eth_getLogs (limit exceeded)
+ Secrets and endpoints are NOT here.*  max_blocs: 200                      # apres un arret, on ne rattrape pas au-dela
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*pump_courbe:
+ Secrets and endpoints are NOT here.*  enabled: false
+ Secrets and endpoints are NOT here.*  pas_secondes: 20
+ Secrets and endpoints are NOT here.*  slots_par_cycle: 40     # ~16 s de chaine par cycle : on echantillonne, on ne recense pas
+ Secrets and endpoints are NOT here.*  max_slots: 300          # apres un arret on ne rattrape pas au-dela
+ Secrets and endpoints are NOT here.*  part_lue: 0.60          # part des creations dont on lit la metadonnee (IPFS sature au-dela)
+ Secrets and endpoints are NOT here.*  suivi_minutes: 45       # duree de suivi du prix SUR LA COURBE apres creation
+ Secrets and endpoints are NOT here.*  budget_blocs_s: 40      # lecture des blocs
+ Secrets and endpoints are NOT here.*  budget_social_s: 25     # lecture des metadonnees IPFS
+ Secrets and endpoints are NOT here.*  budget_prix_s: 30       # suivi des prix sur la courbe
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*# ---- ARGENT REEL · strategie BANDE + PAUSE (mise, bande, modele, pause, garde-fous d achat) ----
+ Secrets and endpoints are NOT here.*modele_rapide:
+ Secrets and endpoints are NOT here.*  enabled: true
+ Secrets and endpoints are NOT here.*  mode: live                   # paper | live
+ Secrets and endpoints are NOT here.*  cumul_depuis: 1789977360
+ Secrets and endpoints are NOT here.*  pause_cout_fixe: 0.03524
+ Secrets and endpoints are NOT here.*  pause_fraicheur: 900
+ Secrets and endpoints are NOT here.*  regle: bande
+ Secrets and endpoints are NOT here.*  age_decision: 45
+ Secrets and endpoints are NOT here.*  tenue_secondes: 240
+ Secrets and endpoints are NOT here.*  traits_75: false
+ Secrets and endpoints are NOT here.*  pause_enabled: true
+ Secrets and endpoints are NOT here.*  pause_secondes: 1800
+ Secrets and endpoints are NOT here.*  pause_seuil: -0.30
+ Secrets and endpoints are NOT here.*  modele: /app/data/recherche/balayage/modele_vidage.json
+ Secrets and endpoints are NOT here.*  bande: [0.20, 0.35]
+ Secrets and endpoints are NOT here.*  combo_db: /app/db/papier_combo.sqlite
+ Secrets and endpoints are NOT here.*  nom_court: "BANDE + PAUSE"
+ Secrets and endpoints are NOT here.*  nom_regle: "bande + pause"
+ Secrets and endpoints are NOT here.*  seuil_risque: auto      # lu dans le fichier ; la regle `bande` ne s en sert pas, le frein si
+ Secrets and endpoints are NOT here.*  frein_enabled: false
+ Secrets and endpoints are NOT here.*  frein_fenetre: 20
+ Secrets and endpoints are NOT here.*  frein_seuil: 0.50            # frontiere NATURELLE : plus de perdants que de gagnants         # le seuil p80 du modele, celui de `RISQUE seul` dans la recherche
+ Secrets and endpoints are NOT here.*  pas_secondes: 5              # la fenetre de decision est courte : on repasse souvent
+ Secrets and endpoints are NOT here.*  fenetre_minutes: 15
+ Secrets and endpoints are NOT here.*  mise_eur: 20.0
+ Secrets and endpoints are NOT here.*  slippage_achat_pct: 20.0
+ Secrets and endpoints are NOT here.*  slippage_vente_pct: 25.0
+ Secrets and endpoints are NOT here.*  max_impact_pct: 15.0         # au-dela, l ordre est refuse AVANT envoi et ne coute rien
+ Secrets and endpoints are NOT here.*  max_ecart_pool_pct: 40.0
+ Secrets and endpoints are NOT here.*  max_aller_retour_pct: 15.0
+ Secrets and endpoints are NOT here.*  max_ordres_jour: 0
+ Secrets and endpoints are NOT here.*  max_perte_jour_eur: 0
+ Secrets and endpoints are NOT here.*  cle_fichier: null
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*# ---- ARGENT REEL · strategie G+D, le suiveur (execute les decisions de papier_gd_direct) ----
+ Secrets and endpoints are NOT here.*suiveur_gd:
+ Secrets and endpoints are NOT here.*  enabled: true
+ Secrets and endpoints are NOT here.*  mode: live
+ Secrets and endpoints are NOT here.*  table: gd_lignes
+ Secrets and endpoints are NOT here.*  regle: gd_suiveur
+ Secrets and endpoints are NOT here.*  gd_db: /app/db/papier_gd.sqlite
+ Secrets and endpoints are NOT here.*  gd_fraicheur: 900
+ Secrets and endpoints are NOT here.*  mise_eur: 20.0
+ Secrets and endpoints are NOT here.*  pas_secondes: 2
+ Secrets and endpoints are NOT here.*  age_decision: 45
+ Secrets and endpoints are NOT here.*  fenetre_entree_s: 13
+ Secrets and endpoints are NOT here.*  tenue_secondes: 240
+ Secrets and endpoints are NOT here.*  prise_gain_x: 2.00
+ Secrets and endpoints are NOT here.*  prise_gain_direct: true
+ Secrets and endpoints are NOT here.*  max_perte_jour_eur: 0
+ Secrets and endpoints are NOT here.*  max_ordres_jour: 0
+ Secrets and endpoints are NOT here.*  pause_enabled: false
+ Secrets and endpoints are NOT here.*  frein_enabled: false
+ Secrets and endpoints are NOT here.*  traits_75: false
+ Secrets and endpoints are NOT here.*  cle_fichier: null
+ Secrets and endpoints are NOT here.*  alertes: true
+ Secrets and endpoints are NOT here.*  slippage_achat_pct: 20.0
+ Secrets and endpoints are NOT here.*  slippage_vente_pct: 25.0
+ Secrets and endpoints are NOT here.*  max_impact_pct: 15.0
+ Secrets and endpoints are NOT here.*  max_ecart_pool_pct: 20.0
+ Secrets and endpoints are NOT here.*  max_aller_retour_pct: 15.0
+ Secrets and endpoints are NOT here.*  modele: /app/data/recherche/balayage/modele_vidage.json
+ Secrets and endpoints are NOT here.*  fenetre_minutes: 15
+ Secrets and endpoints are NOT here.*  confirmation_secondes: 90
+ Secrets and endpoints are NOT here.*  etiquette: "🅶"
+ Secrets and endpoints are NOT here.*  nom_regle: "G+D · foule + coffre + tendance"
+ Secrets and endpoints are NOT here.*  nom_court: "G+D"
+ Secrets and endpoints are NOT here.*  cumul_depuis: 1790372400
+ Secrets and endpoints are NOT here.*
+ Secrets and endpoints are NOT here.*recuperation:
+ Secrets and endpoints are NOT here.*  enabled: true
+ Secrets and endpoints are NOT here.*  pas_secondes: 1800            # boucle lente : rien ne presse, et ca evite de gener les ordres
+ Secrets and endpoints are NOT here.*  max_transactions_par_passage: 3   # 3 x 20 comptes = 60 fermetures par passage au maximum
