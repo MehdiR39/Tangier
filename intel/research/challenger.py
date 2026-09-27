@@ -147,7 +147,7 @@ def _lignes(depuis=0.0):
     return out
 
 
-def geler() -> None:
+def geler(cible: str = "vidage") -> None:
     """Fige un challenger : modele reentraine + bande recalibree en QUANTILE + numero d essai."""
     import numpy as np
     import lightgbm as lgb
@@ -167,7 +167,11 @@ def geler() -> None:
         except Exception:  # noqa: BLE001
             continue
         X.append([float(f.get(k)) if f.get(k) is not None else np.nan for k in VAR])
-        y.append(1 if b - cout(q) <= -0.50 else 0)
+        net = b - cout(q)
+        # CIBLE « gain » (27/09) : B, reentraine sur la cible vidage, selectionne MOINS bien que
+        # l ancien (x1,40 contre x1,61). Tout l argent vient de la queue haute, donc on apprend
+        # directement a la reconnaitre : 1 si le ticket net depasse +50 %.
+        y.append((1 if net >= 0.50 else 0) if cible == "gain" else (1 if net <= -0.50 else 0))
     X = np.array(X, dtype=float)
     # `feature_name=VAR` N EST PAS COSMETIQUE. Le moteur et le carnet papier cherchent chaque
     # variable PAR NOM (`arbres.Modele.probabilite` fait `valeurs.get(nom)`). Un modele entraine sur
@@ -185,6 +189,13 @@ def geler() -> None:
     qhi = sum(1 for z in ref if z < BANDE_SERVICE[1]) / len(ref)
     ss = sorted(s)
     bande = (float(ss[int(qlo * (len(ss) - 1))]), float(ss[int(qhi * (len(ss) - 1))]))
+    if cible == "gain":
+        # Un score de GAIN se lit dans l autre sens : on prend les plus hauts. Meme PART du flux
+        # que la bande en service (qhi - qlo), pour que le volume de tickets soit comparable et
+        # que la pause travaille sur un flux de meme densite.
+        part = qhi - qlo
+        bande = (float(ss[int((1.0 - part) * (len(ss) - 1))]), 1.01)
+        qlo, qhi = 1.0 - part, 1.0
 
     etat = charger_etat()
     etat["essais"] = int(etat.get("essais", 12)) + 1        # CE GEL EST UN ESSAI : la barre monte
@@ -227,7 +238,7 @@ def geler() -> None:
                "n_entrainement": len(y), "vidages": sum(y) / len(y),
                "essai": etat["essais"],
                "echeance_tickets": ECHEANCE_TICKETS, "echeance_jours": ECHEANCE_JOURS,
-               "axes_requis": AXES_REQUIS},
+               "axes_requis": AXES_REQUIS, "cible": cible},
               open(os.path.join(d, "meta.json"), "w"), indent=1)
     print("GELE dans %s" % d)
     print("   %d tickets d entrainement · %.1f %% de vidages" % (len(y), 100 * sum(y) / len(y)))
@@ -357,6 +368,6 @@ def juger() -> None:
 
 if __name__ == "__main__":
     if "--geler" in sys.argv:
-        geler()
+        geler("gain" if "--cible=gain" in sys.argv else "vidage")
     else:
         juger()

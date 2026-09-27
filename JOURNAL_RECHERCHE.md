@@ -883,6 +883,17 @@ n a jamais vu le 24/09. Donc :
 - `juger()` ne lit que `papier_combo` et rescore hors ligne : C n a **pas besoin** d un second
   carnet pour etre juge. Il en faudrait un seulement pour l adopter (sa pause doit voir son flux).
 
+
+**27/09 09h27 — CHALLENGER D, CIBLE « GROS GAIN ».** Mido a releve la contradiction : B etait
+REENTRAINE et selectionne MOINS bien que l ancien (x1,40 contre x1,61). Reentrainer sur la cible
+vidage n a donc pas marche une fois ; C (meme cible, donnees recentes) est un essai, pas le remede.
+Hypothese testee par D : le defaut est la CIBLE (memoire `cible-vidage-contre-gagnant`). D apprend
+directement `net >= +50 %` sur 7 444 tickets (9,6 % de positifs), bande = les **46,4 % les plus
+hauts** de son score (meme part du flux que la bande en service). Dossier `20260927-092716`,
+**essai n°15**, dump verifie (4,4e-16). Critere ecrit d avance dans `meta.json`, identique a C :
+rejet si <= −2 σ a >= 1 001/bras, adoption sur les sept axes seulement. `geler(cible=...)` et
+`--cible=gain` ajoutes a `challenger.py`. Le carnet papier reste epingle sur B.
+
 **CE QUI RESTE A FAIRE, dans l ordre.**
 1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
    Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —
