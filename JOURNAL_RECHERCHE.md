@@ -967,6 +967,16 @@ aller-retour trop cher — deux causes qui, elles, dependent de la TAILLE de l o
 **non tranche** (11 tickets a 20 EUR). Les 3 annules valaient +33 % de la mise en papier. A recompter
 a ~40 tickets voulus a 20 EUR ; si le taux reste vers 25 %, la mise coute des tickets G+D.
 
+
+**27/09 soir — RANGEMENT DU PROJET (Mido : « ok »).** Rien d effacé, prod intacte. (1) `archive/` :
+bot ML Binance de fevrier (racine, `src/`, `models/`, Dockerfile, resultats `*USDT*`) et etude
+d allocation (notebooks) ; service `tangier` retire de docker-compose. (2) `docs/RECHERCHE_INDEX.md` :
+les 194 scripts de `intel/research/` classes (10 en continu, 17 bibliotheques, 158 ponctuels,
+9 arretes) — ils ne sont PAS deplaces, le gardien les lance par leur nom. (3) Nouvelle doc :
+`README.md`, `docs/ARCHITECTURE.md` (schemas), `docs/EXPLOITATION.md` ; anciennes docs dans
+`docs/historique/`. **Degat du menage de midi, repare** : `veille_table` alertait sur Telegram pour
+les 8 collecteurs arretes expres — liste `ARRETEES`, test ajoute.
+
 **CE QUI RESTE A FAIRE, dans l ordre.**
 1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
    Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —

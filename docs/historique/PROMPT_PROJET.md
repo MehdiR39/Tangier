@@ -1,3 +1,7 @@
+> **DOCUMENT HISTORIQUE — plus a jour.** Archive le 27/09/2026 lors du rangement du projet.
+> Il decrit le projet tel qu il etait a sa date. Etat actuel : `README.md`, `docs/ARCHITECTURE.md`,
+> et la section 0 de `JOURNAL_RECHERCHE.md`.
+
 # Tangier — prompt de reprise
 
 À lire au début de chaque séance, avec `JOURNAL_RECHERCHE.md` (le journal complet, §3.1 à §3.122).

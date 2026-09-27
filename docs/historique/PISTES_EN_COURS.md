@@ -1,3 +1,7 @@
+> **DOCUMENT HISTORIQUE — plus a jour.** Archive le 27/09/2026 lors du rangement du projet.
+> Il decrit le projet tel qu il etait a sa date. Etat actuel : `README.md`, `docs/ARCHITECTURE.md`,
+> et la section 0 de `JOURNAL_RECHERCHE.md`.
+
 # Les pistes en cours — état au 18/09/2026, 19h45
 
 Ce fichier existe pour une raison : plusieurs pistes tournent en parallèle, chacune avec son critère

@@ -1,5 +1,5 @@
 # Tangier Intel tunables. Deep-merged over intel/settings.py DEFAULT_CONFIG.
-# Secrets and endpoints are NOT here: see .env (INTEL_* variables, README_INTEL.md).
+# Secrets and endpoints are NOT here: see .env (INTEL_* variables, docs/EXPLOITATION.md).
 
 portfolio:
   positions:

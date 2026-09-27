@@ -1,42 +1,42 @@
 # Tangier
 
-Deux systèmes vivent dans ce dépôt. Ils ne partagent ni données ni exécution.
+Trading automatique de jetons fraîchement lancés sur **Solana (PumpSwap)**, en argent réel, avec
+un moteur qui décide en 45 secondes, un carnet papier qui mesure chaque règle sans acheter, et une
+page de suivi.
 
-## `intel/` — moteur Robinhood Chain (en production)
+| | |
+|---|---|
+| **En production** | deux stratégies à 20 € : **BANDE + PAUSE** et **G+D** |
+| **Objectif** | ~50 € par jour |
+| **État courant** | `JOURNAL_RECHERCHE.md`, section 0 — à lire avant toute action |
+| **Suivi** | page Streamlit : http://192.168.1.191:8502 (maison) · http://100.116.248.62:8502 (Tailscale) |
 
-Achète des lancements de memecoins sur Robinhood Chain (chain 4663) et les revend en
-quelques minutes. Règle d'entrée : au moins 27 échanges dans la minute qui suit le premier
-échange d'un pool. Règle de sortie : ×2 ou T+5 minutes, la première des deux.
+## Où lire quoi
+
+| je veux… | lire |
+|---|---|
+| comprendre comment ça marche | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — schémas du flux, des carnets papier, de la mise à jour du modèle, carte des dossiers |
+| démarrer, vérifier, redémarrer, dépanner | [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md) |
+| savoir ce qui est mesuré, décidé, en cours | [`JOURNAL_RECHERCHE.md`](JOURNAL_RECHERCHE.md), section 0 |
+| trouver un script de recherche | [`docs/RECHERCHE_INDEX.md`](docs/RECHERCHE_INDEX.md) — 194 scripts classés par rôle |
+| les règles de travail | [`CLAUDE.md`](CLAUDE.md) |
+| les anciens projets | `archive/` — bot ML Binance (février), étude d'allocation (août) |
+
+## Démarrage rapide
 
 ```bash
-docker compose up -d intel          # démarrer
-docker compose logs -f intel        # suivre
+docker compose up -d intel                      # le moteur
+docker inspect -f '{{.State.Health.Status}}' tangier-intel
+scripts\lancer_carnet.cmd                       # la page (normalement lancée par une tâche planifiée)
 ```
 
-Piloté depuis Telegram : `/pnl`, `/positions`, `/closed`, `/orders`, `/solde`,
-`/pause`, `/resume`, `/restart`.
+Secrets et points d'accès : `.env` (modèle : `.env.example`). La clé privée n'en sort jamais.
 
-- architecture : [docs/INTEL_ARCHITECTURE.md](docs/INTEL_ARCHITECTURE.md)
-- installation et variables : [docs/README_INTEL.md](docs/README_INTEL.md)
-- la clé privée vit dans `.env`, jamais dans le dépôt ; le passage en réel demande
-  deux gestes séparés (clé présente **et** `execution.mode: live`).
+## Organisation
 
-## `src/`, `scripts/`, `*.py` à la racine — bot Binance (hérité)
-
-Le bot d'origine : backtests, optimisation, signaux quotidiens sur Telegram. Le conteneur
-`tangier_watcher` fait encore tourner `bot_watcher.py`. Ses guides sont dans
-[docs/legacy/](docs/legacy/).
-
-## Données
-
-`data/` n'est pas dans le dépôt et contient le jeu de recherche (`research.sqlite`,
-5 491 lancements échantillonnés sans biais de survie) et les sauvegardes de la base du
-moteur. La base vivante, elle, reste dans un volume Docker : une base SQLite en WAL sur un
-montage Windows se corrompt.
-
-## Tests
-
-```bash
-docker run --rm -v "$PWD/intel:/app/intel" -v "$PWD/tests:/app/tests" \
-  -w /app -e PYTHONPATH=/app tangier-intel:latest python -m pytest -q tests
+```text
+config/intel.yaml   tous les réglages          intel/        le code du moteur
+data/               page, modèles, recherche   logs/         journaux
+tests/              tests du moteur            docs/         documentation
+scripts/            lanceurs Windows           archive/      anciens projets
 ```
