@@ -955,6 +955,18 @@ seuls les tickets achetables comptent, au prix cote. **Limite connue : la cotati
 62-76 s d age, la prod achete vers 47 s** — 15 a 30 s plus tard, donc pas encore le meme instant. A
 mesurer sur les tickets achetes des deux cotes, puis a rapprocher si l ecart est grand.
 
+
+**27/09 16h10 — BANDE + PAUSE 25 → 20 EUR (decision de Mido).** La mise la plus haute etait sur la
+strategie la moins rentable par ticket (reel : +6,2 % de la mise contre +11,4 % pour G+D). G+D reste a
+20. `pause_cout_fixe` revient a sa valeur MESUREE a 20 EUR, 0,03524. Moteur redemarre sans position
+ouverte ; compteur Telegram NON coupe (meme strategie). Le papier iso prod cote desormais a 20 EUR.
+**G+D, 10 contre 20 EUR — la mise fait-elle rater des tickets ?** A 10 EUR (26/09 01h22-16h10) :
+2 annules sur 30 voulus (7 %), tous deux « cotation trop chere » (le prix avait bouge, pas la taille).
+A 20 EUR (depuis 26/09 19h38) : **3 sur 11 (27 %)**, dont 2 glissements depasses (0x1771) et 1
+aller-retour trop cher — deux causes qui, elles, dependent de la TAILLE de l ordre. Fisher p = 0,11 :
+**non tranche** (11 tickets a 20 EUR). Les 3 annules valaient +33 % de la mise en papier. A recompter
+a ~40 tickets voulus a 20 EUR ; si le taux reste vers 25 %, la mise coute des tickets G+D.
+
 **CE QUI RESTE A FAIRE, dans l ordre.**
 1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
    Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —

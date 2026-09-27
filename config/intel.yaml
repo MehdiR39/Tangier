@@ -1211,7 +1211,8 @@ modele_rapide:
   # nuit hors regle et -15,69 EUR).
   # Seule la part FIXE se dilue : 0,1251 EUR/ticket, mesure sur 752 tickets reels a deux mises.
   #     0,03524 - 0,1251 x (1/20 - 1/25) = 0,03399
-  pause_cout_fixe: 0.03399
+  # 27/09 : mise revenue a 20 EUR -> retour a la valeur MESUREE a 20 EUR ci-dessus.
+  pause_cout_fixe: 0.03524
   # AU-DELA DE COMBIEN DE SILENCE DU CARNET PAPIER LA PAUSE BLOQUE-T-ELLE. La pause cherche les
   # clotures des 30 dernieres minutes ; si `papier_combo` n ecrit plus, elle n en trouve aucune et
   # l ancien code lisait ca comme « rien ne s est effondre, on peut acheter ». Le garde-fou
@@ -1466,7 +1467,11 @@ modele_rapide:
   # remesurer.
   #
   # `max_perte_jour_eur` reste a 150 : il se declenchera donc ~25 % plus facilement. Assume.
-  mise_eur: 25.0
+  # 27/09 : 25 -> 20 EUR, decision de Mido. La mise la plus haute etait sur la strategie qui rapporte
+  # le moins par ticket (reel : BANDE + PAUSE +6,2 % de la mise hors modele B, G+D +11,4 %). G+D reste
+  # a 20 (ses pools font parfois 5-6 SOL, une mise plus grosse y paie plus d impact). 20 EUR = demi-Kelly
+  # a 500 EUR de capital. `pause_cout_fixe` revient a sa valeur MESUREE a 20 EUR (0,03524).
+  mise_eur: 20.0
   # Le taux SOL/EUR est LU SUR LE MARCHE a chaque achat (sol.sol_eur), jamais fige : le 08/09 un
   # taux en dur de 180 EUR alors que le SOL valait 96 engageait 2,67 EUR pour un ticket annonce a 5.
   # Si le taux est illisible, l achat est REPORTE plutot que mal dimensionne.
