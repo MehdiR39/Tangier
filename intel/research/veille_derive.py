@@ -235,7 +235,46 @@ def main() -> None:
         enregistrer_etat(etat)
         return
 
+    # CE QU IL FAUT REPARER, PIECE PAR PIECE. Mido, 23/09 : « une strategie qui ne fonctionne pas
+    # il faut la retaper, pas l abandonner ». Il a raison, et les indicateurs ne disent pas « ca va
+    # mal » : ils disent QUELLE PIECE a bouge. Cinq des six pannes ont une reparation precise ; une
+    # seule signifie que l avantage lui-meme a disparu.
+    REPARATION = {
+        "krach": (
+            "LE MARCHE A CHANGE DE REGIME, pas la strategie.\n"
+            "      Le taux d effondrement commande la frequence de la pause. S il baisse, la pause\n"
+            "      s ouvre trop et on achete une population jamais mesuree ; s il monte, elle ne se\n"
+            "      rouvre plus.\n"
+            "      REPARER : recalibrer le SEUIL de la pause sur le nouveau taux -- viser le meme\n"
+            "      taux de blocage qu avant (~90 %), pas le meme seuil. C est la grille ci-dessous."),
+        "part_bande": (
+            "LA DISTRIBUTION DU SCORE A DERIVE, la bande ne designe plus la meme population.\n"
+            "      Les bornes 0,20-0,35 sont des constantes DE CE MODELE, pas du marche : le\n"
+            "      mecanisme fixe le MILIEU de la distribution, soit les quantiles [0,45 ; 0,91].\n"
+            "      REPARER : recalculer les bornes sur ces quantiles, mesures sur les 400 derniers\n"
+            "      tickets (passe strict, jamais la fenetre en cours). Ne PAS deplacer les bornes\n"
+            "      a vue : c est le quantile qui est la regle, le nombre n en est que l image."),
+        "blocage": (
+            "CONSEQUENCE, presque jamais une cause. Regarder d abord `krach` et `part_bande` :\n"
+            "      le blocage est ce qu ils produisent. S ils sont tous deux dans leur zone et que\n"
+            "      le blocage sort quand meme, alors c est la PAUSE elle-meme qui a change de\n"
+            "      comportement -- verifier `pause_cout_fixe` et la fraicheur du carnet papier."),
+    }
     print("   DERIVE : %s" % (", ".join(hors) if hors else "resultat sous le nul"))
+    print()
+    if hors:
+        print("   CE QU IL FAUT REPARER :")
+        for cle in hors:
+            print("   * %-12s %s" % (cle, REPARATION.get(cle, "cause a diagnostiquer")))
+        print()
+    else:
+        # Tous les indicateurs en zone ET le resultat sous le nul : c est le seul cas ou rien de
+        # mecanique n a bouge. La piece cassee est l avantage lui-meme.
+        print("   AUCUN INDICATEUR N A BOUGE et le resultat est quand meme sous le nul.")
+        print("   C est le seul cas ou il n y a pas de piece a retaper : l avantage lui-meme a")
+        print("   disparu. Ne PAS re-optimiser sur le passe recent -- c est exactement la que le")
+        print("   sur-ajustement se glisse. Revenir a la recherche avec les tickets accumules.")
+        print()
     print("   Evaluation de la grille pre-enregistree en WALK-FORWARD (2/3 apprentissage, 1/3 test).")
     coupe = int(0.66 * len(bande))
     app, test = bande[:coupe], bande[coupe:]
@@ -277,8 +316,11 @@ def main() -> None:
         print("   -> CANDIDAT VALIDE. A GELER, puis juger sur 200 tickets POSTERIEURS avant tout")
         print("      passage en production. Ce script ne change rien de lui-meme.")
     else:
-        print("   -> AUCUN REMPLACANT. On garde la regle en service et on continue de mesurer.")
-        print("      Re-optimiser sans franchir ces conditions, c est courir apres le bruit.")
+        print("   -> AUCUN REGLAGE DE CETTE GRILLE NE PASSE. On garde la regle en service.")
+        print("      Cela ne veut PAS dire qu il faut abandonner la strategie : la grille ne")
+        print("      couvre que la duree et le seuil de la pause. Si la reparation indiquee plus")
+        print("      haut porte sur la bande ou sur le regime, elle se fait a la main -- et elle")
+        print("      se gele avant d etre jugee, comme toute autre candidate.")
     etat["historique"].append({"t": time.time(), "n": n, "moyenne": m, "dsr": d, "derive": True,
                                "candidat": [d_, s_, mt, d2]})
     enregistrer_etat(etat)

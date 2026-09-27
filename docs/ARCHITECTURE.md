@@ -142,7 +142,8 @@ Tangier/
 ├── intel/                    le code (monté en lecture seule dans le conteneur)
 │   ├── engines/              les boucles : modele_rapide, prix_chaine, solana_stream, scheduler…
 │   ├── execution/            cotation, garde-fous, signature, envoi (Solana, Jupiter)
-│   ├── research/             carnets papier, gardien, verdicts, analyses → docs/RECHERCHE_INDEX.md
+│   ├── research/             carnets papier, gardien, verdicts → docs/RECHERCHE_INDEX.md
+│   │   └── analyses/         117 analyses ponctuelles terminees (rien n en depend)
 │   ├── alerts/  db/  metrics/  providers/  scoring/  chain/  ingest/  …
 ├── data/                     monté dans le conteneur : page Streamlit, fichiers JSON, modèles,
 │   │                         recherche (4,5 Go), sauvegardes (32 Go) — NE RIEN EFFACER
