@@ -1348,24 +1348,52 @@ modele_rapide:
   #
   # POUR REVENIR EN ARRIERE : remettre les trois lignes ci-dessous a `modele_vidage.json`,
   # `bande: [0.20, 0.35]` et `combo_db: /app/db/papier_combo.sqlite`, ET `cumul_depuis`.
-  modele: /app/data/recherche/challengers/20260922-221347/modele_dump.json
+  # ================================================================================================
+  # 27/09 08h — RETOUR A L ANCIEN MODELE. La bascule du 26/09 12h38 est annulee.
+  #
+  # POURQUOI, ET CE N EST PAS « parce que la nuit a ete mauvaise ». La nuit l a ete (-100,27 EUR sur
+  # 10 tickets, 8 perdants), mais le marche aussi (-1,823 EUR/ticket) et l ANCIEN modele aurait
+  # perdu egalement (-3,343 contre -7,074 pour le nouveau, sur le bras temoin).
+  #
+  # LA RAISON EST MECANIQUE. Decomposition de l ecart depuis la bascule :
+  #     selection (avant pause)   ancien -2,572  ·  nouveau -2,588   -> IDENTIQUES
+  #     apres la pause            ancien -4,177  ·  nouveau -8,840
+  #     ecart total -4,664 :  selection -0,016  ·  PAUSE -4,648
+  # **Les deux modeles selectionnent exactement aussi bien.** Tout l ecart vient de la PAUSE.
+  # Et c est le meme calcul qui, la VEILLE, donnait l avantage au nouveau : +2,232 par la pause,
+  # -0,257 par la selection. Mesure deux fois, deux signes opposes.
+  #
+  # DONC LA DIFFERENCE ENTRE CES DEUX MODELES N A JAMAIS ETE UNE DIFFERENCE DE SELECTION : c est un
+  # effet de calendrier de la pause -- quels effondrements elle voit, a quels instants elle bloque.
+  # Coherent avec le fait etabli que la pause n a AUCUNE information (P(crash|crash) = 0,364 contre
+  # 0,391 apres un ticket sain) : l ecart entre deux flux qui la nourrissent differemment est du
+  # bruit par construction.
+  #
+  # ON REVIENT DONC NON PARCE QUE L ANCIEN GAGNE, MAIS PARCE QUE LA BASCULE N ETAIT PAS JUSTIFIEE :
+  # `challenger.py` disait ATTENDRE (101 tickets sur 200) et on est passe outre. Le gel reprend son
+  # cours, `papier_challenger` continue de scorer B en papier -- on ne perd AUCUNE information, on
+  # retire seulement l exposition reelle.
+  modele: /app/data/recherche/balayage/modele_vidage.json
   # LA BANDE CHANGE EN MEME TEMPS QUE LE MODELE, JAMAIS SEPAREMENT. Un modele reentraine
   # redistribue ses scores : garder [0,20 ; 0,35] designerait d autres jetons et ce ne serait plus
   # la regle mesuree. Ces bornes sont celles que `challenger.py` a calculees sur les QUANTILES
   # [0,451 ; 0,914] qu occupait la bande en service.
-  bande: [0.17763490200673798, 0.3920447192432126]
+  # REVENUE A LA BANDE DU MODELE EN SERVICE le 27/09 : la bande DOIT changer avec le modele, jamais
+  # separement -- des scores differents ne designent pas les memes jetons aux memes bornes.
+  bande: [0.20, 0.35]
   # ET LA SOURCE DE LA PAUSE CHANGE AVEC. Elle doit voir le flux entier de la bande DE CE MODELE ;
   # `papier_combo` ne porte que les scores de l ancien. Sans ce changement, la pause surveillerait
   # les clotures d une AUTRE bande que celle ou l on achete -- la regle mesuree perdrait sa pause,
   # et la bande sans pause perd 106 EUR/jour (mesure du 26/09 sur 3 032 tickets).
-  combo_db: /app/db/papier_challenger.sqlite
+  # ET LA SOURCE DE LA PAUSE REVIENT AVEC : elle doit voir le flux de la bande DE CE MODELE.
+  combo_db: /app/db/papier_combo.sqlite
   # LE PIED DU MESSAGE NOMME LA STRATEGIE, PAS LE MODELE. Meme raison que `cumul_depuis` : la
   # strategie n a pas change, seule une piece interne. Ecrire « B FRAIS » la ferait passer pour une
   # methode neuve et casserait la lecture du total, qui court depuis le 21/09.
   nom_court: "BANDE + PAUSE"
   # La ligne d achat, elle, peut dire quel modele decide -- c est une information utile au ticket,
   # pas un changement de methode.
-  nom_regle: "bande + pause · modele frais"
+  nom_regle: "bande + pause"
   # `auto` : le seuil vient du FICHIER, recalcule a chaque entrainement. Un seuil fige ici
   # garderait une proportion de tickets differente a chaque reentrainement, et deriverait en
   # silence -- la derive exacte mesuree sur les gels (§3.158 : 40 tickets gardes contre 110).

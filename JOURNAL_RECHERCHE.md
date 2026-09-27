@@ -734,6 +734,171 @@ La PROD s'est arretee en meme temps par un autre chemin — pause apres une clot
 le suiveur juge bien (37 pools en 3 h, tous ecartes parce que G+D dit non) · et les changements du
 soir agissent APRES la decision d'acheter, donc on n'arrive meme pas jusqu'a eux.
 
+### 0.2 undecies — 27/09 : LA PAUSE AU SENS MATHEMATIQUE. Et pourquoi la nuit a ete mauvaise.
+
+**Mido, 27/09 :** *« il faut comprendre la pause au sens mathematique parce que avoir un truc qui
+selectionne par pur hasard c'est pas serieux »*. Puis : *« continue ton etude pas la peine de me
+demander a chaque fois »*. Tout ce qui suit est en lecture seule sur `papier_combo.sqlite`,
+3 450 tickets de bande [0,20 ; 0,35] du 15 au 27/09, mise 25 EUR, couts reels retires
+(0,03399 fixe + impact 2xordre/(coffre+V)), gain plafonne a +300 %.
+
+**LE POINT DE DEPART, ET C ETAIT UN PARADOXE.** Sans pause la bande fait −0,497 EUR/ticket, avec
+elle +2,401. Or un effondrement N ANNONCE PAS le suivant : P(krach | krach recent) = **0,364**
+contre **0,391** apres un ticket sain — legerement ANTI-correle. La pause gagne donc sans posseder
+l information qu on lui pretait. Trois mecanismes candidats, tous testes.
+
+**(1) CE N EST PAS UN ARTEFACT DE BLOCS.** Deux nuls. Melange ticket par ticket : la pause y gagne
+encore, parce qu elle retire mecaniquement des tickets a un moment ou la moyenne locale est basse.
+Melange **par blocs de 30 min**, qui preserve le chevauchement des tenues de 242 s et la structure
+locale : le nul tombe a **+0,285** contre **+2,401** observe, **p = 0,005**. L effet survit au nul
+qui compte.
+
+**(2) CE N EST PAS UN REGIME DE KRACHS.** La variance de la densite de krachs par tranche de 30,
+60 et 120 min est **compatible avec un tirage binomial de meme intensite** aux trois echelles. Il
+n existe pas de « periodes riches en effondrements » que la pause echantillonnerait.
+
+**(3) CE N EST PAS LA FENETRE, C EST L EVENEMENT.** On deplace artificiellement le declencheur de
+−600 s a +1 800 s par rapport a la cloture du perdant. Le gain **culmine exactement a la cloture**
+(+2,401) et se degrade des deux cotes. Bloquer 30 min a un moment quelconque ne paie pas ; bloquer
+30 min *apres un effondrement* paie. Le declencheur porte de l information.
+
+**LE MECANISME, ET IL EST ASYMETRIQUE.** Un krach recent n annonce pas d autres krachs, il annonce
+**moins de gros gains** : part de tickets a **>= +50 %** dans les 30 min qui suivent,
+**15,7 %** apres un krach contre **22,3 %** sans, soit **+3,211 EUR/ticket** d ecart et
+**+2,89 sigma**. La queue haute s amincit, la queue basse ne s epaissit pas.
+**La pause est un filtre d OPPORTUNITE, pas un filtre de RISQUE.** C est pour ca qu elle marchait
+sans « predire » quoi que ce soit au sens ou on l avait cherche — et ca explique enfin
+§0.2 decies : *tout ce qui affaiblit la pause detruit la valeur*, parce que tout ce qui reduit le
+flux lui retire des poches a queue epaisse.
+
+**L HYPOTHESE DE L ATTENTION EST REJETEE.** Elle etait la suivante, et elle etait belle : un
+effondrement est un retrait de liquidite, un geste du createur, qui ne demande PERSONNE ; un gros
+gain demande des ACHETEURS. Si l attention du marche baisse apres un krach, les gains disparaissent
+et les krachs restent — exactement la signature mesuree. Les trois maillons echouent :
+- (a) l activite **ne baisse pas** apres un krach : 8,78 lancements/10 min contre 8,26 sans. Elle
+  est legerement PLUS HAUTE (−3,02 sigma dans le sens contraire a l hypothese).
+- (b) l activite **ne predit pas** les gros gains : 17,1 % / 18,1 % / 14,3 % / 15,9 % du plus calme
+  au plus actif. Aucune relation monotone.
+- (c) l effet du krach **survit entierement a activite egale** : +7,0 / +5,2 / +5,8 / +8,7 points
+  selon le quartile, moyenne **+6,7 pt** contre **+6,6 pt** brut. Zero attenuation.
+Le canal n est donc pas le nombre de lancements. Le mecanisme reste non identifie.
+
+**L EFFET N EST PAS CONSTANT D UN JOUR A L AUTRE.** Ecart quotidien du taux de gros gains
+(sans krach moins apres krach) sur 13 jours : moyenne +4,5 pt, mediane +5,6 pt, positif **9 fois
+sur 13**, mais l ecart-type observe est **11,1 pt** quand le hasard n en explique que **8,1** —
+**sur-dispersion x1,90**. La force de la pause varie reellement selon le jour. Ne jamais lire un
+seul jour : 20/09 donne +17,7 pt, 25/09 donne −13,6 pt, et les deux sont le meme mecanisme.
+
+**POURQUOI LA NUIT DU 26 AU 27 A ETE MAUVAISE — ET CE N EST PAS LA PAUSE.**
+
+| periode | tickets | bande SANS pause | bande AVEC pause | gain de la pause |
+|---|---|---|---|---|
+| 15/09 au 18/09 | 1 136 | −0,398 | **+2,076** | +2,475 (±2,84) |
+| 19/09 au 23/09 | 1 340 | −0,121 | **+4,123** | +4,244 (±3,51) |
+| 24/09 au 27/09 | 974 | **−1,130** | **−0,695** | +0,435 (±4,09) |
+
+Le gain de la pause ne s est pas effondre — **le flux de la bande s est degrade de 1,01 EUR/ticket**.
+Et la degradation est **entierement le taux de gros gains** ; les deux autres composantes sont
+inchangees :
+
+| composante | 19/09-23/09 | 24/09-27/09 | verdict |
+|---|---|---|---|
+| krach <= −30 % | 37,8 % (±2,6) | 38,6 % (±3,1) | inchange |
+| taille du gros gain | +1,223 (±0,095) | +1,206 (±0,116) | inchangee |
+| **part de gros gains** | **17,5 % (±2,0)** | **14,7 % (±2,2)** | **−2,8 pt, 1,84 sigma** |
+
+Verification de l addition : 0,028 x 1,21 x 25 EUR = **0,85 EUR/ticket**, contre 1,01 mesure. Il n y
+a rien d autre dans la degradation que l amincissement de la queue haute.
+
+**LA LIMITE DE LA PAUSE.** La pause detecte les **poches locales** ou la queue haute est mince
+(15,7 % contre 22,3 %) et les evite. Si le marche ENTIER passe en queue mince, il n y a plus de
+poche epaisse ou se refugier : la pause n est pas cassee, **elle n a plus rien a choisir**.
+
+**MAIS CE N EST PAS CE QUI S EST PASSE — CORRECTION DU DIAGNOSTIC CI-DESSUS.** Le meme decoupage
+applique a QUATRE populations, et il retourne la conclusion :
+
+| population | 19/09-23/09 | 24/09-27/09 | ecart |
+|---|---|---|---|
+| TOUS les pools eligibles | 9,6 % (n=3 076) | 9,3 % (n=2 079) | −0,3 pt, **−0,37 sigma** — PLAT |
+| **la BANDE [0,20 ; 0,35]** | **17,5 % (n=1 340)** | **14,7 % (n=974)** | **−2,8 pt, −1,81 sigma** |
+| plus sur que la bande (< 0,20) | 1,6 % (n=1 474) | 2,7 % (n=924) | +1,1 pt, **+1,84 sigma** |
+| plus risque que la bande (>= 0,35) | 14,5 % (n=262) | 13,8 % (n=181) | −0,7 pt, −0,21 sigma |
+
+**Le marche n a pas change. La queue est SORTIE DE LA BANDE**, et elle est partie dans la zone
+qu on ecarte comme trop sure (1,6 % → 2,7 %, +1,84 sigma). Les deux mouvements sont de sens opposes
+et de meme ampleur : c est un deplacement directionnel, pas du bruit dans un seau. Pouvoir de
+concentration de la bande : **x1,66 (15-18/09) → x1,82 (19-23/09) → x1,58 (24-27/09)**.
+
+**DONC C EST UNE DERIVE DE CONCEPT, et elle est verifiee comme telle.** `modele_vidage.json` est
+**inchange depuis le 15/09 12:13** (mtime) et `papier_combo` tourne bien dessus (env verifie dans
+`/proc`). Le modele n a pas bouge : **c est la relation entre son score et le resultat qui s est
+deplacee.** Ce n est donc pas le marche, et ce n est pas la bascule de modele du 26/09 non plus —
+`papier_combo` ne l a jamais vue.
+
+Consequence : le retour a `modele_vidage.json` corrige le mauvais choix de modele du 26/09 (sa bande
+concentre mieux, cf. ci-dessous), il ne corrige PAS la derive. **Et le reentrainement tel qu il a
+ete fait dans B ne l a pas corrigee non plus** — la bande de B concentre a x1,40 quand la prod est
+a x1,61, soit −1,9 pt et −1,39 sigma. Ce qui est coherent avec `selection −0,209` deja mesure : deux
+mesures independantes, meme verdict.
+
+**CE QUE CA CHANGE DANS LE PROCESS — un critere qui lit 2,65x plus vite.** Pour detecter une baisse
+de 20 % de la performance il faut **2 657 tickets par bras** en EUR/ticket (sigma 17,80 EUR/ticket)
+contre **1 001** sur la part de gros gains : **4 jours au lieu de 11** a 240 tickets/jour. C est le
+levier le plus net qu on ait sur la lenteur des verdicts, qui est le reproche de fond de Mido
+(*« a ton rythme on fera rien »*, *« on va pas a chaque fois attendre 20 jours pour decider »*).
+MAIS le r2 entre les deux n est que de **24,7 %** (13 blocs de 250 tickets) : la part de gros gains
+n explique qu un quart de la variance des EUR/ticket, donc un challenger peut l ameliorer et perdre
+de l argent ailleurs. **L usage est ASYMETRIQUE : elle autorise a REJETER tot, jamais a ADOPTER
+tot.** Rejeter ne coute rien — on garde ce qui marche ; adopter coute de l argent reel.
+Ajoute en LECTURE SEULE dans `challenger.juger()` : le gel en cours garde son critere ecrit
+d avance, conformement a CLAUDE.md. Le prochain gel pourra l inscrire dans son critere.
+
+**LE REMEDE, ET IL EST GELE — 27/09 09h02.** Mido : *« une analyse c est un moyen pour trouver des
+solutions et corriger des problemes »*. Deux formes de derive, deux remedes, et le test qui tranche :
+
+| question | mesure | verdict |
+|---|---|---|
+| (a) la distribution des scores a-t-elle glisse ? | quantiles 19-23/09 vs 24-27/09 : 0,181→0,202 au 45 %, le reste identique ; part dans la bande 43,6 → 46,8 % | **NON** — une bande en quantiles n aurait rien change |
+| (b) a score egal, la queue a-t-elle change ? | [0,20;0,25) 15,8 → 11,5 % (−1,86 σ) · [0,30;0,35) 18,7 → 14,7 % (−1,22 σ) · [0,25;0,30) 18,2 → 17,8 % (stable) · [0,05;0,15) 0,6 → 2,1 % (+2,09 σ) et 0,5 → 4,6 % (+2,20 σ) | **OUI** — la queue a fui les BORDS de la bande vers une zone injouable (2-5 % de queue, −0,40 EUR/ticket) |
+
+C est la derive (b) : **seul un reentrainement sur donnees recentes la corrige**, et B (gele le 22/09)
+n a jamais vu le 24/09. Donc :
+- **Challenger C gele le 27/09 09:02:41** — `20260927-090241`, 7 435 tickets (15→27/09, la derive
+  incluse a ~30 %), 19 variables, dump verifie (ecart 3,6e-16), bande recalibree sur les memes
+  quantiles [0,450 ; 0,914] → **[0,1625 ; 0,5082]** (plus large que prod : ses scores sont plus
+  resserres). **Essai n°14** — B etait importe sans incrementer le compteur (13 = 12+1), C aurait
+  ete 13 aussi ; corrige a la main dans `etat` et `meta.json`, sinon le DSR oublierait un essai.
+- **Son critere est ecrit AVANT le premier ticket** (`meta.json` → `critere_rapide`) : part de gros
+  gains de sa bande contre la bande prod, meme flux `papier_combo`, **n >= 1 001 par bras**, **REJET
+  si <= −2 σ**, **jamais ADOPTER sur ce critere** (r2 = 24,7 %). L adoption reste sur les sept axes.
+  A 240 tickets/jour : verdict de rejet possible vers le **01/10**, adoption au plus tot a 200
+  tickets / 14 jours comme B.
+- **B continue, intact** (124/200, 4,5/14 jours). Piege evite : `papier_challenger` prenait « le gel
+  le plus recent » sans `CHALLENGER_DIR`, et le gardien le relance sans variable d environnement →
+  au prochain redemarrage il aurait score C et **le carnet de B se serait arrete en silence**.
+  Corrige par un fichier **`challengers/EN_COURS`** qui nomme le gel a scorer (B), lu avant le
+  defaut ; verifie : avec C plus recent, `CHOISI = 20260922-221347`. Les trois processus d origine
+  (gardien 16, papier_combo 31, papier_challenger 49, tous du 06:44) n ont pas bouge. `data/` est
+  hors git : l epingle vit sur le disque, pas dans le depot — si on reinstalle, la reecrire.
+- `juger()` ne lit que `papier_combo` et rescore hors ligne : C n a **pas besoin** d un second
+  carnet pour etre juge. Il en faudrait un seulement pour l adopter (sa pause doit voir son flux).
+
+**CE QUI RESTE A FAIRE, dans l ordre.**
+1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
+   Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —
+   arreter une bande qui traversait une poche mince — est le +4,12 EUR/ticket du 19-23/09.
+2. Si C est rejete, le bouton suivant est la **fenetre d entrainement** (`_lignes(depuis=...)`,
+   aujourd hui tout l historique, la derive diluee a 30 %) — puis la **cible** : predire le gros
+   gain plutot que le vidage (memoire `cible-vidage-contre-gagnant`). Chacun est un essai de plus
+   au compteur ; ne pas les lancer ensemble.
+3. Le mecanisme de l asymetrie reste ouvert : ni groupement des krachs, ni regime, ni artefact de
+   chevauchement, ni activite du marche. Prochain candidat : les **acheteurs** plutot que les
+   lancements (un krach brule des portefeuilles, pas des slots) — demande de resoudre le saut de
+   routeur (`poolmanager-router-hops`).
+4. Onglet Marche : **fait** — trois populations (marche / bande / ecartee) sur 3 jours contre
+   reference, σ sur chaque, pouvoir de concentration ×, et le verdict « c est le marche » / « c est
+   nous » / « rien a lire » ecrit en clair.
+
 ### 0.3 Ce qui TOURNE et attend des tickets — ne rien relancer, ne rien analyser avant l'échéance
 
 | carnet | gelé | échéance | état au 20/09 |
@@ -749,15 +914,24 @@ soir agissent APRES la decision d'acheter, donc on n'arrive meme pas jusqu'a eux
 >
 > | | règle | mise | réglages |
 > |---|---|---|---|
-> | **moteur principal** | `bande + pause`, **modèle FRAIS** (gel du 22/09) | **25 €** | bande [0,1776 ; 0,3920] · pause lue sur `papier_challenger` · écart pool 40 % · **aucun plafond** |
+> | **moteur principal** | `bande + pause`, **`modele_vidage.json`** (REVENU le 27/09 au matin) | **25 €** | bande [0,20 ; 0,35] · pause lue sur `papier_combo` · écart pool 40 % · **aucun plafond** |
 > | **suiveur** | `G+D` (exécute les décisions de `papier_gd_direct`) | **20 €** | prise de gain **×2,00** · prix lu à **2 s** · fenêtre d'entrée 47-60 s · **aucun plafond** |
 >
-> La **stratégie** n'a pas changé le 26/09 — c'est le MODÈLE dessous, et la bande avec lui
-> (recalibrée sur les mêmes quantiles). Le compteur Telegram et la page ne se coupent donc PAS là :
-> ce qui doit rester continu, c'est la stratégie. Détail complet en **§0.2 nonies**.
+> La **stratégie** n'a pas changé ni le 26/09 ni le 27/09 — c'est le MODÈLE dessous, et la bande
+> avec lui. Le compteur Telegram et la page ne se coupent PAS là. Le passage à B du 26/09 12h38 est
+> **annulé le 27/09** : tout son écart à l'ancien était du timing de pause (+2,232 avant / −4,648
+> après), jamais de la sélection (−0,257 / −0,016) — et sa bande concentre la queue **moins bien**
+> (×1,40 contre ×1,61, §0.2 undecies). Détail en **§0.2 nonies** et **§0.2 undecies**.
 >
-> Le témoin (`papier_combo`, ancien modèle) continue de tourner en papier pour qu'on puisse dire si
-> la bascule valait le coup — `bascule_verdict.py` et l'onglet *Marché*.
+> **Deux gels courent en papier, jugés par `challenger.py` (lecture seule sur `papier_combo`) :**
+>
+> | gel | dossier | essai | échéance | critère | état au 27/09 09h |
+> |---|---|---|---|---|---|
+> | **B** (modèle frais du 22/09) | `20260922-221347` | 13 | 200 tickets / 14 j | 5 axes sur 7 ET niveau > 0 | 124/200, 4,5 j ; 6/7 axes mais **queue ×1,40 contre ×1,61, −1,39 σ** — tout l'écart est pause |
+> | **C** (réentraîné après la dérive) | `20260927-090241` | 14 | 200 tickets / 14 j | idem, **plus** rejet rapide : queue de sa bande ≤ −2 σ à ≥ 1 001/bras | 0 ticket ; rejet lisible vers le **01/10** |
+>
+> `papier_challenger` (le carnet de B, nécessaire seulement pour l'adopter) est **épinglé sur B** par
+> `challengers/EN_COURS`. Ne pas le changer sans décision.
 
 **EN PRODUCTION RÉELLE depuis le 21/09 09h56 : `BANDE + PAUSE`** (§3.169). **Mise 20 €** depuis le
 22/09 15h (§3.172), tenue 240 s, décision 45 s, pause −30 %/30 min, pas de frein,
@@ -772,8 +946,11 @@ soir agissent APRES la decision d'acheter, donc on n'arrive meme pas jusqu'a eux
   qui a justifié sa mise en production utilisait le mauvais nul.
 - **État au 22/09 : +1,330 €/ticket sur 138 tickets, p = 0,040** contre le bon nul. Et ça oscille
   (p = 0,080 deux heures plus tôt, à n=127). **Non tranché.**
-- **Aucun mécanisme n'a survécu** : les effondrements ne sont pas groupés (z = +0,34), et le
-  filtre d'activité auquel elle se réduit (−13,4 σ) ne rapporte rien seul.
+- ~~**Aucun mécanisme n'a survécu**~~ → **trouvé le 27/09, §0.2 undecies** : un krach récent
+  n'annonce pas d'autres krachs (0,364 contre 0,391) mais **moins de gros gains** (15,7 % contre
+  22,3 %, +2,89 σ). La pause est un filtre d'**opportunité**, pas de risque. Tient face au nul par
+  blocs de 30 min (p = 0,005). Ce n'est ni un régime, ni un artefact de chevauchement, ni
+  l'activité du marché (effet intact à activité égale : +6,7 pt contre +6,6 brut).
 - **On la garde quand même** parce que sans elle la stratégie est mesurément perdante (−0,132 sur
   1 309 tickets) et que la modifier détruirait le critère pré-enregistré.
 - **Échéance : 266 tickets.** Abandon si le gain retombe sous +0,384, ou si p > 0,05 à l'échéance.

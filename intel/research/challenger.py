@@ -306,6 +306,36 @@ def juger() -> None:
         print("   d ou vient l ecart : selection %+0.3f · pause %+0.3f  (descriptif, ne decide pas)"
               % (off_c - off_p, (cc["niveau"] - cp["niveau"]) - (off_c - off_p)))
 
+        # ---- LE POUVOIR DE CONCENTRATION — lecture RAPIDE, elle ne decide pas -----------
+        # 27/09 (§0.2 undecies). Tout l argent vient de la queue haute : la degradation du
+        # 24-27/09 (−1,01 EUR/ticket sur la bande) est ENTIEREMENT l amincissement de la part de
+        # gros gains, 17,5 % → 14,7 %, les deux autres composantes etant stables (krach 37,8 → 38,6 ;
+        # taille du gros gain +1,223 → +1,206). Verification : 0,028 x 1,21 x 25 = 0,85 sur 1,01.
+        # POURQUOI L AFFICHER ICI. Pour detecter une baisse de 20 % de la performance il faut
+        # **2 657 tickets par bras** en EUR/ticket, contre **1 001** sur la part de gros gains :
+        # 2,65x plus vite, 4 jours au lieu de 11 a 240 tickets/jour.
+        # POURQUOI ELLE NE DECIDE PAS. Le r2 entre les deux n est que de **24,7 %** (13 blocs de
+        # 250 tickets) : la part de gros gains n explique qu un quart de la variance des EUR/ticket.
+        # Un challenger peut donc l ameliorer et perdre de l argent ailleurs. L usage est
+        # ASYMETRIQUE : elle autorise a REJETER tot -- rejeter ne coute rien, on garde ce qui
+        # marche -- jamais a ADOPTER tot, ce qui coute de l argent reel. Le verdict reste sur les
+        # sept axes et le niveau.
+        def _pg(v):
+            if not v:
+                return None
+            p = sum(1 for x in v if x["r"] >= 0.50) / len(v)
+            return p, (p * (1.0 - p) / len(v)) ** 0.5
+        m = _pg(T)
+        qp, qc = _pg([x for x in T if x["prod"]]), _pg([x for x in T if x["chal"]])
+        if m and qp and qc and m[0] > 0:
+            se = (qp[1] ** 2 + qc[1] ** 2) ** 0.5
+            print("   queue haute (part >= +50 %%) : marche %.1f %% · prod %.1f %% (x%.2f)"
+                  " · challenger %.1f %% (x%.2f)"
+                  % (100 * m[0], 100 * qp[0], qp[0] / m[0], 100 * qc[0], qc[0] / m[0]))
+            print("   ecart challenger-prod sur la queue : %+.1f pt (%.2f sigma) — lecture RAPIDE,"
+                  " elle peut rejeter, jamais adopter"
+                  % (100 * (qc[0] - qp[0]), (qc[0] - qp[0]) / se if se else 0.0))
+
         atteint = cc["n"] >= meta["echeance_tickets"] or ecoule >= meta["echeance_jours"]
         print("   echeance : %d/%d tickets · %.1f/%d jours -> %s"
               % (cc["n"], meta["echeance_tickets"], ecoule, meta["echeance_jours"],

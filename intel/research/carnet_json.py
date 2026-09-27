@@ -327,6 +327,79 @@ def _rejoue(tk):
     return pris
 
 
+def _se_part(rs: list, seuil: float) -> float:
+    """L ecart-type d une PART. Sans lui, un taux affiche se lit comme s il etait exact."""
+    n = len(rs)
+    if n < 2:
+        return 0.0
+    p = sum(1 for x in rs if x >= seuil) / n
+    return (p * (1.0 - p) / n) ** 0.5
+
+
+def _tranche(v: list, lab: str) -> dict:
+    """Une population, sur 3 jours contre sa reference, avec le sigma de la DIFFERENCE."""
+    p_r = sum(1 for x in v[0] if x >= 0.50) / len(v[0])
+    p_a = sum(1 for x in v[1] if x >= 0.50) / len(v[1])
+    se = (_se_part(v[0], 0.50) ** 2 + _se_part(v[1], 0.50) ** 2) ** 0.5
+    return {"nom": lab,
+            "pct_3j": round(100.0 * p_r, 1), "n_3j": len(v[0]),
+            "pct_ref": round(100.0 * p_a, 1), "n_ref": len(v[1]),
+            "ecart_pt": round(100.0 * (p_r - p_a), 1),
+            "ic_pt": round(196.0 * se, 1),
+            "sigma": round((p_r - p_a) / se, 2) if se else 0.0}
+
+
+def _queue_haute(par_jour: dict) -> dict:
+    """LA QUEUE HAUTE, LISSEE SUR 3 JOURS — et LAQUELLE des deux a bouge.
+
+    27/09, §0.2 undecies. Tout l argent vient de la queue haute : la degradation du flux de la BANDE
+    du 24 au 27/09 (−1,01 EUR/ticket) est ENTIEREMENT l amincissement de sa part de gros gains,
+    17,5 % → 14,7 %, le taux de krach (37,8 → 38,6) et la taille du gros gain (+1,223 → +1,206)
+    etant stables. Verification : 0,028 x 1,21 x 25 EUR = 0,85 sur 1,01 mesure.
+
+    ET C EST LA QUE LA PAGE DOIT DISTINGUER DEUX CHOSES, parce que le decoupage par population
+    retourne le diagnostic :
+      - la queue du MARCHE (tous les pools eligibles) est **PLATE** : 9,6 % → 9,3 %, −0,37 sigma ;
+      - la queue de la BANDE a **MINCI** : 17,5 % → 14,7 %, −1,81 sigma ;
+      - et la zone qu on ecarte comme trop sure (< 0,20) a **EPAISSI** : 1,6 % → 2,7 %, +1,84 sigma.
+    Le marche n a pas change : **la queue est sortie de la bande** pour aller dans la zone qu on
+    n achete pas. C est une derive de concept -- `modele_vidage.json` est inchange depuis le 15/09 --
+    donc « c est moi », pas « c est le marche », et la reponse n est pas dans la regle mais dans le
+    modele. Le rapport `bande / marche` est ce qui le dit : x1,66 → x1,82 → x1,58.
+
+    Pourquoi 3 jours et pas 1 : a ~280 pools/jour le bruit sur une part est de ±2,2 pt, donc les
+    −2,8 pt qui expliquent tout valent 1 sigma sur une journee. En dessous de 2 sigma, rien a lire.
+    """
+    j = sorted(par_jour)
+    if len(j) < 5:
+        return {"lisible": False}
+    rec, ref = j[-3:], j[:-3]
+
+    def pop(filtre):
+        return ([x["r"] for d in rec for x in par_jour[d] if filtre(x)],
+                [x["r"] for d in ref for x in par_jour[d] if filtre(x)])
+
+    tout = pop(lambda x: True)
+    if len(tout[0]) < 100 or len(tout[1]) < 100:
+        return {"lisible": False}
+    dans = pop(lambda x: BANDE_ANCIENNE[0] <= x["risque"] < BANDE_ANCIENNE[1])
+    sur = pop(lambda x: x["risque"] < BANDE_ANCIENNE[0])
+    out = {"lisible": True, "jours_recents": rec,
+           "marche": _tranche(tout, "le marche entier"),
+           "bande": _tranche(dans, "la bande, celle qu on achete") if min(map(len, dans)) >= 80 else None,
+           "sur": _tranche(sur, "plus sur que la bande (ecarte)") if min(map(len, sur)) >= 80 else None}
+    # le pouvoir de concentration : ce que la bande multiplie la queue du marche
+    if out["bande"]:
+        for cle in ("3j", "ref"):
+            m, b = out["marche"]["pct_%s" % cle], out["bande"]["pct_%s" % cle]
+            out["conc_%s" % cle] = round(b / m, 2) if m else None
+        gg = [x for x in dans[0] + dans[1] if x >= 0.50]
+        taille = (sum(gg) / len(gg)) if gg else 0.0
+        out["cout_eur_ticket"] = round(
+            (out["bande"]["ecart_pt"] / 100.0) * taille * float(MISE_TABLE), 3)
+    return out
+
+
 def marche() -> dict:
     """LE MARCHE LUI-MEME, jour par jour — « c est moi ou c est le marche ? »
 
@@ -379,12 +452,14 @@ def marche() -> dict:
             "marche_median": round(mise * sorted(rs)[n // 2], 3),
             "effondrement_pct": round(100.0 * sum(1 for x in rs if x <= -0.50) / n, 1),
             "gros_gains_pct": round(100.0 * sum(1 for x in rs if x >= 0.50) / n, 1),
+            "gros_gains_ic": round(196.0 * _se_part(rs, 0.50), 1),
             "x2_pct": round(100.0 * sum(1 for x in rs if x >= 1.00) / n, 1),
             "regle_eur": round(mise * (sum(x["r"] for x in pris) / len(pris)), 3) if pris else None,
             "regle_n": len(pris),
             "ecart": (round(mise * (sum(x["r"] for x in pris) / len(pris) - sum(rs) / n), 3)
                       if pris else None),
         })
+    out["queue"] = _queue_haute(par_jour)
     return out
 
 

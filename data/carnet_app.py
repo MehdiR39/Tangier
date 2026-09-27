@@ -926,6 +926,62 @@ def couts():
                      use_container_width=True, hide_index=True, height=420)
 
 
+def _queue_haute(q: dict):
+    """LA QUEUE HAUTE SUR 3 JOURS — le seul indicateur de marché qui explique nos pertes.
+
+    27/09 (§0.2 undecies du journal). La dégradation du flux brut du 24 au 27/09, −1,01 €/ticket,
+    est **entièrement** l'amincissement de la queue haute : 17,5 % → 14,7 % de gros gains. Les deux
+    autres composantes n'ont pas bougé — le taux d'effondrement (37,8 → 38,6) ni la taille du gros
+    gain (+1,223 → +1,206). Vérification : 0,028 × 1,21 × 25 € = 0,85 € contre 1,01 mesuré.
+
+    ET LA PAUSE NE PEUT RIEN CONTRE ÇA. Elle repère les *poches locales* à queue mince et les évite
+    (15,7 % contre 22,3 %). Si le marché entier passe en queue mince, il n'y a plus de poche épaisse
+    où se réfugier : elle n'est pas cassée, elle n'a plus rien à choisir.
+
+    Pourquoi 3 jours et pas 1 : à ~280 pools/jour le bruit sur cette part est de ±2,2 pt, donc les
+    −2,8 pt qui expliquent tout valent 1 σ sur une journée. **En dessous de 2 σ il n'y a rien à
+    lire** — c'est écrit en clair pour que le chiffre ne se lise pas comme une tendance.
+    """
+    if not q.get("lisible"):
+        return
+    st.markdown("**La queue haute (part des pools ≥ +50 %) — 3 derniers jours contre les jours "
+                "d'avant.** C'est la seule des trois composantes du marché qui bouge, et c'est "
+                "elle qui paie. Sous 2 σ, rien à lire.")
+    lignes = []
+    for cle in ("marche", "bande", "sur"):
+        t = q.get(cle)
+        if not t:
+            continue
+        lignes.append({"population": t["nom"],
+                       "3 derniers jours": "%.1f %% (n=%d)" % (t["pct_3j"], t["n_3j"]),
+                       "avant": "%.1f %% (n=%d)" % (t["pct_ref"], t["n_ref"]),
+                       "écart": "%+.1f pt ± %.1f" % (t["ecart_pt"], t["ic_pt"]),
+                       "σ": "%.2f" % t["sigma"]})
+    st.dataframe(lignes, use_container_width=True, hide_index=True)
+    if q.get("conc_3j") is not None and q.get("conc_ref") is not None:
+        st.caption("**Pouvoir de concentration de la bande** (queue de la bande ÷ queue du marché) : "
+                   "×%.2f ces 3 jours contre ×%.2f avant. Le 24-27/09 il est passé de ×1,82 à "
+                   "×1,58 pendant que le marché restait plat : la queue était sortie de la bande."
+                   % (q["conc_3j"], q["conc_ref"]))
+    m, b = q.get("marche") or {}, q.get("bande") or {}
+    sm, sb = m.get("sigma", 0.0), b.get("sigma", 0.0)
+    if sm <= -2.0:
+        st.error("**C'est le marché** : sa queue a minci (%.2f σ). Aucune règle ne récupère ça — "
+                 "la pause évite les poches locales à queue mince, pas un marché entier en queue "
+                 "mince." % sm)
+    elif b and sb <= -2.0 and abs(sm) < 2.0:
+        st.error("**C'est nous, pas le marché** : le marché est plat (%.2f σ) mais la bande a "
+                 "perdu sa queue (%.2f σ, %+.2f €/ticket). C'est une dérive du score — la "
+                 "réponse est dans le modèle, pas dans la règle. Un challenger gelé sur données "
+                 "récentes est le remède ; `challenger.py` le juge."
+                 % (sm, sb, q.get("cout_eur_ticket", 0.0)))
+    elif sm >= 2.0:
+        st.success("**La queue du marché s'est épaissie** (%.2f σ). C'est le marché qui donne, "
+                   "pas la règle qui s'améliore." % sm)
+    else:
+        st.caption("Rien au-dessus de 2 σ : les écarts sont dans le bruit.")
+
+
 def marche():
     """« C'EST MOI OU C'EST LE MARCHÉ ? » — la question que la page ne savait pas trancher.
 
@@ -958,8 +1014,12 @@ def marche():
                 delta=None,
                 help="Règle moins marché. C'est la seule colonne qui dit si c'est vous ou le marché.")
     c[3].metric("Gros gains au marché", "%.1f %%" % d["gros_gains_pct"],
-                help="Part des pools au-dessus de +50 %. Tout l'argent vient de là : "
-                     "un jour sans queue est un jour sans gain, quelle que soit la règle.")
+                help="Part des pools au-dessus de +50 %%. Tout l'argent vient de là : "
+                     "un jour sans queue est un jour sans gain, quelle que soit la règle. "
+                     "Bruit du jour : ±%.1f pt — ne pas lire ce chiffre seul, voir en dessous."
+                     % d.get("gros_gains_ic", 0.0))
+
+    _queue_haute(M.get("queue") or {})
 
     if d.get("ecart") is not None:
         if d["ecart"] > 0 and (d.get("regle_eur") or 0) < 0:
@@ -976,7 +1036,9 @@ def marche():
             "jour": j["jour"], "pools": j["n"],
             "marché €/ticket": j["marche_eur"],
             "effondrements": "%.1f %%" % j["effondrement_pct"],
-            "gros gains": "%.1f %%" % j["gros_gains_pct"],
+            "gros gains": ("%.1f %% ± %.1f" % (j["gros_gains_pct"], j["gros_gains_ic"])
+                           if j.get("gros_gains_ic") is not None
+                           else "%.1f %%" % j["gros_gains_pct"]),
             "×2": "%.1f %%" % j["x2_pct"],
             "règle €/ticket": j.get("regle_eur"),
             "écart": j.get("ecart"),

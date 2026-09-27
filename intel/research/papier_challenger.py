@@ -42,6 +42,20 @@ def _choisi() -> str:
     lequel on a pris, avec sa date et son numero d essai.
     """
     d = os.environ.get("CHALLENGER_DIR")
+    # L EPINGLE. 27/09 : un second gel (C) est fige A COTE de B, dont le gel court encore
+    # (122/200 tickets). Sans epingle, « le plus recent » designerait C au prochain redemarrage
+    # -- le gardien relance ce module sans variable d environnement -- et le carnet de B
+    # s arreterait EN SILENCE, ce qui casse exactement ce que CLAUDE.md interdit de toucher :
+    # un gel en cours. Le fichier `EN_COURS` nomme le dossier a scorer ; il survit aux
+    # redemarrages, et on le change a la main, jamais par defaut.
+    epingle = os.path.join(DOSSIER, "EN_COURS")
+    if not d and os.path.exists(epingle):
+        nom = open(epingle).read().strip()
+        if nom and os.path.exists(os.path.join(DOSSIER, nom, "modele_dump.json")):
+            d = os.path.join(DOSSIER, nom)
+            print("papier_challenger : epingle sur %s (fichier EN_COURS)" % nom, flush=True)
+        else:
+            raise SystemExit("EN_COURS designe %r mais ce gel n a pas de modele_dump.json" % nom)
     if not d:
         if not os.path.isdir(DOSSIER):
             raise SystemExit("aucun challenger gele dans %s — `challenger.py --geler` d abord" % DOSSIER)
