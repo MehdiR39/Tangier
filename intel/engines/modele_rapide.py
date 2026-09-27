@@ -684,12 +684,28 @@ class ModeleRapide:
             pts = [(float(r["age_s"] or 0), float(r["prix_sol"] or 0), float(r["reserve_sol"] or 0),
                     float(r["reserve_base"] or 0), float(r["reserve_virtuelle"] or 0))
                    for r in lect if (r["prix_sol"] or 0) > 0]
-            if len(pts) < 3:
+            # LE SUIVEUR N A PAS BESOIN DES VARIABLES DU MODELE (27/09, accord de Mido : « enleve le »).
+            # `_variables` exige 3 lectures avant 45 s dont la premiere avant 32 s : c est ce qu il
+            # faut pour calculer le SCORE de la bande. G+D ne score rien -- il execute la decision de
+            # `papier_gd_direct`, qui lit le pool elle-meme. Mesure : 17 des 56 tickets G+D du papier
+            # depuis le passage en reel (30 %) n atteignaient JAMAIS le suiveur -- dont 11h19, +153 %
+            # papier, premiere lecture a 47 s -- soit +33,3 EUR papier en 1,5 jour. Sur les 34 tickets
+            # vus des deux cotes, le reel faisait +62,44 EUR contre -15,46 au papier : la regle reelle
+            # marche, c est la COUVERTURE qui manquait. Le suiveur ne garde donc que ce qui sert a
+            # ACHETER : un prix payable a l entree. Les garde-fous d impact, d aller-retour et de
+            # glissement de `_acheter_reel` restent tous en place. La production (`regle` !=
+            # gd_suiveur) passe exactement par le meme chemin qu avant.
+            suiveur = str(self._cfg("regle", "risque")).lower() == "gd_suiveur"
+            if len(pts) < (1 if suiveur else 3):
                 continue
-            f = self._variables(pts, float(p["naissance"] or 0), lancements,
-                                age_entree=age_dec + EXEC_S)
+            f = (self._variables(pts, float(p["naissance"] or 0), lancements,
+                                 age_entree=age_dec + EXEC_S) if len(pts) >= 3 else None)
             if f is None:
-                continue
+                if not suiveur:
+                    continue
+                if _a_age([x[0] for x in pts], age_dec + EXEC_S, 6) is None:
+                    continue                 # pas de prix payable a l entree : on n achete pas
+                f = {"q": pts[-1][2], "sans_variables_modele": True}
             if traits75:
                 # LE MODELE 75s ATTEND 25 VARIABLES, dont `risque` -- la sortie du modele de
                 # vidage -- et 15 de flux d ordres qu il faut aller chercher sur la chaine.
@@ -700,7 +716,8 @@ class ModeleRapide:
                     float(p["naissance"] or 0), float(pts[-1][4] or 0))
                 if f is None:
                     continue
-            risque = float(modele.probabilite(f))
+            risque = (float("nan") if f.get("sans_variables_modele")
+                      else float(modele.probabilite(f)))
             decides += 1
             garde = self.retenu(f, risque, pair=str(p["pair_id"]))
             deja.add(mint)

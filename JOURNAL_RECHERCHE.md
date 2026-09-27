@@ -914,6 +914,22 @@ donnees existantes, sans attendre :
 queue est la SELECTION — le modele — et B montre que reentrainer sur la meme cible ne suffit pas :
 c est pour ca que D change la cible.**
 
+
+**27/09 12h45 — LE SUIVEUR G+D VOIT ENFIN TOUS LES TICKETS (accord de Mido : « enleve le »).**
+Mido : *« le papier c est iso prod sinon ca sert a rien de me vendre du reve »*. Mesure depuis le
+passage en reel (1,54 jour) : **17 des 56 tickets G+D du papier (30 %) n atteignaient jamais le
+suiveur**, valant +33,3 EUR papier (~+22 EUR/jour). Cause : le suiveur passait par `_variables()`,
+qui exige 3 lectures de prix avant 45 s dont la premiere avant 32 s — une condition pour SCORER la
+bande, inutile a G+D. Le 11h19 (+153 % papier, pompage puis retrait du pool 20 s apres) avait sa
+premiere lecture a 47 s. **Sur les 34 tickets vus des deux cotes, le reel faisait +62,44 EUR contre
+−15,46 au papier** (sortie x2 et lecture a 2 s contre x1,25) : la regle reelle marche, c etait la
+couverture. Correction reservee a `regle: gd_suiveur` : une lecture et un prix payable a l entree
+suffisent, risque NaN, garde-fous de `_acheter_reel` inchanges ; la production garde ses 3 lectures.
+Test ajoute (`test_le_suiveur_ne_depend_PAS_des_lectures_du_modele_mais_la_production_si`), 46/46.
+Moteur redemarre a 12h44 sans position ouverte. **A verifier : les prochains tickets G+D du papier
+doivent tous avoir une ligne dans `gd_lignes`.** Reste aussi : afficher la ligne papier G+D a la
+sortie x2 de la prod (elle est encore a x1,25).
+
 **CE QUI RESTE A FAIRE, dans l ordre.**
 1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
    Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —

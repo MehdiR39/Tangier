@@ -290,3 +290,22 @@ def test_si_la_lecture_directe_echoue_on_retombe_sur_la_table():
         raise RuntimeError("RPC injoignable")
     m._prix_direct = direct
     assert asyncio.run(m._gain_atteint(600.0)) == {"M1"}, "le repli sur la table n a pas joue"
+
+
+def test_le_suiveur_ne_depend_PAS_des_lectures_du_modele_mais_la_production_si():
+    """27/09 : 30 % des tickets G+D (17 sur 56, dont +153 % a 11h19) n atteignaient jamais le suiveur,
+    parce qu il exigeait les 3 lectures avant 45 s dont `_variables` a besoin pour SCORER la bande.
+    Le suiveur ne score rien. Ce qu on verrouille : (1) le suiveur se contente d une lecture et
+    d un prix payable a l entree ; (2) la production garde ses 3 lectures et `_variables` ;
+    (3) le repli est reserve a `gd_suiveur`, et le risque d un ticket sans variables est NaN, jamais
+    un score invente."""
+    import inspect
+    src = inspect.getsource(mr.ModeleRapide.cycle)
+    assert 'suiveur = str(self._cfg("regle", "risque")).lower() == "gd_suiveur"' in src
+    assert "if len(pts) < (1 if suiveur else 3):" in src, "la production doit garder 3 lectures"
+    assert "if not suiveur:\n                    continue" in src, (
+        "sans variables, la PRODUCTION doit toujours passer son tour")
+    assert "_a_age([x[0] for x in pts], age_dec + EXEC_S, 6) is None" in src, (
+        "le suiveur doit exiger un prix payable a l entree")
+    assert 'float("nan") if f.get("sans_variables_modele")' in src, (
+        "un ticket sans variables ne doit jamais recevoir un score calcule sur du vide")
