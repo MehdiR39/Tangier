@@ -134,16 +134,20 @@ def enregistrer_etat(e: dict) -> None:
     os.replace(tmp, ETAT)
 
 
-def _lignes(depuis=0.0):
+def _lignes(depuis=0.0, cote=False):
+    """`cote=True` ajoute (statut de cotation, prix cote, prix du pool a l entree) -- la cotation de
+    la prod a blanc, enregistree par `papier_combo` depuis le 27/09 13h09."""
     import sqlite3
     c = sqlite3.connect("file:%s?mode=ro" % COMBO, uri=True, timeout=30)
     out = []
-    for t, vj, q, b, r in c.execute(
-            "SELECT d.t_dec, d.variables, d.q, i.brut_240, d.risque FROM decision d"
+    extra = ", d.cote_statut, d.prix_cote, d.p_entree" if cote else ""
+    for row in c.execute(
+            "SELECT d.t_dec, d.variables, d.q, i.brut_240, d.risque%s FROM decision d"
             " JOIN issue i ON i.pair=d.pair WHERE d.eligible=1 AND i.brut_240 IS NOT NULL"
-            " AND d.q IS NOT NULL AND d.risque IS NOT NULL AND d.t_dec >= ? ORDER BY d.t_dec",
+            " AND d.q IS NOT NULL AND d.risque IS NOT NULL AND d.t_dec >= ? ORDER BY d.t_dec" % extra,
             (depuis,)):
-        out.append((float(t), vj, float(q), float(b), float(r)))
+        base = (float(row[0]), row[1], float(row[2]), float(row[3]), float(row[4]))
+        out.append(base + tuple(row[5:]) if cote else base)
     return out
 
 
@@ -397,12 +401,12 @@ def resume() -> list[dict]:
              "echeance_tickets": meta["echeance_tickets"], "echeance_jours": meta["echeance_jours"],
              "jours": round((now - float(meta["gel"])) / 86400.0, 1), "n": 0, "verdict": "TROP TOT"}
         out.append(r)
-        lignes = _lignes(float(meta["gel"]))
+        lignes = _lignes(float(meta["gel"]), cote=True)
         if len(lignes) < 50:
             continue
         boost = lgb.Booster(model_file=os.path.join(d, "modele.json"))
         X, ok = [], []
-        for i, (t, vj, q, b, rq) in enumerate(lignes):
+        for i, (t, vj, q, b, rq) in enumerate(x[:5] for x in lignes):
             try:
                 f = json.loads(vj)
             except Exception:  # noqa: BLE001
@@ -413,9 +417,28 @@ def resume() -> list[dict]:
         na, nb = meta["bande"]
         T = []
         for k, i in enumerate(ok):
-            t, vj, q, b, rq = lignes[i]
+            t, vj, q, b, rq, c_st, c_px, p_e = lignes[i]
+            # ISO PROD (27/09) : achetable seulement si la cotation de la prod a blanc l acceptait,
+            # et au PRIX COTE, pas au prix du pool. Avant la premiere cotation : None, donc absent.
+            iso = (min((1 + b) * float(p_e) / float(c_px) - 1 - cout(q), 3.0)
+                   if c_st == "ACHETABLE" and c_px and p_e else None)
             T.append({"t": t, "fin": t + TENUE, "r": min(b - cout(q), 3.0),
-                      "prod": BANDE_SERVICE[0] <= rq < BANDE_SERVICE[1], "chal": na <= float(s[k]) < nb})
+                      "prod": BANDE_SERVICE[0] <= rq < BANDE_SERVICE[1], "chal": na <= float(s[k]) < nb,
+                      "iso": iso, "cote": c_st is not None})
+
+        # LA COURBE ISO PROD : la pause voit TOUT le flux de la bande (comme en prod, ou elle lit ce
+        # meme carnet), mais on ne compte que les tickets que la prod aurait pu acheter, au prix cote.
+        def courbe_iso(bras):
+            cum, c_, n_ = 0.0, [], 0
+            for x in sorted(rejoue([x for x in T if x[bras]]), key=lambda z: z["t"]):
+                if x["iso"] is None:
+                    continue
+                cum += MISE * x["iso"]
+                n_ += 1
+                c_.append([int(x["t"]), round(cum, 2)])
+            return c_, n_
+        r["courbe_iso"], r["n_iso"] = courbe_iso("chal")
+        r["courbe_iso_prod"], r["n_iso_prod"] = courbe_iso("prod")
         cp, cc = criteres(rejoue([x for x in T if x["prod"]])), criteres(rejoue([x for x in T if x["chal"]]))
         if not cp or not cc:
             continue

@@ -101,7 +101,94 @@ def schema(c):
             cout_reduit REAL, cout_reel REAL, variables TEXT);
         CREATE TABLE IF NOT EXISTS issue(pair TEXT PRIMARY KEY, brut_120 REAL, brut_240 REAL, ts REAL);
     """)
+    # la cotation de la prod, a blanc (27/09) : colonnes AJOUTEES, rien d existant ne change
+    have = {r[1] for r in c.execute("PRAGMA table_info(decision)")}
+    for col, typ in (("cote_statut", "TEXT"), ("cote_motif", "TEXT"), ("prix_cote", "REAL"),
+                     ("age_cote", "REAL")):
+        if col not in have:
+            c.execute("ALTER TABLE decision ADD COLUMN %s %s" % (col, typ))
     c.commit()
+
+
+# ============================================================ LA COTATION DE LA PROD, A BLANC
+# 27/09, Mido : « papier et reel different, a quoi sert d avoir du papier ». Mesure du jour, ticket
+# par ticket sur BANDE + PAUSE : sur les 106 tickets que la prod a achetes, papier +136,92 EUR et reel
+# +157,23 -- ils concordent. Tout l ecart venait de 25 tickets que le papier « achetait » au prix du
+# pool alors que la prod les refusait : le prix avait deja monte au moment de coter. Rachetes au prix
+# cote, ils ne valaient plus +127,71 EUR mais +37,98 -- le papier promettait environ le double du reel.
+#
+# Le remede : demander, au meme moment, LA MEME cotation que la prod, par LA MEME fonction
+# (`prepare_buy`, sans cle : elle cote, applique tous les refus et n assemble rien), avec LES MEMES
+# reglages (lus dans `modele_rapide` de la config). On enregistre si la prod aurait pu acheter et a
+# quel prix. Les colonnes sont AJOUTEES : `eligible`, `risque`, `brut_240` ne changent pas, donc la
+# pause de la prod, qui lit ce carnet, ne voit aucune difference. La cotation tourne dans un FIL a
+# part : un Jupiter lent ne doit jamais retarder l ecriture des issues que la pause lit.
+COTE_ACTIVE = os.environ.get("PAPIER_COTE", "1") == "1"
+_COTES = None
+
+
+def _reglages_prod() -> dict:
+    try:
+        import yaml
+        m = (yaml.safe_load(open(os.environ.get("INTEL_CONFIG", "/app/config/intel.yaml"))) or {}).get(
+            "modele_rapide") or {}
+    except Exception:  # noqa: BLE001
+        m = {}
+    return {"mise": float(m.get("mise_eur", 25.0)), "slip": float(m.get("slippage_achat_pct", 20.0)),
+            "impact": float(m.get("max_impact_pct", 15.0)), "ecart": float(m.get("max_ecart_pool_pct", 20.0)),
+            "ar": float(m.get("max_aller_retour_pct", 15.0))}
+
+
+def _coter(pair, mint, prix_pool, naissance):
+    """Dans le fil : la cotation de la prod, a blanc, puis l ecriture du resultat."""
+    import asyncio
+    import httpx
+    from intel.execution import solana as sol
+    R = _reglages_prod()
+    try:
+        dec = 6
+        try:
+            m = sqlite3.connect("file:%s?mode=ro" % BASE_MOTEUR, uri=True, timeout=10)
+            r = m.execute("SELECT decimales FROM mint_offre WHERE mint=? LIMIT 1", (mint,)).fetchone()
+            m.close()
+            if r and r[0] is not None:
+                dec = int(r[0])
+        except Exception:  # noqa: BLE001
+            pass
+
+        async def go():
+            async with httpx.AsyncClient() as client:
+                taux = await sol.sol_eur(client)
+                return await sol.prepare_buy(
+                    client, mint=mint, size_eur=R["mise"], sol_eur=taux, slippage_pct=R["slip"],
+                    max_impact_pct=R["impact"], prix_pool_sol=float(prix_pool or 0.0), decimales=dec,
+                    max_ecart_pool_pct=R["ecart"], max_aller_retour_pct=R["ar"], proprietaire=None)
+        tx = asyncio.run(go())
+        if tx.get("status") == "BUILT" and int(tx.get("quoted_amount_out") or 0) > 0:
+            prix = (int(tx["amount_in"]) / 1e9) / (int(tx["quoted_amount_out"]) / 10 ** dec)
+            statut, motif = "ACHETABLE", None
+        else:
+            prix, statut, motif = None, "REFUSE", str(tx.get("refused_reason") or "")[:200]
+    except Exception as exc:  # noqa: BLE001
+        prix, statut, motif = None, "ERREUR", str(exc)[:200]
+    try:
+        c = sqlite3.connect(BASE_ICI, timeout=30)
+        c.execute("UPDATE decision SET cote_statut=?, cote_motif=?, prix_cote=?, age_cote=? WHERE pair=?",
+                  (statut, motif, prix, time.time() - naissance, pair))
+        c.commit()
+        c.close()
+    except Exception as exc:  # noqa: BLE001
+        print("papier_combo: cotation non ecrite (%s)" % str(exc)[:120], flush=True)
+
+
+def coter_plus_tard(pair, mint, prix_pool, naissance):
+    global _COTES
+    if not COTE_ACTIVE:
+        return
+    if _COTES is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _COTES = ThreadPoolExecutor(max_workers=2)
+    _COTES.submit(_coter, pair, mint, prix_pool, naissance)
 
 
 def tour(ici, moteur, modele):
@@ -138,10 +225,16 @@ def tour(ici, moteur, modele):
                 f, e = res
                 v = pts[0][5] or 0.0
                 impact = 2 * MISE_SOL / (f["q"] + v)
-                ici.execute("INSERT OR IGNORE INTO decision VALUES(?,?,?,?,1,?,?,?,?,?,?,?,?,?)",
+                # COLONNES NOMMEES : l insertion positionnelle casserait des que la table a les
+                # colonnes de cotation ajoutees le 27/09.
+                ici.execute("INSERT OR IGNORE INTO decision(pair, mint, naissance, t_dec, eligible, q, V,"
+                            " risque, regime, n_regime, p_entree, cout_reduit, cout_reel, variables)"
+                            " VALUES(?,?,?,?,1,?,?,?,?,?,?,?,?,?)",
                             (pair, d["mint"], naissance, t_dec, f["q"], f["V"], modele.probabilite(f), regime,
                              len(passes), pts[e][2], 0.0125 + impact / 2, COUT_FIXE + impact + 0.005,
                              json.dumps(f)))
+                ici.commit()             # la ligne doit exister quand le fil viendra l annoter
+                coter_plus_tard(pair, d["mint"], pts[e][2], naissance)
             faits += 1
         # --- issue des decisions : sorties a 167 s et 287 s ---
         if pair in decides and pair not in avec_issue and age_max >= 297:

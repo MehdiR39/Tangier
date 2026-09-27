@@ -271,6 +271,16 @@ def table_complete():
     geles = [{"nom": "MODELE %s gele le %s (%s)" % (m["nom"], m["gele"][:5], m["cible"]),
               "n": m.get("n", 0), "courbe": m.get("courbe") or [], "par_jour": m.get("par_jour") or []}
              for m in _C.get("modeles") or []]
+    # LES COURBES ISO PROD (27/09) : seulement les tickets que la prod aurait pu acheter, au prix
+    # qu elle aurait paye (cotation de la prod a blanc, enregistree depuis le 27/09 13h09). Ce sont
+    # les seules courbes papier qui se comparent a l argent reel.
+    _mods = _C.get("modeles") or []
+    iso = [{"nom": "ISO PROD · MODELE %s" % m["nom"], "n": m.get("n_iso", 0),
+            "courbe": m.get("courbe_iso") or [], "par_jour": []} for m in _mods]
+    if _mods:
+        iso.insert(0, {"nom": "ISO PROD · BANDE + PAUSE (modele en prod)", "n": _mods[0].get("n_iso_prod", 0),
+                       "courbe": _mods[0].get("courbe_iso_prod") or [], "par_jour": []})
+    geles = iso + geles
 
     c = st.columns(4)
     temoin = next((l for l in D["lignes"] if l["nom"] == "temoin sans filtre"), None)
@@ -590,7 +600,8 @@ def table_complete():
             for l in dispo]
     par_nom = dict(zip(noms, dispo))
     # PAR DEFAUT : le modele en prod et les modeles geles, pour qu on les voie sans rien cocher.
-    defaut = [n for n in noms if (n.startswith("MODELE ") and " gele le " in n)
+    defaut = [n for n in noms if n.startswith("ISO PROD")
+              or (n.startswith("MODELE ") and " gele le " in n)
               or n.startswith("BANDE + PAUSE (modele en prod)")]
     choix = st.multiselect("Lignes affichées", noms, default=defaut, key="courbes")
     # Une ligne cochee sans ticket ne se trace pas -- on le dit, au lieu de la faire disparaitre.
