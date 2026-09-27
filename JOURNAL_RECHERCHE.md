@@ -930,6 +930,19 @@ Moteur redemarre a 12h44 sans position ouverte. **A verifier : les prochains tic
 doivent tous avoir une ligne dans `gd_lignes`.** Reste aussi : afficher la ligne papier G+D a la
 sortie x2 de la prod (elle est encore a x1,25).
 
+
+**27/09 13h — BANDE + PAUSE, papier contre prod ticket par ticket (21/09 → 27/09, periode du
+modele B exclue, 134 tickets papier).** Achetes par la prod : 106, **reel +157,23 EUR contre +136,92
+au papier sur les memes tickets** — la prod fait mieux. Jamais vus : 0. Tout l ecart est dans 25
+tickets VUS mais pas achetes, valant +156,14 EUR papier : 7 PAUSE vues autrement (+8,60), 10 refus
+de cotation > 20 % au-dessus du pool, 7 envois refuses en simulation (0x1771 = glissement depasse),
+1 reponse illisible. **Ce gain papier n etait pas atteignable** : le papier achete au prix du pool
+alors que le prix avait deja monte. Rachetes AU PRIX COTE, les 10 refus de cotation font **+37,98
+EUR** au lieu de +127,71 papier — et un seul ticket (+75) en porte le double ; sans lui, −37. Relever
+le plafond de cotation serait un pari sur un ticket : **on ne touche pas aux garde-fous**. C est un
+biais du PAPIER (il ignore le prix qu on paierait vraiment), pas une panne de la prod. A faire :
+que la ligne papier marque ces tickets non achetables, pour qu elle soit iso prod.
+
 **CE QUI RESTE A FAIRE, dans l ordre.**
 1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
    Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —
