@@ -894,6 +894,26 @@ hauts** de son score (meme part du flux que la bande en service). Dossier `20260
 rejet si <= −2 σ a >= 1 001/bras, adoption sur les sept axes seulement. `geler(cible=...)` et
 `--cible=gain` ajoutes a `challenger.py`. Le carnet papier reste epingle sur B.
 
+
+**27/09 09h45 — LES DEUX AUTRES LEVIERS SUR LA QUEUE, TESTES : ni l un ni l autre ne bat l actuel.**
+Mido : *« toute la solution c est l entrainement du modele ? »*. Trois leviers agissent sur la
+queue haute : le jeton (modele), le moment (pause), la sortie. Les deux derniers se testent sur les
+donnees existantes, sans attendre :
+- **Moment.** Pause declenchee par « aucun gros gain dans les clotures des 30 dernieres min » au
+  lieu d un krach : −0,211 EUR/ticket, −42 EUR/jour (2 364 tickets). Les deux combines : +2,696
+  EUR/ticket mais 292 tickets, **+66,8 EUR/jour contre +73,9 pour l actuel** (343 tickets, +2,540,
+  plafond +300 %). Stable sur les deux moities. **La pause actuelle reste la meilleure.**
+- **Sortie.** Rejouee sur les VRAIS chemins de prix (`solana_prix_chaine`, 3 452/3 457 tickets de
+  bande, calibration chemin-a-240 s contre `brut_240` : ecart median 0,000), sans plafond, sur les
+  341 tickets que la pause prend : **240 s fixes +3,399** · prise x3 +2,725 · suiveur −25 %
+  +2,929 · prise x2 +1,647 · prise x1,5 +0,837 · 120 s +0,504 · 480 s +0,245 · 600 s −1,922.
+  **Toute prise de gain coupe la queue** : un ticket qui touche x1,5 continue en moyenne de monter
+  jusqu a 240 s. Le suiveur −25 % gagne sur la 2e moitie (+5,250 contre +4,978) mais perd lourdement
+  sur la 1re (+0,595 contre +1,810) : pas de regle stable qui batte l actuelle.
+**Donc la regle (moment + sortie) est deja a son optimum mesurable. Le seul levier restant sur la
+queue est la SELECTION — le modele — et B montre que reentrainer sur la meme cible ne suffit pas :
+c est pour ca que D change la cible.**
+
 **CE QUI RESTE A FAIRE, dans l ordre.**
 1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
    Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —
