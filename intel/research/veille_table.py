@@ -45,11 +45,11 @@ SOURCES = [
      "13 lignes : temoin, regime seul, RISQUE seul, regime+risque, BANDE, BANDE+PAUSE, ENSEMBLE de 12,"
      " FORET ALEATOIRE, PRIX+DETENTEURS, AU PLUS BAS, BAS+BANDE, RISQUE+FREIN, RISQUE+IPFS"),
     ("papier_gd45", f"{DB}/papier_gd.sqlite", "decision", "t_dec", 20, "G+D a 45 s"),
-    ("papier_gd30", f"{DB}/papier_gd30.sqlite", "decision", "t_dec", 20, "G+D a 30 s"),
+    # LE CARNET DU GEL B (modele frais du 22/09), qui tourne encore : 27/09.
+    ("papier_challenger", f"{DB}/papier_challenger.sqlite", "decision", "t_dec", 20,
+     "MODELE B (gel du 22/09)"),
     ("papier_large", f"{DB}/papier_large.sqlite", "decision", "t_dec", 20,
      "6 lignes : coffre seul, G foule <= 74, D tendance > 0, D+F tendance+pause, G+D les trois, PISTE FOULE"),
-    ("foret_gel45", f"{DB}/papier_foret.sqlite", "decision", "t_dec", 450, "FORET 45s top 5 % et 10 %"),
-    ("foret_gel75", f"{DB}/papier_foret75.sqlite", "decision", "t_dec", 450, "FORET 75s top 5 % et 10 %"),
     ("social", f"{DB}/papier_social.sqlite", "jeton", "t_vu", 30,
      "PRIX + DETENTEURS (sac1, n_sacs5) -- et la variable detenteurs des deux forets"),
     # RISQUE + IPFS lit `solana_social.uri`, remplie par telegram_rapide/social au fil des lancements :
@@ -59,21 +59,15 @@ SOURCES = [
     ("prix_rapide", f"{DB}/prix_rapide.sqlite", "prix", "ts", 20, "prix a 1 s"),
     ("moteur_prix", f"{DB}/intel.sqlite", "solana_prix_chaine", "ts", 20, "LA SOURCE DE TOUT"),
     ("telegram", f"{DB}/intel.sqlite", "tg_lignes", "ts_entree", 180, "ENTREE T+75"),
-    # LES CARNETS REENTRAINES, ajoutes les 19 et 20/09. Chacun a sa propre base et sa propre
-    # cadence : ils notent par coupes de 6 h, donc une tolerance large (450 min) -- la meme que
-    # les gels de foret. Sans ces lignes, un carnet mort ne serait signale par personne : le test
-    # `test_chaque_ligne_de_la_table_a_une_source_surveillee` l a attrape le 20/09.
-    ("foret_flux", "/app/data/recherche/foret_flux/carnet.sqlite", "decision", "t_dec", 450,
-     "FORET FLUX 30s"),
-    ("foret_marche", "/app/data/recherche/foret_marche/carnet.sqlite", "decision", "t_dec", 450,
-     "FORET REENTRAINEE 6h"),
-    ("foret75_carnet", "/app/data/recherche/foret75_carnet/carnet.sqlite", "decision", "t_dec", 450,
-     "FORET 75s REENTRAINEE 20 % et ses deux lignes de lecture"),
-    ("foret_gagnant", "/app/data/recherche/foret_gagnant/carnet.sqlite", "decision", "t_dec", 450,
-     "FORET GAGNANT 20 % et ses deux lignes de lecture"),
-    ("foret75_iso", "/app/data/recherche/foret75_iso/carnet.sqlite", "decision", "t_dec", 450,
-     "FORET 75s ISO-MOTEUR (le modele prive de ce que le moteur ne peut pas calculer)"),
 ]
+
+# LES SOURCES ARRETEES VOLONTAIREMENT, le 27/09 (menage valide par Mido). Leurs lignes restent dans la
+# table (archives, chiffres figes) mais leurs collecteurs ne tournent plus : les surveiller enverrait
+# une fausse alerte Telegram par source et par heure -- c est ce qui s est passe le 27/09 apres-midi
+# (« foret_gel45 ne repond plus », « papier_gd30 ne repond plus »...). Une alerte qui ment apprend a
+# ignorer les alertes. Pour relancer une source : la retirer d ici ET la remettre dans SOURCES.
+ARRETEES = frozenset({"papier_gd30", "foret_gel45", "foret_gel75", "foret_flux", "foret_marche",
+                      "foret75_carnet", "foret_gagnant", "foret75_iso"})
 
 
 _compteurs: dict[str, tuple[int, float]] = {}       # table sans horodatage -> (lignes, instant)
@@ -105,6 +99,9 @@ LIGNES = {
     "G+D  les trois": "papier_large",
     "BANDE 0,20-0,35 (gelee)": "papier_combo",
     "BANDE + PAUSE (gelee)": "papier_combo",
+    # 27/09 : lignes renommees (le modele B retire de la prod, l ancien y revient)
+    "BANDE + PAUSE (modele en prod)": "papier_combo",
+    "MODELE B (gel du 22/09, papier, retire de la prod le 27/09)": "papier_challenger",
     "PISTE FOULE (gelee)": "papier_large",
     "ENSEMBLE de 12 (gele)": "papier_combo",
     "FORET ALEATOIRE (gelee)": "papier_combo",

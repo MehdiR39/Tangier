@@ -30,7 +30,8 @@ def test_chaque_ligne_de_la_table_a_une_source_surveillee():
 
 def test_chaque_source_nommee_existe_dans_SOURCES():
     connues = {s[0] for s in V.SOURCES}
-    inconnues = sorted(set(V.LIGNES.values()) - connues)
+    # 27/09 : une source ARRETEE volontairement (menage) n est plus surveillee, mais ses lignes restent
+    inconnues = sorted(set(V.LIGNES.values()) - connues - V.ARRETEES)
     assert not inconnues, "sources nommees mais absentes de SOURCES : %s" % inconnues
 
 
@@ -48,7 +49,11 @@ def test_aucune_source_ne_surveille_le_vide():
 def test_les_tolerances_sont_plausibles():
     """Un collecteur continu ne tolere pas des heures ; un gel a cycle de 6 h ne tolere pas 20 min."""
     tol = {s[0]: s[4] for s in V.SOURCES}
-    for continu in ("papier_combo", "papier_gd45", "papier_gd30", "papier_large", "prix_rapide", "moteur_prix"):
+    for continu in ("papier_combo", "papier_gd45", "papier_challenger", "papier_large", "prix_rapide", "moteur_prix"):
         assert tol[continu] <= 30, "%s : tolerance trop large (%d min)" % (continu, tol[continu])
-    for gel in ("foret_gel45", "foret_gel75"):
-        assert tol[gel] >= 400, "%s : tolerance trop serree pour un cycle de 6 h (%d min)" % (gel, tol[gel])
+
+
+def test_une_source_arretee_n_est_jamais_surveillee():
+    """27/09 : apres le menage, la veille alertait sur Telegram pour des collecteurs arretes EXPRES.
+    Une source ne peut pas etre a la fois arretee et surveillee."""
+    assert not ({s[0] for s in V.SOURCES} & V.ARRETEES), "source arretee encore surveillee"
