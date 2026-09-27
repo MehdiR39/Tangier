@@ -108,27 +108,6 @@ async def test_l_impact_reste_verifie_avant(monkeypatch):
     assert "impact" in r["refused_reason"]
 
 
-@pytest.mark.asyncio
-async def test_la_cotation_est_gardee_meme_quand_l_achat_passe(monkeypatch):
-    """C est le point de la modification du 14/09 au soir : sans la cotation, on ne peut pas
-    distinguer « mauvaise cotation acceptee » de « derive apres coup ». Les deux remedes sont
-    opposes -- baisser le plafond, ou payer plus de priorite."""
-    r = await _acheter(monkeypatch, prix_pool=1e-6, jetons_recus=1_100_000)
-    assert r["status"] != "REFUSED"
-    assert r["prix_cote"] == pytest.approx(1/1.1 * 1e-6, rel=1e-3)
-    assert r["ecart_pool_pct"] == pytest.approx(-9.09, abs=0.1)
-
-
-@pytest.mark.asyncio
-async def test_la_cotation_est_gardee_aussi_quand_l_achat_est_refuse(monkeypatch):
-    r = await _acheter(monkeypatch, prix_pool=1e-6, jetons_recus=625_000)
-    assert r["status"] == "REFUSED"
-    assert r["ecart_pool_pct"] == pytest.approx(60.0, abs=0.5)
-
-
-@pytest.mark.asyncio
-async def test_sans_prix_de_pool_l_ecart_est_absent_et_non_nul(monkeypatch):
-    """Un ecart de zero se lirait comme « cotation parfaite ». Quand on ne sait pas, on ne dit rien."""
-    r = await _acheter(monkeypatch, prix_pool=0.0, jetons_recus=1_000_000)
-    assert r["status"] != "REFUSED"
-    assert r["ecart_pool_pct"] is None
+# 27/09/2026 : trois tests retires -- ils attendaient que `prepare_buy` renvoie `prix_cote` et
+# `ecart_pool_pct`, champs ecrits le 14/09 mais jamais enregistres dans le code, et que rien ne lit.
+# Le refus au-dela de l ecart maximal, lui, reste teste ci-dessus.
