@@ -308,6 +308,68 @@ def live():
     }
 
 
+def reel() -> dict:
+    """L ARGENT REEL, STRATEGIE PAR STRATEGIE — la seule source de la page « Argent réel ».
+
+    Mido, 27/09 : « l app est trop bordelique, on voit des chiffres on sait pas quelle strat ».
+    Il avait raison, et c etait pire que du desordre : `live()` ne lit que `mr_lignes`, donc le
+    suiveur G+D (`gd_lignes`, en reel depuis le 25/09) n apparaissait NULLE PART, et tous les
+    chiffres « reels » etaient ceux de BANDE + PAUSE sans le dire.
+
+    Chaque strategie porte son nom, sa table, et l instant ou ELLE a commence : BANDE + PAUSE depuis
+    le 21/09 09h56 (les tickets de `mr_lignes` d avant sont d AUTRES strategies, mortes). Tout est
+    compte par JOUR CALENDAIRE de Paris, jamais en 24 h glissantes (consigne du 20/09).
+    """
+    STRATS = [("BANDE + PAUSE", "mr_lignes", BASCULE_BANDE),
+              ("G+D", "gd_lignes", 0.0)]
+    c = sqlite3.connect("file:%s?mode=ro" % INTEL, uri=True, timeout=30)
+    out = {"genere": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+           "strategies": []}
+    jour0 = dt.datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    try:
+        for nom, table, depuis in STRATS:
+            try:
+                lignes = c.execute(
+                    "SELECT ts_entree, ts_sortie, gain_eur, mise_eur, COALESCE(symbole, substr(mint,1,6)),"
+                    " statut FROM %s WHERE mode='live' AND tx_achat IS NOT NULL AND ts_entree >= ?"
+                    " ORDER BY ts_entree" % table, (depuis,)).fetchall()
+                refus = dict(c.execute(
+                    "SELECT statut, COUNT(*) FROM %s WHERE mode='live' AND tx_achat IS NULL"
+                    " AND t_dec >= ? GROUP BY statut" % table, (jour0,)))
+            except sqlite3.Error as e:
+                out["strategies"].append({"nom": nom, "erreur": str(e)[:160]})
+                continue
+            fermes = [x for x in lignes if x[2] is not None]
+            par_jour: dict[str, list] = {}
+            for te, ts, g, m, s, stt in fermes:
+                j = dt.datetime.fromtimestamp(float(ts or te), TZ).strftime("%Y-%m-%d")
+                par_jour.setdefault(j, []).append(float(g))
+            cum, courbe = 0.0, []
+            for te, ts, g, m, s, stt in sorted(fermes, key=lambda x: x[1] or x[0]):
+                cum += float(g)
+                courbe.append([int(ts or te), round(cum, 2)])
+            auj = dt.datetime.now(TZ).strftime("%Y-%m-%d")
+            gj = par_jour.get(auj, [])
+            out["strategies"].append({
+                "nom": nom,
+                "depuis": int(lignes[0][0]) if lignes else None,
+                "mise": round(float(lignes[-1][3] or 0), 2) if lignes else None,
+                "aujourdhui": {"n": len(gj), "gain": round(sum(gj), 2)},
+                "total": {"n": len(fermes), "gain": round(sum(float(x[2]) for x in fermes), 2),
+                          "gagnants": sum(1 for x in fermes if float(x[2]) > 0)},
+                "ouvertes": sum(1 for x in lignes if x[5] == "OUVERTE"),
+                "refus_aujourdhui": refus,
+                "jours": [{"jour": j, "n": len(v), "gain": round(sum(v), 2)}
+                          for j, v in sorted(par_jour.items())],
+                "courbe": courbe,
+                "derniers": [{"t": int(te), "jeton": s, "mise": m, "gain": g, "statut": stt}
+                             for te, ts, g, m, s, stt in lignes[-15:]][::-1],
+            })
+    finally:
+        c.close()
+    return out
+
+
 def _cout_pool(q):
     return FIXE_COUT + 2.0 * (25.0 * 0.31 / 30.0) / ((q or 0) + V_RESERVE)
 
@@ -529,6 +591,10 @@ def main() -> None:
                 ecrire("carnet_live.json", d)
         except Exception as e:  # noqa: BLE001
             print("carnet_json: LIVE EN ECHEC : %s" % str(e)[:200], flush=True)
+        try:
+            ecrire("carnet_reel.json", reel())
+        except Exception as e:  # noqa: BLE001
+            print("carnet_json: REEL EN ECHEC : %s" % str(e)[:200], flush=True)
         time.sleep(max(1, PAS_LIVE - (time.time() - t)))
 
 

@@ -35,7 +35,6 @@ F_TABLE = os.path.join(RACINE, "carnet.json")
 F_LIVE = os.path.join(RACINE, "carnet_live.json")
 F_ERR = os.path.join(RACINE, "carnet_erreur.json")
 F_MARCHE = os.path.join(RACINE, "carnet_marche.json")
-F_BASCULE = os.path.join(RACINE, "carnet_bascule.json")
 TZ = dt.timezone(dt.timedelta(hours=2))
 
 GAIN, PERTE, ACCENT, DOUX = "#3f9c6d", "#c9564b", "#d4a03c", "#8b9098"
@@ -109,230 +108,98 @@ def eur(v, d=0):
     return ("+" if v >= 0 else "−") + format(abs(v), ",.%df" % d).replace(",", " ").replace(".", ",")
 
 
-# =========================================================== LE CARNET RÉEL (rythme rapide)
-@st.fragment(run_every=5)
-def bandeau_reel():
-    L = lire(F_LIVE)
-    if not L:
-        st.info("Le carnet réel n'est pas encore écrit — `carnet_json.py` tourne-t-il dans le conteneur ?")
+# ================================================================ L'ARGENT RÉEL (rythme rapide)
+F_REEL = os.path.join(RACINE, "carnet_reel.json")
+# UNE COULEUR PAR STRATÉGIE, la même partout sur la page, et le NOM écrit à côté de chaque chiffre.
+# Mido, 27/09 : « on voit des chiffres, on sait pas quelle strat ». L'ancien bloc ne lisait que
+# `mr_lignes` : G+D, en réel depuis le 25/09, n'apparaissait nulle part, et un bandeau affichait
+# encore un plafond de −150 € en 24 h glissantes alors que les plafonds sont supprimés et que le
+# P&L se lit par jour calendaire.
+COULEUR_STRAT = {"BANDE + PAUSE": "#d4a03c", "G+D": "#6b9ec9"}
+
+
+@st.fragment(run_every=10)
+def argent_reel():
+    R = lire(F_REEL)
+    if not R or not R.get("strategies"):
+        st.info("Pas encore de données — `carnet_json.py` écrit `carnet_reel.json` toutes les 20 s.")
         return
-    f = L["fenetre_24h"]
-    bloque = f["bloque"]
-    st.markdown(
-        '<div class="bandeau %s"><b>%s</b> — budget de perte sur 24 h glissantes : '
-        '<span class="mono">%s €</span> sur un plafond de <span class="mono">%s €</span>. '
-        'Marge restante <span class="mono">%s €</span>.</div>'
-        % ("bloque" if bloque else "ouvert",
-           "ACHATS BLOQUÉS" if bloque else "achats ouverts",
-           eur(f["gain"]), eur(f["plafond"]), eur(f["marge"])),
-        unsafe_allow_html=True)
+    S = [s for s in R["strategies"] if "erreur" not in s]
+    for s in R["strategies"]:
+        if "erreur" in s:
+            st.error("%s : illisible (%s)" % (s["nom"], s["erreur"]))
 
-    # LE SELECTEUR DE PERIODE COMMANDE TOUTE LA PAGE, pas seulement le bas.
-    #
-    # Mido, 23/09 : « la page carnet reel est tres bruitee, il faut la mettre a partir du passage
-    # en prod du nouveau modele ». Il avait raison et le defaut etait structurel : le selecteur
-    # existait mais il etait place APRES l indicateur « depuis le debut » et APRES la courbe
-    # cumulee -- les deux melangeaient donc les 650 tickets des regles precedentes, dont
-    # `FORET REENTRAINEE 6h` qui a perdu 45,75 EUR en une heure, avec la methode en service.
-    # On choisit la periode UNE fois, en haut, et tout ce qui suit la respecte.
-    _reg = L.get("regimes") or [{"cle": "tout", "nom": "Tout le carnet réel", "depuis": None}]
-    _noms = [r["nom"] for r in _reg]
-    # LE DEFAUT EST DESIGNE PAR LE PRODUCTEUR (`defaut: true`), JAMAIS DEDUIT DE L ORDRE. Il valait
-    # `len - 1` -- la derniere option -- et le 26/09 j ai ajoute « depuis le modele frais » a la fin :
-    # la page s est mise a n afficher que les 4 tickets posterieurs a la bascule, et tout le suivi
-    # de la strategie a disparu. Mido : « pourquoi tu m as retire le suivi d avant, je t ai dit
-    # c est juste un changement de modele et pas de strat ». Ajouter une option ne doit plus jamais
-    # pouvoir deplacer le defaut.
-    _idef = next((i for i, r in enumerate(_reg) if r.get("defaut")), len(_noms) - 1)
-    _choisi = _reg[_noms.index(st.radio("Période", _noms, index=_idef, horizontal=True,
-                                        key="regime_reel", label_visibility="collapsed"))]
-    _dep = _choisi.get("depuis")
-    _G = [x for x in (L.get("gains") or []) if not _dep or x["t"] >= _dep]
+    # ---- 1. AUJOURD'HUI, en haut, une colonne par stratégie + le total ----
+    st.subheader("Aujourd'hui (jour calendaire, heure de Paris)")
+    c = st.columns(len(S) + 1)
+    for col, s in zip(c, S):
+        col.metric(s["nom"], eur(s["aujourdhui"]["gain"], 2) + " €",
+                   "%d tickets · mise %s €" % (s["aujourdhui"]["n"], eur(s["mise"] or 0).lstrip("+")),
+                   delta_color="off")
+    c[-1].metric("TOTAL des deux", eur(sum(s["aujourdhui"]["gain"] for s in S), 2) + " €",
+                 "%d positions ouvertes" % sum(s["ouvertes"] for s in S), delta_color="off")
 
-    c = st.columns(5)
-    c[0].metric("Aujourd'hui", eur(L["jour"]["gain"]) + " €", "%d ordres" % L["jour"]["n"],
-                delta_color="off")
-    # « Depuis le debut » devient « sur la periode choisie » : le total brut de `L["total"]`
-    # porterait toujours sur tout l historique et contredirait le graphique juste en dessous.
-    c[1].metric("Sur la période", eur(sum(x["gain"] for x in _G)) + " €",
-                "%d tickets fermés" % len(_G), delta_color="off")
-    c[2].metric("Positions ouvertes", str(L["ouvertes"]))
-    st_ = L.get("statuts") or {}
-    c[3].metric("Achetés aujourd'hui", str(st_.get("FERMEE", 0) + L["ouvertes"]))
-    c[4].metric("Refusés aujourd'hui", str(sum(v for k, v in st_.items() if k != "FERMEE")))
-    st.caption("carnet réel · %s" % age(L["genere"]))
+    # ---- 2. DEPUIS LE DÉBUT de chaque stratégie ----
+    st.subheader("Depuis le début de chaque stratégie")
+    c = st.columns(len(S) + 1)
+    for col, s in zip(c, S):
+        t = s["total"]
+        col.metric(s["nom"], eur(t["gain"], 2) + " €",
+                   "%d tickets · %d %% gagnants · depuis le %s"
+                   % (t["n"], round(100 * t["gagnants"] / t["n"]) if t["n"] else 0, heure(s["depuis"])),
+                   delta_color="off")
+    c[-1].metric("TOTAL des deux", eur(sum(s["total"]["gain"] for s in S), 2) + " €", delta_color="off")
 
-    if st_:
-        with st.expander("Pourquoi des tickets ont été refusés aujourd'hui"):
-            for k, v in sorted(st_.items(), key=lambda x: -x[1]):
-                st.write("**%s** — %d" % (k, v))
-            for k, v in (L.get("motifs") or {}).items():
-                st.caption("« %s » — %d" % (str(k)[:110], v))
+    fig = go.Figure()
+    for s in S:
+        if not s["courbe"]:
+            continue
+        x = pd.to_datetime([p[0] for p in s["courbe"]], unit="s", utc=True).tz_convert("Europe/Paris")
+        y = [p[1] for p in s["courbe"]]
+        fig.add_trace(go.Scatter(x=x, y=y, mode="lines", name=s["nom"],
+                                 line=dict(color=COULEUR_STRAT.get(s["nom"], DOUX), width=2),
+                                 hovertemplate="%{x|%d/%m %H:%M}<br>" + s["nom"] +
+                                               " : <b>%{y:+.2f} €</b><extra></extra>"))
+        fig.add_annotation(x=x[-1], y=y[-1], text="<b>%s</b> %s €" % (s["nom"], eur(y[-1])),
+                           showarrow=False, xanchor="left", xshift=6,
+                           font=dict(color=COULEUR_STRAT.get(s["nom"], DOUX)))
+    fig.add_hline(y=0, line=dict(color=DOUX, width=1, dash="dot"))
+    fig.update_layout(height=300, margin=dict(l=0, r=150, t=6, b=0), yaxis_title="€ cumulés, réels",
+                      legend=dict(orientation="h", y=-.18),
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True)
 
-    if _G:
-        # RECALCULEE sur la periode : `L["courbe"]` cumule depuis le premier ticket de l histoire,
-        # donc la tronquer laisserait un point de depart a plusieurs centaines d euros et on lirait
-        # une pente sur un piedestal qui ne veut rien dire.
-        d = pd.DataFrame({"t": [x["t"] for x in _G]})
-        d["cum"] = pd.Series([x["gain"] for x in _G]).cumsum()
-        d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
-        fig = go.Figure(go.Scatter(x=d["quand"], y=d["cum"], mode="lines",
-                                   line=dict(color=ACCENT, width=2), name="réel"))
-        fig.add_hline(y=0, line=dict(color=DOUX, width=1, dash="dot"))
-        fig.update_layout(height=230, margin=dict(l=0, r=0, t=6, b=0),
-                          yaxis_title="€ cumulés", showlegend=False,
-                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True)
+    # ---- 3. JOUR PAR JOUR, une colonne par stratégie ----
+    st.subheader("Jour par jour")
+    jours = sorted({j["jour"] for s in S for j in s["jours"]}, reverse=True)
+    lignes = []
+    for j in jours:
+        ligne, tot = {"jour": dt.date.fromisoformat(j).strftime("%a %d/%m")}, 0.0
+        for s in S:
+            v = next((x for x in s["jours"] if x["jour"] == j), None)
+            ligne[s["nom"] + " €"] = round(v["gain"], 2) if v else None
+            ligne[s["nom"] + " tickets"] = v["n"] if v else 0
+            tot += v["gain"] if v else 0.0
+        ligne["TOTAL €"] = round(tot, 2)
+        lignes.append(ligne)
+    st.dataframe(pd.DataFrame(lignes), use_container_width=True, hide_index=True)
 
-    if len(_G) >= 5:
-        # La periode est celle choisie EN HAUT : un second selecteur donnerait deux reponses
-        # differentes sur la meme page.
-        g = pd.DataFrame(_G)
-        if g.empty:
-            st.info("Aucun ticket fermé sur cette période pour l'instant.")
-            return
-        g["quand"] = pd.to_datetime(g["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris")
-        st.caption("%d tickets fermés · %s € au total · mise %s €"
-                   % (len(g), eur(g["gain"].sum(), 2), eur(g["mise"].mean(), 0).lstrip("+")))
+    # ---- 4. LES DERNIERS TICKETS, avec leur stratégie ----
+    st.subheader("Les derniers tickets")
+    der = []
+    for s in S:
+        for x in s["derniers"]:
+            der.append({"quand": heure(x["t"]), "_t": x["t"], "stratégie": s["nom"],
+                        "jeton": x["jeton"], "mise €": x["mise"],
+                        "gain €": round(x["gain"], 2) if x["gain"] is not None else None,
+                        "statut": x["statut"]})
+    der = sorted(der, key=lambda z: -z["_t"])[:25]
+    for d_ in der:
+        d_.pop("_t")
+    st.dataframe(pd.DataFrame(der), use_container_width=True, hide_index=True, height=360)
+    st.caption("argent réel, lu dans la base du moteur · %s" % age(R["genere"]))
 
-        st.subheader("Chaque ticket, un par un")
-        st.caption("Vert = fermé en gain, rouge = fermé en perte. La hauteur est le résultat "
-                   "réel du ticket, pas une estimation.")
-        fig = go.Figure(go.Bar(
-            x=g["quand"], y=g["gain"],
-            marker_color=[GAIN if v >= 0 else PERTE for v in g["gain"]],
-            hovertemplate="%{x|%d/%m %H:%M}<br><b>%{y:+.2f} €</b><extra></extra>"))
-        fig.add_hline(y=0, line=dict(color=DOUX, width=1))
-        fig.update_layout(height=280, margin=dict(l=0, r=0, t=6, b=0), yaxis_title="gain du ticket €",
-                          showlegend=False, bargap=.1,
-                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Comment les gains se répartissent")
-        gag, per = g[g["gain"] >= 0]["gain"], g[g["gain"] < 0]["gain"]
-        st.caption("Ce marché est **asymétrique** : un gagnant peut rapporter plusieurs fois ce "
-                   "qu'un perdant coûte, mais les perdants sont plus nombreux. C'est la forme de "
-                   "cette distribution qui décide si une stratégie peut gagner, pas sa moyenne.")
-        c = st.columns(4)
-        c[0].metric("Gagnants", "%d (%.0f %%)" % (len(gag), 100 * len(gag) / len(g)))
-        c[1].metric("Gain moyen", eur(gag.mean(), 2) + " €" if len(gag) else "—")
-        c[2].metric("Perte moyenne", eur(per.mean(), 2) + " €" if len(per) else "—")
-        c[3].metric("Médiane", eur(g["gain"].median(), 2) + " €")
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=per, marker_color=PERTE, name="pertes", nbinsx=30))
-        fig.add_trace(go.Histogram(x=gag, marker_color=GAIN, name="gains", nbinsx=30))
-        fig.add_vline(x=0, line=dict(color=DOUX, width=1))
-        fig.add_vline(x=g["gain"].mean(), line=dict(color=ACCENT, width=2, dash="dash"),
-                      annotation_text="moyenne %s €" % eur(g["gain"].mean(), 2))
-        fig.update_layout(height=300, margin=dict(l=0, r=0, t=26, b=0), barmode="overlay",
-                          xaxis_title="gain du ticket €", yaxis_title="nombre de tickets",
-                          legend=dict(orientation="h", y=-.22),
-                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # ---- CE QU ON A ECARTE : la foret a-t-elle jete des mauvais ou des bons ? -------------------
-    E = L.get("evites") or []
-    if E and len(_G) >= 5:
-        e = pd.DataFrame(E)
-        if _dep:
-            e = e[e["t"] >= _dep]
-        pris = pd.DataFrame(_G)
-        pris = pris[pris["brut_pct"].notna()]
-        if len(e) and len(pris):
-            st.subheader("Ce qu'on a écarté")
-            st.caption("On n'a pas acheté ces jetons, mais le carnet papier sait ce que leur prix "
-                       "a fait. C'est la seule façon de savoir si nos refus **protègent** ou "
-                       "**coûtent** — et si la forêt écarte bien les mauvais.")
-            LIB = {"ECARTEE": "écartés par la forêt", "BLOQUEE": "bloqués par le budget de perte",
-                   "FREIN": "bloqués par le frein", "ANNULEE": "annulés (échec technique)"}
-            lignes = [{"groupe": "ACHETÉS", "n": len(pris),
-                       "rendement brut moyen %": round(pris["brut_pct"].mean(), 2),
-                       "gagnants %": round(100 * (pris["brut_pct"] > 0).mean())}]
-            for s_, sous in e.groupby("statut"):
-                lignes.append({"groupe": LIB.get(s_, s_), "n": len(sous),
-                               "rendement brut moyen %": round(sous["brut_pct"].mean(), 2),
-                               "gagnants %": round(100 * (sous["brut_pct"] > 0).mean())})
-            t = pd.DataFrame(lignes)
-            fig = go.Figure(go.Bar(
-                x=t["rendement brut moyen %"], y=t["groupe"], orientation="h",
-                marker_color=[ACCENT if g_ == "ACHETÉS" else
-                              (GAIN if v >= 0 else PERTE)
-                              for g_, v in zip(t["groupe"], t["rendement brut moyen %"])],
-                customdata=t[["n", "gagnants %"]].values,
-                hovertemplate="<b>%{y}</b><br>%{x:+.2f} %% en moyenne<br>"
-                              "%{customdata[0]} tickets · %{customdata[1]} %% gagnants<extra></extra>"))
-            fig.add_vline(x=0, line=dict(color=DOUX, width=1))
-            fig.update_layout(height=230, margin=dict(l=0, r=10, t=6, b=0),
-                              xaxis_title="rendement brut du jeton, avant coût (%)",
-                              yaxis=dict(autorange="reversed"), showlegend=False,
-                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(t, use_container_width=True, hide_index=True)
-
-            # PAR TRANCHE, pas seulement en moyenne. Une moyenne favorable peut cacher qu on jette
-            # autant de gros gains que de grosses pertes -- et dans un marche aussi asymetrique,
-            # perdre un jeton a +240 % coute plus cher qu eviter un a -80 %. Mido, 19/09 : « pas
-            # que le rendement, il va falloir voir si la RF retire que des grosses pertes ou des
-            # gros gains aussi, et dans quelle proportion ».
-            ec = e[e["statut"] == "ECARTEE"]
-            if len(ec) >= 5:
-                st.caption("**Dans chaque tranche, combien de jetons ont été gardés et combien "
-                           "écartés.** La question est simple : la forêt jette-t-elle surtout les "
-                           "catastrophes (à gauche), ou jette-t-elle aussi les fusées (à droite) ? "
-                           "Dans ce marché un jeton monte à +240 % quand une perte s'arrête à "
-                           "−100 % — en jeter un gros coûte plus cher qu'en éviter un mauvais.")
-                B = [-1e9, -50, -20, 0, 20, 50, 1e9]
-                NB = ["catastrophe<br>< −50 %", "grosse perte<br>−50 à −20", "petite perte<br>−20 à 0",
-                      "petit gain<br>0 à +20", "bon gain<br>+20 à +50", "gros gain<br>> +50 %"]
-                cg = pd.cut(pris["brut_pct"], B, labels=NB).value_counts().reindex(NB).fillna(0)
-                ce = pd.cut(ec["brut_pct"], B, labels=NB).value_counts().reindex(NB).fillna(0)
-                tot = (cg + ce).replace(0, np.nan)
-                fig = go.Figure()
-                fig.add_trace(go.Bar(name="gardés", x=NB, y=cg.values, marker_color=ACCENT,
-                                     text=[int(v) if v else "" for v in cg.values],
-                                     textposition="inside",
-                                     hovertemplate="<b>%{x}</b><br>%{y} jetons gardés<extra></extra>"))
-                fig.add_trace(go.Bar(name="écartés", x=NB, y=ce.values, marker_color=PERTE,
-                                     text=[int(v) if v else "" for v in ce.values],
-                                     textposition="inside",
-                                     customdata=(100 * ce / tot).round(0).values,
-                                     hovertemplate="<b>%{x}</b><br>%{y} jetons écartés — "
-                                                   "soit %{customdata:.0f} %% de cette tranche"
-                                                   "<extra></extra>"))
-                fig.update_layout(height=340, margin=dict(l=0, r=0, t=6, b=0), barmode="stack",
-                                  yaxis_title="nombre de jetons",
-                                  legend=dict(orientation="h", y=-.22),
-                                  paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig, use_container_width=True)
-                st.caption("La part rouge de chaque barre est ce que la forêt a refusé dans cette "
-                           "tranche. **Elle trie bien si le rouge domine à gauche et disparaît à "
-                           "droite.**")
-                lig = pd.DataFrame({"tranche": [n.replace("<br>", " ") for n in NB],
-                                    "jetons vus": (cg + ce).astype(int).values,
-                                    "gardés": cg.astype(int).values,
-                                    "écartés": ce.astype(int).values,
-                                    "% écarté": (100 * ce / tot).round(0).values})
-                st.dataframe(lig, use_container_width=True, hide_index=True)
-            if len(ec) >= 5:
-                d_ = ec["brut_pct"].mean() - pris["brut_pct"].mean()
-                if d_ < 0:
-                    st.success("**La forêt écarte bien les mauvais** : les %d jetons qu'elle a "
-                               "refusés font %s %% en moyenne, contre %s %% pour ceux qu'elle a "
-                               "gardés — %s points d'écart en sa faveur."
-                               % (len(ec), eur(ec["brut_pct"].mean(), 2),
-                                  eur(pris["brut_pct"].mean(), 2), eur(-d_, 2)))
-                else:
-                    st.warning("**Attention** : les %d jetons écartés par la forêt font %s %% en "
-                               "moyenne, soit %s points de MIEUX que ceux qu'elle a gardés. Sur un "
-                               "petit nombre c'est du hasard ; si ça tient, elle trie à l'envers."
-                               % (len(ec), eur(ec["brut_pct"].mean(), 2), eur(d_, 2)))
-
-    if L.get("derniers"):
-        d = pd.DataFrame(L["derniers"])
-        d["quand"] = pd.to_datetime(d["t"], unit="s", utc=True).dt.tz_convert("Europe/Paris").dt.strftime("%d/%m %H:%M")
-        d = d[["quand", "symbole", "risque", "mise", "gain", "statut"]]
-        d.columns = ["quand", "jeton", "risque", "mise €", "gain €", "statut"]
-        st.dataframe(d, use_container_width=True, hide_index=True, height=260)
 
 
 # =============================================================== LA TABLE (rythme lent)
@@ -1004,13 +871,13 @@ def marche():
 
     st.subheader("Aujourd'hui : le marché, et nous")
     c = st.columns(4)
-    c[0].metric("Ce que le marché donnait", eur(d["marche_eur"], 2),
+    c[0].metric("Le marché (pool au hasard)", eur(d["marche_eur"], 2),
                 help="Rendement net d'un pool éligible pris au hasard. C'est le tarif du jour : "
                      "s'il est négatif, perdre est normal.")
-    c[1].metric("Ce que la règle a fait",
+    c[1].metric("BANDE + PAUSE (papier)",
                 eur(d["regle_eur"], 2) if d.get("regle_eur") is not None else "—",
                 help="Sur les tickets que la règle aurait pris, pause comprise.")
-    c[2].metric("ÉCART", eur(d["ecart"], 2) if d.get("ecart") is not None else "—",
+    c[2].metric("ÉCART BANDE + PAUSE − marché", eur(d["ecart"], 2) if d.get("ecart") is not None else "—",
                 delta=None,
                 help="Règle moins marché. C'est la seule colonne qui dit si c'est vous ou le marché.")
     c[3].metric("Gros gains au marché", "%.1f %%" % d["gros_gains_pct"],
@@ -1034,57 +901,26 @@ def marche():
     for j in jours:
         lignes.append({
             "jour": j["jour"], "pools": j["n"],
-            "marché €/ticket": j["marche_eur"],
+            "marché €/ticket (pool au hasard)": j["marche_eur"],
             "effondrements": "%.1f %%" % j["effondrement_pct"],
             "gros gains": ("%.1f %% ± %.1f" % (j["gros_gains_pct"], j["gros_gains_ic"])
                            if j.get("gros_gains_ic") is not None
                            else "%.1f %%" % j["gros_gains_pct"]),
             "×2": "%.1f %%" % j["x2_pct"],
-            "règle €/ticket": j.get("regle_eur"),
+            "BANDE + PAUSE €/ticket (papier)": j.get("regle_eur"),
             "écart": j.get("ecart"),
         })
     st.dataframe(lignes, use_container_width=True, hide_index=True)
     st.caption("`marché` = ce que rapporte un pool éligible au hasard, net du péage, à la mise de "
                "la page. `écart` = règle − marché : **c'est lui qui répond à « moi ou le marché »**.")
 
-    # ---- le bras témoin depuis le passage au modèle frais ---------------------
-    B = lire(F_BASCULE)
-    if B and B.get("bras"):
-        st.subheader("Depuis le changement de modèle : l'ancien contre le nouveau")
-        st.caption("La stratégie n'a pas changé — `bande + pause` des deux côtés. Seul le modèle "
-                   "dessous a changé, le 26/09 à 12h38. **Chaque bras lit sa propre pause sur son "
-                   "propre flux** : croiser les deux fabriquerait une règle qui n'a jamais tourné.")
-        cols = st.columns(len(B["bras"]))
-        for col, br in zip(cols, B["bras"]):
-            with col:
-                if br.get("erreur"):
-                    st.metric(br["nom"], "—")
-                    st.caption("erreur : %s" % br["erreur"])
-                    continue
-                st.metric(br["nom"],
-                          eur(br["niveau"], 2) if br.get("niveau") is not None else "—",
-                          help="€ par ticket depuis la bascule")
-                st.caption("%d tickets pris sur %d offerts · bande [%.3f ; %.3f]"
-                           % (br.get("n") or 0, br.get("offerts") or 0,
-                              br["bande"][0], br["bande"][1]))
-        n = min([br.get("n") or 0 for br in B["bras"]] or [0])
-        cible = B.get("pour_trancher", 411)
-        st.progress(min(1.0, n / cible),
-                    text="%d tickets par bras sur les %d qu'il faut pour trancher" % (n, cible))
-        st.caption("**Rien de tout cela n'est un verdict avant %d tickets par bras.** Distinguer un "
-                   "écart de +2,1 €/ticket demande 411 tickets à 50 %% de puissance et 838 à 80 %% "
-                   "(mesure du 26/09, σ = 15,41). Sur peu de tickets, l'écart est dominé par "
-                   "quelques tirages." % cible)
 
 
 st.title("Carnet Tangier")
-st.caption("Tout ce qui a réellement tourné, au coût d'exécution mesuré sur la chaîne. "
-           "Les chiffres viennent de `data/table_std2.py` — cette page ne recalcule rien.")
 
 
-# HORLOGE DE VIE, en haut et bien visible. Elle ne sert qu'à une chose : si elle cesse d'avancer,
-# la page est décrochée et tout ce qui est affiché en dessous est périmé. Sans elle, une session
-# figée ressert indéfiniment son dernier rendu — âge des données compris, donc rassurant à tort.
+# HORLOGE DE VIE. Si elle cesse d'avancer, la page est décrochée et tout ce qui est en dessous est
+# périmé. Sans elle, une session figée ressert son dernier rendu — âge des données compris.
 @st.fragment(run_every=2)
 def horloge():
     st.caption("⏱ page vivante · %s" % dt.datetime.now(TZ).strftime("%d/%m %H:%M:%S"))
@@ -1092,12 +928,23 @@ def horloge():
 
 horloge()
 
-onglets = st.tabs(["Carnet réel", "Marché", "Coûts", "Stratégies"])
+# TROIS ONGLETS, ET CHACUN DIT EN PREMIÈRE LIGNE CE QU'IL MONTRE. Mido, 27/09 : « trop bordélique,
+# on voit des chiffres on sait pas quelle strat ». La frontière qui compte est ARGENT RÉEL contre
+# PAPIER : un chiffre papier lu comme de l'argent a déjà coûté cher (−436 € le 15/09).
+onglets = st.tabs(["💶 Argent réel", "📉 Marché : moi ou le marché ?", "🧪 Recherche (papier, 0 €)"])
 with onglets[0]:
-    bandeau_reel()
+    st.success("**ARGENT RÉEL** — deux stratégies tournent : **BANDE + PAUSE** (25 €) et **G+D** "
+               "(20 €). Chaque chiffre porte le nom de sa stratégie.")
+    argent_reel()
 with onglets[1]:
+    st.info("**MARCHÉ** — ce que le marché offrait chaque jour, pour savoir si une perte vient de "
+            "lui ou de **BANDE + PAUSE**. Tout est calculé sur le carnet papier, pas sur l'argent réel.")
     marche()
 with onglets[2]:
-    couts()
-with onglets[3]:
-    table_complete()
+    st.warning("**PAPIER, 0 €** — rien ici n'est de l'argent. Ce sont des règles et des modèles "
+               "testés sans acheter. Seule la section « Coûts » vient des vrais tickets de "
+               "BANDE + PAUSE.")
+    with st.expander("Les stratégies testées sur papier", expanded=True):
+        table_complete()
+    with st.expander("Coûts réels d'exécution (BANDE + PAUSE)"):
+        couts()
