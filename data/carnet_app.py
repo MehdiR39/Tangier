@@ -931,20 +931,21 @@ horloge()
 # TROIS ONGLETS, ET CHACUN DIT EN PREMIÈRE LIGNE CE QU'IL MONTRE. Mido, 27/09 : « trop bordélique,
 # on voit des chiffres on sait pas quelle strat ». La frontière qui compte est ARGENT RÉEL contre
 # PAPIER : un chiffre papier lu comme de l'argent a déjà coûté cher (−436 € le 15/09).
-onglets = st.tabs(["💶 Argent réel", "📉 Marché : moi ou le marché ?", "🧪 Recherche (papier, 0 €)"])
+onglets = st.tabs(["💶 Argent réel", "💸 Coûts réels", "📉 Marché : moi ou le marché ?",
+                   "🧪 Recherche (papier, 0 €)"])
 with onglets[0]:
     st.success("**ARGENT RÉEL** — deux stratégies tournent : **BANDE + PAUSE** (25 €) et **G+D** "
                "(20 €). Chaque chiffre porte le nom de sa stratégie.")
     argent_reel()
 with onglets[1]:
+    st.success("**COÛTS RÉELS** — ce que l'exécution a coûté, ticket par ticket, lu sur la chaîne. "
+               "Mesuré sur les tickets de **BANDE + PAUSE**.")
+    couts()
+with onglets[2]:
     st.info("**MARCHÉ** — ce que le marché offrait chaque jour, pour savoir si une perte vient de "
             "lui ou de **BANDE + PAUSE**. Tout est calculé sur le carnet papier, pas sur l'argent réel.")
     marche()
-with onglets[2]:
+with onglets[3]:
     st.warning("**PAPIER, 0 €** — rien ici n'est de l'argent. Ce sont des règles et des modèles "
-               "testés sans acheter. Seule la section « Coûts » vient des vrais tickets de "
-               "BANDE + PAUSE.")
-    with st.expander("Les stratégies testées sur papier", expanded=True):
-        table_complete()
-    with st.expander("Coûts réels d'exécution (BANDE + PAUSE)"):
-        couts()
+               "testés sans acheter.")
+    table_complete()
