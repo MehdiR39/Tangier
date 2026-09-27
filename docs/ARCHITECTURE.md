@@ -152,8 +152,8 @@ Tangier/
 │   └── recherche/            modèles (balayage/), gels (challengers/), données d'études
 ├── data_onchain/  data_raw/  données de l'étude on-chain (lues par intel/metrics/regime.py et scripts/)
 ├── logs/                     journaux (intel.log, un par collecteur)
-├── results/                  sorties d'analyses ponctuelles
-├── scripts/                  lanceurs Windows (lancer_carnet.cmd, lancer_veille.cmd) et étude on-chain
+├── results/                  vide (monté dans le conteneur ; contenu rangé dans archive/ le 27/09)
+├── scripts/                  lanceurs Windows, rapport quotidien ; etude_onchain/ = l étude de septembre
 ├── tests/intel_tests/        tests du moteur
 ├── docs/
 │   ├── ARCHITECTURE.md       ce document
@@ -162,7 +162,8 @@ Tangier/
 │   └── historique/           anciennes docs, gardées telles quelles
 └── archive/                  projets antérieurs, déplacés le 27/09, rien d'effacé
     ├── 2026-02_bot_ml_binance/        bot ML Binance (main.py, src/, models/…)
-    └── 2026-08_allocation_portefeuille/ étude d'allocation (notebooks)
+    ├── 2026-08_allocation_portefeuille/ étude d allocation (notebooks)
+    └── 2026-09_brouillons_debut/        brouillons des premiers jours du projet Solana
 ```
 
 Les bases de données vivantes ne sont **pas** dans le dossier : elles sont dans le volume Docker
