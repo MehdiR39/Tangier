@@ -943,6 +943,18 @@ le plafond de cotation serait un pari sur un ticket : **on ne touche pas aux gar
 biais du PAPIER (il ignore le prix qu on paierait vraiment), pas une panne de la prod. A faire :
 que la ligne papier marque ces tickets non achetables, pour qu elle soit iso prod.
 
+
+**27/09 13h10 — PAPIER ISO PROD.** Mido : *« papier et reel different, a quoi sert d avoir du
+papier »* — « oui ». `papier_combo` demande maintenant, pour chaque pool eligible, LA cotation de la
+prod a blanc (`prepare_buy` sans cle, memes reglages lus dans `modele_rapide` : mise 25, ecart pool
+40 %, aller-retour 15 %, impact 15 %, glissement 20 %) et enregistre `cote_statut` / `prix_cote` dans
+des colonnes AJOUTEES — `eligible`, `risque`, `brut_240` inchanges, donc la pause de la prod ne voit
+rien ; la cotation tourne dans un fil. Premieres cotations en direct : 3/3 ACHETABLE, issues toujours
+ecrites. Courbes « ISO PROD » (BANDE + PAUSE, B, C, D) sur la page : pause sur tout le flux, mais
+seuls les tickets achetables comptent, au prix cote. **Limite connue : la cotation papier est prise a
+62-76 s d age, la prod achete vers 47 s** — 15 a 30 s plus tard, donc pas encore le meme instant. A
+mesurer sur les tickets achetes des deux cotes, puis a rapprocher si l ecart est grand.
+
 **CE QUI RESTE A FAIRE, dans l ordre.**
 1. **Laisser C aller a 1 001 tickets/bras** (~01/10) et lire `challenger.py` : rejet ou attente.
    Rien en production d ici la au titre de la derive : le cout de se tromper dans l autre sens —
