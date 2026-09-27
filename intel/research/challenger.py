@@ -432,6 +432,18 @@ def resume() -> list[dict]:
                    "ATTENDRE" if not atteint else
                    "REJETE" if gagnes < meta.get("axes_requis", AXES_REQUIS) or cc["niveau"] <= 0 else
                    "A ADOPTER — decision de Mido")
+        # LA COURBE, au format des autres lignes de la page (`carnet.json`), pour que B, C et D
+        # s affichent DANS le graphique « Gain cumule » a cote des autres strategies (Mido, 27/09).
+        pris_c = sorted(rejoue([x for x in T if x["chal"]]), key=lambda z: z["t"])
+        cum, courbe, pj = 0.0, [], {}
+        for x in pris_c:
+            cum += MISE * x["r"]
+            courbe.append([int(x["t"]), round(cum, 2)])
+            j = dt.datetime.fromtimestamp(x["t"], TZ).strftime("%Y-%m-%d")
+            e = pj.setdefault(j, {"jour": j, "gain": 0.0, "n": 0})
+            e["gain"] = round(e["gain"] + MISE * x["r"], 2)
+            e["n"] += 1
+        r.update({"courbe": courbe, "par_jour": list(pj.values())})
         r.update({"n": cc["n"], "n_prod": cp["n"], "eur_ticket": round(cc["niveau"], 3),
                   "eur_ticket_prod": round(cp["niveau"], 3), "axes": "%d/7" % gagnes,
                   "queue": round(100 * pg(qc), 1), "queue_prod": round(100 * pg(qp), 1),

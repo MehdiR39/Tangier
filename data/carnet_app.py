@@ -264,6 +264,13 @@ def table_complete():
     MORTES = ("FORET", "G+D a 30 s")
     archives = [l for l in D["lignes"] if any(m in l["nom"] for m in MORTES)]
     D = dict(D, lignes=[l for l in D["lignes"] if l not in archives])
+    # LES MODELES GELES B, C, D DANS LES MEMES GRAPHIQUES QUE LES AUTRES (Mido, 27/09 : « je les
+    # vois pas dans les graphiques avec les autres strats »). Ils viennent de `carnet_challengers.json`
+    # et prennent le format d une ligne ordinaire, en tete de liste pour etre trouves tout de suite.
+    _C = lire(os.path.join(RACINE, "carnet_challengers.json")) or {}
+    geles = [{"nom": "MODELE %s gele le %s (%s)" % (m["nom"], m["gele"][:5], m["cible"]),
+              "n": m.get("n", 0), "courbe": m.get("courbe") or [], "par_jour": m.get("par_jour") or []}
+             for m in _C.get("modeles") or []]
 
     c = st.columns(4)
     temoin = next((l for l in D["lignes"] if l["nom"] == "temoin sans filtre"), None)
@@ -578,11 +585,13 @@ def table_complete():
     # mettant dans un bloc a part, puis en exigeant qu il ait deja une courbe. Mido a du me le dire
     # deux fois. Une strategie qu on vient de geler DOIT etre visible la ou on regarde, meme vide :
     # c est justement le moment ou l on veut verifier qu elle existe.
-    dispo = list(D["lignes"])
+    dispo = geles + list(D["lignes"])
     noms = [l["nom"] + ("" if len(l.get("courbe") or []) >= 2 else "  (pas encore de ticket)")
             for l in dispo]
     par_nom = dict(zip(noms, dispo))
-    defaut = [n for n in (["temoin sans filtre"] + [c["nom"] for c in D["contre_temoin"][:3]]) if n in noms]
+    # PAR DEFAUT : le modele en prod et les modeles geles, pour qu on les voie sans rien cocher.
+    defaut = [n for n in noms if (n.startswith("MODELE ") and " gele le " in n)
+              or n.startswith("BANDE + PAUSE (modele en prod)")]
     choix = st.multiselect("Lignes affichées", noms, default=defaut, key="courbes")
     # Une ligne cochee sans ticket ne se trace pas -- on le dit, au lieu de la faire disparaitre.
     retenues = [par_nom[n] for n in choix]
