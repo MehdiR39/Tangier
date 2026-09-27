@@ -9,7 +9,7 @@ page de suivi.
 | **En production** | deux stratégies à 20 € : **BANDE + PAUSE** et **G+D** |
 | **Objectif** | ~50 € par jour |
 | **État courant** | `JOURNAL_RECHERCHE.md`, section 0 — à lire avant toute action |
-| **Branches git** | `solana` = ce projet (prod Solana) · `main` = le scanner d actions, qui tourne depuis `C:	angier_L` |
+| **Branches git** | `solana` = ce projet (prod Solana) · `main` = le scanner d actions, qui tourne depuis `C:/tangier_L` |
 | **Suivi** | page Streamlit : http://192.168.1.191:8502 (maison) · http://100.116.248.62:8502 (Tailscale) |
 
 ## Où lire quoi

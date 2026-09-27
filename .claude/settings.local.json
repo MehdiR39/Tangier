@@ -1,8 +1,10 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions",
     "allow": [
-      "Bash(\"/c/Program Files/Docker/Docker/Docker Desktop.exe\")"
-    ]
+      "Bash(\"/c/Program Files/Docker/Docker/Docker Desktop.exe\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec -i tangier-intel python -c ' *)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec -i tangier-intel python -m intel.research.pools_propres)"
+    ],
+    "defaultMode": "bypassPermissions"
   }
 }
