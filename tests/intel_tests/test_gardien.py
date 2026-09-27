@@ -22,10 +22,10 @@ def test_il_surveille_tous_les_collecteurs():
     plus l absence de doublon (un doublon ferait tourner deux fois le meme collecteur sur la meme
     base). Ajouter une ligne ne casse plus rien ; en retirer une casse toujours.
     """
+    # 27/09 : neuf collecteurs retires (forets, prod_reentraine, papier_gd30), tous en perte.
     critiques = {"papier_combo", "social_collecte", "prix_rapide", "stock_collecte",
-                 "foret_gel", "foret_gel75", "v1_enregistreur", "papier_gd45", "papier_gd30",
-                 "papier_large", "veille_table", "carnet_json", "foret_flux", "foret_marche",
-                 "foret75_carnet", "foret_gagnant", "prod_reentraine", "foret75_iso"}
+                 "v1_enregistreur", "papier_gd45",
+                 "papier_large", "veille_table", "carnet_json", "papier_challenger"}
     manquants = critiques - set(gardien.COLLECTEURS)
     assert not manquants, "collecteurs non surveilles : %s" % sorted(manquants)
     assert len(gardien.COLLECTEURS) == len(set(gardien.COLLECTEURS)), "doublon dans COLLECTEURS"

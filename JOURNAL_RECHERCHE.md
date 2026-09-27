@@ -954,6 +954,17 @@ c est pour ca que D change la cible.**
 > après), jamais de la sélection (−0,257 / −0,016) — et sa bande concentre la queue **moins bien**
 > (×1,40 contre ×1,61, §0.2 undecies). Détail en **§0.2 nonies** et **§0.2 undecies**.
 >
+> **MENAGE DU 27/09 ~11h30 (Mido : « ok »).** Neuf collecteurs papier ARRETES et retires du gardien :
+> les sept forets (`foret_gel`, `foret_gel75`, `foret_flux`, `foret_marche`, `foret75_carnet`,
+> `foret_gagnant`, `foret75_iso`), `prod_reentraine` (ecrivait `foret_vidage_reentraine.json`, que
+> plus rien ne lit — la prod lit `modele_vidage.json`) et `papier_gd30`. Toutes en perte, de −0,21
+> a −1,84 EUR/ticket sur 168 a 3 705 tickets. **Memoire du conteneur : 6,5 Go → 1,6 Go** (les forets
+> en prenaient ~5 — la cause des deux chutes de Docker). **Aucune base effacee.** Sur la page, leurs
+> 15 lignes sont dans « Archives », repliees. Restent en marche : `papier_combo` (pause de la prod),
+> `papier_gd45` (G+D reel), `papier_challenger` (gel B), les collecteurs de donnees, `carnet_json`.
+> NOTE SUR D : `FORET GAGNANT` visait deja « gagnant net » et perd −1,21 EUR/ticket sur 849 ; D vise
+> la queue (>= +50 %), dans la pause, en LightGBM — different, mais le prior de D en sort affaibli.
+>
 > **Deux gels courent en papier, jugés par `challenger.py` (lecture seule sur `papier_combo`) :**
 >
 > | gel | dossier | essai | échéance | critère | état au 27/09 09h |

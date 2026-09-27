@@ -27,39 +27,22 @@ import subprocess
 import sys
 import time
 
-COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte", "foret_gel", "foret_gel75", "v1_enregistreur",
-               "papier_gd45", "papier_gd30", "papier_large", "veille_table",
+# LE MENAGE DU 27/09 (Mido : « ok »). Neuf collecteurs retires : les sept forets (`foret_gel`,
+# `foret_gel75`, `foret_flux`, `foret_marche`, `foret75_carnet`, `foret_gagnant`, `foret75_iso`),
+# `prod_reentraine` (il reentrainait `foret_vidage_reentraine.json`, que plus rien ne lit depuis
+# le passage a `modele_vidage.json`) et `papier_gd30` (G+D a 30 s ; celle a 45 s a gagne et tourne
+# en reel). Toutes en perte, de −0,21 a −1,84 EUR/ticket sur 168 a 3 705 tickets. Les sept forets
+# occupaient ~5 Go des 6,5 Go du conteneur -- la memoire qui a fait tomber Docker deux fois.
+# RIEN N EST EFFACE : leurs bases restent sur le disque (consigne : tout garder pour l analyse
+# finale). Les relancer = les remettre dans cette liste.
+COLLECTEURS = ("papier_combo", "social_collecte", "prix_rapide", "stock_collecte", "v1_enregistreur",
+               # la base de `papier_gd45` est celle que le suiveur G+D EXECUTE en reel
+               # (`suiveur_gd.gd_db`). S il meurt, G+D cesse d acheter en silence.
+               "papier_gd45", "papier_large", "veille_table",
                # alimente la page de suivi locale (Streamlit) : table toutes les 5 min, carnet reel
                # toutes les 20 s, et le registre des couts ticket par ticket. Sans lui la page se
                # fige en silence -- elle affiche l age de ses donnees, mais autant qu elle vive.
                "carnet_json",
-               # la foret de vidage au FLUX D ORDRES, gelee le 19/09 16h00 : elle n apprend que sur
-               # les transactions <= 30 s, la seule vue que l index montre surement a l instant de
-               # decider. Papier, zero euro, critere a 600 tickets.
-               "foret_flux",
-               # la METHODE reentrainee, gelee le 19/09 21h23 : la recette est figee (15 variables,
-               # aucune de cout, reentrainement toutes les 6 h, on garde 80 %), les poids se
-               # refont. Papier, zero euro, critere a 1 200 tickets.
-               "foret_marche",
-               # la recette 75 s REENTRAINEE, gelee le 19/09 23h35 : decision a 75 s, 25 variables
-               # rechoisies a chaque coupe, SEUIL ABSOLU a 20 %. Ce qui se refait toutes les 6 h,
-               # c est aussi le seuil -- c est la l essentiel de l effet mesure (§3.158). Papier,
-               # zero euro, critere a 400 retenus, dont une condition sur le NIVEAU.
-               "foret75_carnet",
-               # la BONNE QUESTION, gelee le 20/09 : cible « gagnant net » au lieu de « pas de
-               # vidage », seuil absolu a 20 %, reentrainee toutes les 6 h. §3.159 : demander
-               # « ne t effondre pas » selectionne l immobilite, et l immobilite paie le peage.
-               # Papier, zero euro, deux echeances : 400 retenus puis 2 000.
-               "foret_gagnant",
-               # LE REENTRAINEMENT DU MODELE EN PRODUCTION, branche le 20/09 au soir. S il meurt,
-               # le moteur continue de tourner sur le dernier fichier ecrit -- il ne s arrete pas,
-               # il vieillit. C est precisement le genre de panne silencieuse que ce gardien existe
-               # pour empecher : ici elle coute de l argent reel, pas des tickets de recherche.
-               "prod_reentraine",
-               # le MEME modele 75s gele, prive des six variables que le moteur ne saura pas
-               # produire a 75 s (images, robots, regime). Il mesure en marche avant ce que la
-               # production fera VRAIMENT, a cote du carnet complet qui continue de tourner.
-               "foret75_iso",
                # LE FLUX SCORE DU CHALLENGER, sans lequel aucun modele reentraine ne peut etre
                # adopte : sa PAUSE doit voir le flux entier de SA bande, et ce flux n existe nulle
                # part ailleurs (`papier_combo` ne stocke que les scores du modele en service).

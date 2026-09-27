@@ -180,7 +180,7 @@ for x in appliquer_pause(_bp):
     # vu sur le graphe : « bande + pause c est l ancien modele non ? ». Oui. La garder etiquetee
     # comme la methode en service ferait lire la page a l envers, exactement comme sur le graphe des
     # variantes corrige plus haut.
-    ranger("BANDE + PAUSE (ancien modele, temoin)", x["t"], x["r"])
+    ranger("BANDE + PAUSE (modele en prod)", x["t"], x["r"])
 
 # ------------------------------------------------------------------ CE QUI TOURNE VRAIMENT
 # LA PRODUCTION DEPUIS LE 26/09 12h38 : meme strategie `bande + pause`, mais le MODELE FRAIS et sa
@@ -204,7 +204,7 @@ try:
             _tf.append({"t": float(_t), "fin": float(_t) + TENUE_S,
                         "r": min(float(_b) - cout(_q), 3.0)})
     for x in appliquer_pause(_tf):
-        ranger("MODELE FRAIS (en service depuis le 26/09)", x["t"], x["r"])
+        ranger("MODELE B (gel du 22/09, papier, retire de la prod le 27/09)", x["t"], x["r"])
 except Exception as _e:  # noqa: BLE001
     print("table_std2: ligne du modele frais indisponible (%s)" % str(_e)[:120], flush=True)
 
@@ -534,7 +534,7 @@ ORDRE = ["temoin sans filtre", "regime seul", "RISQUE seul (modele)", "regime + 
          # milieu de trente-cinq lignes de recherche oblige a la chercher -- et depuis le 26/09
          # l ancienne ligne est le TEMOIN, pas la production. Les deux sont nommees pour ce
          # qu elles sont, et c est ce qui tourne qui vient d abord.
-         "MODELE FRAIS (en service depuis le 26/09)", "BANDE + PAUSE (ancien modele, temoin)",
+         "MODELE B (gel du 22/09, papier, retire de la prod le 27/09)", "BANDE + PAUSE (modele en prod)",
          "coffre seul", "G  foule <= 74", "D  tendance > 0", "D+F  tendance + pause", "G+D  les trois", "BANDE 0,20-0,35 (gelee)",
          "PISTE FOULE (gelee)", "ENSEMBLE de 12 (gele)", "FORET ALEATOIRE (gelee)", "PRIX + DETENTEURS (gele)", "AU PLUS BAS (gele)", "BAS + BANDE (gele)", "RISQUE + FREIN (gele)", "RISQUE + IPFS (gele)", "FORET 45s top 5 % (gelee)", "FORET 45s top 10 % (lecture)", "FORET 75s top 5 % (gelee)", "FORET 75s top 10 % (lecture)", "FORET FLUX 30s (gelee)", "FORET REENTRAINEE 6h", "FORET 75s REENTRAINEE 20 %", "FORET 75s REENTR. 10 % (lecture)", "FORET 75s REENTR. 5 % (lecture)", "FORET GAGNANT 20 %", "FORET GAGNANT 10 % (lecture)", "FORET GAGNANT 5 % (lecture)", "FORET 75s ISO-MOTEUR", "ENTREE T+75 (gelee)*"]
 print("TOUT CE QUI A REELLEMENT TOURNE · mise %.0f EUR · caution %s" % (MISE, "payee" if CAUTION else "RECUPEREE"))
@@ -909,10 +909,10 @@ if _sortie:
                         "r": min(_ok[i][2] - cout(_ok[i][1]), 3.0)}
                        for i in range(len(_ok)) if _na <= _s[i] < _nb]
                 _tf.sort(key=lambda z: z["t"])
-                _var.append({"nom": "B · MODELE FRAIS (en service)", "seuil": -0.30,
+                _var.append({"nom": "B · MODELE FRAIS (papier, retire de la prod le 27/09)", "seuil": -0.30,
                              "courbe": _courbe(_pause(_tf, -0.30))})
         except Exception as _e:
-            _var.append({"nom": "B · MODELE FRAIS (en service)", "seuil": -0.30, "courbe": [],
+            _var.append({"nom": "B · MODELE FRAIS (papier, retire de la prod le 27/09)", "seuil": -0.30, "courbe": [],
                          "erreur": str(_e)[:120]})
         _variantes = {"gel": _gel_c, "gel_lisible": _meta["gel_lisible"],
                       "bande_frais": _meta["bande_frais"], "nul": 0.384, "lignes": _var}
