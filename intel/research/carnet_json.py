@@ -564,6 +564,14 @@ def bascule() -> dict:
     return out
 
 
+def _challengers() -> dict:
+    """Les modeles geles en papier (B, C, D) et leur verdict, pour la page. Meme calcul que
+    `challenger.juger()`."""
+    from intel.research.challenger import resume
+    return {"genere": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "modeles": resume()}
+
+
 def main() -> None:
     print("carnet_json: demarre · table %d s · live %d s · vers %s" % (PAS_TABLE, PAS_LIVE, DATA), flush=True)
     prochaine_table = 0.0
@@ -579,7 +587,8 @@ def main() -> None:
                                               "erreur": str(e)[:600]})
             # LE MARCHE ET LA BASCULE, a la meme cadence que la table. Chacun dans son `try` :
             # ils lisent d autres bases, et une base illisible ne doit pas emporter la page entiere.
-            for nom, fn in (("carnet_marche.json", marche), ("carnet_bascule.json", bascule)):
+            for nom, fn in (("carnet_marche.json", marche), ("carnet_bascule.json", bascule),
+                            ("carnet_challengers.json", _challengers)):
                 try:
                     ecrire(nom, fn())
                 except Exception as e:  # noqa: BLE001

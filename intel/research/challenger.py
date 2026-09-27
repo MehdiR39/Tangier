@@ -371,3 +371,70 @@ if __name__ == "__main__":
         geler("gain" if "--cible=gain" in sys.argv else "vidage")
     else:
         juger()
+
+
+def resume() -> list[dict]:
+    """LES MEMES VERDICTS QUE `juger()`, EN DONNEES — pour la page (onglet Recherche).
+
+    Mido, 27/09 : « je les vois pas sur Streamlit ». `juger()` n ecrivait qu au terminal. Meme
+    calcul, meme flux `papier_combo`, memes sept axes ; rien de decide ici.
+    """
+    import numpy as np
+    import lightgbm as lgb
+
+    out = []
+    if not os.path.isdir(DOSSIER):
+        return out
+    now = dt.datetime.now(TZ).timestamp()
+    for nom in sorted(d for d in os.listdir(DOSSIER)
+                      if os.path.exists(os.path.join(DOSSIER, d, "meta.json"))):
+        d = os.path.join(DOSSIER, nom)
+        meta = json.load(open(os.path.join(d, "meta.json")))
+        cible = meta.get("cible", "vidage")
+        lettre = {"20260922-221347": "B", "20260927-090241": "C", "20260927-092716": "D"}.get(nom, nom)
+        r = {"nom": lettre, "dossier": nom, "gele": meta["gel_lisible"], "essai": meta.get("essai"),
+             "cible": "gros gain (>= +50 %)" if cible == "gain" else "effondrement du pool",
+             "echeance_tickets": meta["echeance_tickets"], "echeance_jours": meta["echeance_jours"],
+             "jours": round((now - float(meta["gel"])) / 86400.0, 1), "n": 0, "verdict": "TROP TOT"}
+        out.append(r)
+        lignes = _lignes(float(meta["gel"]))
+        if len(lignes) < 50:
+            continue
+        boost = lgb.Booster(model_file=os.path.join(d, "modele.json"))
+        X, ok = [], []
+        for i, (t, vj, q, b, rq) in enumerate(lignes):
+            try:
+                f = json.loads(vj)
+            except Exception:  # noqa: BLE001
+                continue
+            X.append([float(f.get(k)) if f.get(k) is not None else np.nan for k in meta["variables"]])
+            ok.append(i)
+        s = boost.predict(np.array(X, dtype=float))
+        na, nb = meta["bande"]
+        T = []
+        for k, i in enumerate(ok):
+            t, vj, q, b, rq = lignes[i]
+            T.append({"t": t, "fin": t + TENUE, "r": min(b - cout(q), 3.0),
+                      "prod": BANDE_SERVICE[0] <= rq < BANDE_SERVICE[1], "chal": na <= float(s[k]) < nb})
+        cp, cc = criteres(rejoue([x for x in T if x["prod"]])), criteres(rejoue([x for x in T if x["chal"]]))
+        if not cp or not cc:
+            continue
+        gagnes = sum(1 for cle, _, plus in AXES if ((cc[cle] > cp[cle]) if plus else (cc[cle] < cp[cle])))
+
+        def pg(v):
+            return sum(1 for x in v if x["r"] >= 0.50) / len(v) if v else 0.0
+        qp, qc = [x for x in T if x["prod"]], [x for x in T if x["chal"]]
+        se = ((pg(qp) * (1 - pg(qp)) / max(1, len(qp))) + (pg(qc) * (1 - pg(qc)) / max(1, len(qc)))) ** 0.5
+        atteint = cc["n"] >= meta["echeance_tickets"] or r["jours"] >= meta["echeance_jours"]
+        rej_rapide = (se and (pg(qc) - pg(qp)) / se <= -2.0 and min(len(qp), len(qc)) >= 1001
+                      and "critere_rapide" in meta)
+        verdict = ("REJETE (lecture rapide)" if rej_rapide else
+                   "ATTENDRE" if not atteint else
+                   "REJETE" if gagnes < meta.get("axes_requis", AXES_REQUIS) or cc["niveau"] <= 0 else
+                   "A ADOPTER — decision de Mido")
+        r.update({"n": cc["n"], "n_prod": cp["n"], "eur_ticket": round(cc["niveau"], 3),
+                  "eur_ticket_prod": round(cp["niveau"], 3), "axes": "%d/7" % gagnes,
+                  "queue": round(100 * pg(qc), 1), "queue_prod": round(100 * pg(qp), 1),
+                  "queue_sigma": round((pg(qc) - pg(qp)) / se, 2) if se else None,
+                  "verdict": verdict})
+    return out

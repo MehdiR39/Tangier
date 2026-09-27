@@ -797,6 +797,31 @@ def couts():
                      use_container_width=True, hide_index=True, height=420)
 
 
+@st.fragment(run_every=60)
+def modeles_geles():
+    """B, C, D : les modèles gelés en papier contre le modèle en prod, sur le même flux."""
+    C = lire(os.path.join(RACINE, "carnet_challengers.json"))
+    st.subheader("Les modèles gelés (candidats à remplacer le modèle de BANDE + PAUSE)")
+    if not C or not C.get("modeles"):
+        st.info("Pas encore calculé — `carnet_json` l'écrit toutes les 5 minutes.")
+        return
+    lignes = []
+    for m in C["modeles"]:
+        lignes.append({"modèle": m["nom"], "gelé le": m["gele"][:16], "ce qu'il prédit": m["cible"],
+                       "tickets": "%d / %d" % (m.get("n", 0), m["echeance_tickets"]),
+                       "jours": "%.1f / %d" % (m["jours"], m["echeance_jours"]),
+                       "lui €/ticket": m.get("eur_ticket"), "prod €/ticket": m.get("eur_ticket_prod"),
+                       "gros gains lui / prod": ("%.1f %% / %.1f %%" % (m["queue"], m["queue_prod"])
+                                                 if m.get("queue") is not None else "—"),
+                       "axes gagnés": m.get("axes", "—"), "verdict": m["verdict"]})
+    st.dataframe(lignes, use_container_width=True, hide_index=True)
+    st.caption("Chaque modèle est comparé au modèle en prod **sur les mêmes pools, depuis son gel**. "
+               "Verdict à 200 tickets ou 14 jours ; rejet possible plus tôt si sa part de gros gains "
+               "est inférieure de 2 σ (≥ 1 001 tickets). Adopter reste ta décision. "
+               "Attention : ce papier achète au prix du pool, il est optimiste (27/09). · %s"
+               % age(C["genere"]))
+
+
 def _queue_haute(q: dict):
     """LA QUEUE HAUTE SUR 3 JOURS — le seul indicateur de marché qui explique nos pertes.
 
@@ -952,4 +977,5 @@ with onglets[2]:
 with onglets[3]:
     st.warning("**PAPIER, 0 €** — rien ici n'est de l'argent. Ce sont des règles et des modèles "
                "testés sans acheter.")
+    modeles_geles()
     table_complete()
