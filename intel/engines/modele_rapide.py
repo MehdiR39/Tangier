@@ -1331,7 +1331,43 @@ class ModeleRapide:
             bloc.append("<b>total</b>       aucun ticket encore compte sur la chaine")
         if o and int(o[0]["n"] or 0):
             bloc.append("%d position(s) ouverte(s), %.0f EUR engages" % (int(o[0]["n"]), float(o[0]["m"])))
+        bloc.extend(self._total_toutes(_minuit))
         return "\n".join(bloc)
+
+    # (prefixe de config, table) de CHAQUE strategie reelle. Lu EN CLAIR, sans `_sql` : ce bloc
+    # additionne les deux instances, il ne doit pas etre redirige vers la table de l instance.
+    STRATEGIES_REELLES = (("modele_rapide", "mr_lignes"), ("suiveur_gd", "gd_lignes"))
+
+    def _total_toutes(self, minuit: float) -> list[str]:
+        """LE P&L DE TOUTES LES STRATEGIES ENSEMBLE, sous le bloc de la strategie du message.
+
+        Mido, 27/09 : « le message Telegram affiche le pnl de chaque strategie separement ; je veux
+        en dessous : pnl total du jour, pnl total total ». Chaque strategie compte depuis SON propre
+        `cumul_depuis` (BANDE + PAUSE depuis le 21/09, G+D depuis le 26/09) ; le jour est le jour
+        calendaire de Paris pour les deux. Une table illisible est sautee, jamais comptee a zero en
+        silence : on le dit dans la ligne.
+        """
+        jour = total = 0.0
+        manque = []
+        for prefixe, table in self.STRATEGIES_REELLES:
+            depuis = float(self.ctx.config.get("%s.cumul_depuis" % prefixe, 0) or 0)
+            try:
+                t = self._base.query(
+                    "SELECT COALESCE(SUM(gain_eur),0) g FROM %s WHERE mode='live'"
+                    " AND gain_eur IS NOT NULL AND ts_entree >= ?" % table, (depuis,))
+                j = self._base.query(
+                    "SELECT COALESCE(SUM(gain_eur),0) g FROM %s WHERE mode='live'"
+                    " AND gain_eur IS NOT NULL AND ts_entree >= ?" % table, (max(depuis, minuit),))
+                total += float(t[0]["g"] or 0.0)
+                jour += float(j[0]["g"] or 0.0)
+            except Exception:  # noqa: BLE001
+                manque.append(table)
+        out = ["━━━━━━━━━━━━━━", "<b>TOUTES STRATEGIES</b>",
+               "<b>pnl total du jour</b>  %+.2f EUR" % jour,
+               "<b>pnl total</b>          %+.2f EUR" % total]
+        if manque:
+            out.append("<i>(illisible, non compte : %s)</i>" % ", ".join(manque))
+        return out
 
     async def _echec_vente(self, mint: str, raison: str, now: float) -> None:
         """Une vente qui ne passe pas est de l ARGENT BLOQUE, pas un incident technique.
